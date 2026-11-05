@@ -1,0 +1,15 @@
+# Render Blueprint: staging for Verve PMS (in-memory seeded demo data; resets on every restart/deploy)
+services:
+  - type: web
+    name: verve-pms-staging
+    runtime: node
+    plan: free
+    rootDir: pms
+    branch: pms/kandi-dev
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/users
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

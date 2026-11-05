@@ -17,9 +17,9 @@ function subordinates(id) {
 }
 const isAncestor = (viewerId, targetId) => subordinates(viewerId).some(e => e.id === targetId);
 function canView(viewer, targetId) {
+  if (!emp(targetId)) return false;
   if (viewer.role === 'admin' || viewer.role === 'director') return true;
-  return viewer.id === targetId || isAncestor(viewer.id, targetId) ||
-    (!emp(targetId).active && isAncestor(viewer.id, targetId));
+  return viewer.id === targetId || isAncestor(viewer.id, targetId);
 }
 // A reviewer can enter manager ratings and submit; admin can do everything
 const canManage = (viewer, targetId) => viewer.role === 'admin' || isAncestor(viewer.id, targetId) ||
@@ -98,6 +98,10 @@ function validate(f) {
       const miss = [];
       rows.forEach((r, i) => {
         if (!has(r.self) || blank(r.selfRemark)) miss.push(r.kpi);
+        if (has(r.self) && +r.self === 5 && blank(r.selfRemark))
+          add('block', label, 'TOP_SELF_REMARK', `A self rating of 5 needs a remark. (${label}: ${r.kpi})`, `Remark missing for rating 5 (${r.kpi})`);
+        if (has(r.mgr) && +r.mgr === 5 && blank(r.mgrRemark) && !(has(r.self) && +r.self !== 5))
+          add('block', label, 'TOP_MGR_REMARK', `A manager rating of 5 needs a manager remark. (${label}: ${r.kpi})`, `Manager remark missing for rating 5 (${r.kpi})`);
         if (has(r.self) && has(r.mgr) && +r.self !== +r.mgr && blank(r.mgrRemark))
           add('block', label, 'MGR_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${label}: ${r.kpi})`, `Manager remark missing (${r.kpi})`);
       });
@@ -106,7 +110,7 @@ function validate(f) {
       if (rows.length && sum !== +weight) add('flag', label, 'SUBKRA_SUM', `The total weightage of Sub-KRAs under ${label} must be ${weight}%. The current total is ${sum}%.`);
       const a = kraAvg(rows, 'self'), b = kraAvg(rows, 'mgr');
       if (a !== null && b !== null && Math.abs(a - b) >= config.ratingGapFlag)
-        add('flag', label, 'RATING_GAP', `${label}: self avg ${a.toFixed(0)} vs manager avg ${b.toFixed(0)} (gap ${Math.abs(a - b).toFixed(0)})`, `Rating gap ${Math.abs(a - b).toFixed(0)} (${label})`);
+        add('flag', label, 'RATING_GAP', `${label}: self avg ${a.toFixed(1)} vs manager avg ${b.toFixed(1)} (gap ${Math.abs(a - b).toFixed(1)})`, `Rating gap ${Math.abs(a - b).toFixed(1)} (${label})`);
     }
     const op = f.kras.operational;
     if (op.weight < config.operationalRange[0] || op.weight > config.operationalRange[1])
@@ -138,7 +142,7 @@ function validate(f) {
       pe.rows.filter(r => /learn/i.test(r.kpi)).forEach(r => { if (!hasLink(r.selfRemark)) add('flag', 'People', 'LEARN_LINK', 'Learning document link not added in self remark.', 'Learning link not added'); });
       pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < config.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${config.learningMin} (${r.kpi}: ${r.mgr}).`, `Manager rating below ${config.learningMin}`); });
       const lr = pe.rows.filter(r => /learn/i.test(r.kpi));
-      if (lr.length && lr.every(r => has(r.mgr) && r.mgr >= 90 && hasLink(r.selfRemark))) add('info', 'People', 'LEARN_GOOD', 'Effective learning with document link.', 'Recognition: effective learning');
+      if (lr.length && lr.every(r => has(r.mgr) && r.mgr >= 4.5 && hasLink(r.selfRemark))) add('info', 'People', 'LEARN_GOOD', 'Effective learning with document link.', 'Recognition: effective learning');
     }
   }
 
@@ -152,6 +156,7 @@ function validate(f) {
     } else {
       const s = a && a.self, m = a && a.mgr;
       if (!has(s) || !has(m)) { qComplete = false; add('flag', 'Questionnaire', 'Q_INCOMPLETE', `${q.text}: self and manager ratings are both needed.`, 'Questionnaire rating missing'); }
+      else if (+s === +m && +s === 5 && blank(a.remark)) add('block', 'Questionnaire', 'Q_TOP_REMARK', `A rating of 5 needs a remark. (${q.text})`, 'Questionnaire remark missing for rating 5');
       else if (+s !== +m && blank(a.remark)) add('block', 'Questionnaire', 'Q_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${q.text})`, 'Questionnaire manager remark missing');
     }
   }

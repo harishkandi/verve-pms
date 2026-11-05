@@ -2,6 +2,8 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const S = { user: null, me: null, month: null, page: null };
+// anything not served from this machine is the shared staging demo
+const IS_STAGING = !['localhost', '127.0.0.1', ''].includes(location.hostname);
 const ROLE_LABEL = { admin: 'Admin', director: 'Director', manager: 'Manager', teamlead: 'Team lead', employee: 'Employee' };
 
 async function api(path, opts = {}) {
@@ -15,20 +17,33 @@ async function api(path, opts = {}) {
   if (!res.ok) { const e = new Error(data.error || 'Error'); e.data = data; throw e; }
   return data;
 }
-function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+function toast(msg, kind = 'ok') { document.querySelectorAll('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast t-' + kind; t.setAttribute('role', kind === 'err' ? 'alert' : 'status'); t.innerHTML = `<span class="ti">${kind === 'err' ? '!' : '✓'}</span><span></span>`; t.lastChild.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), kind === 'err' ? 4000 : 2800); }
 const badge = st => {
   const c = { 'Completed and Submitted': 'green', 'Completed but Not Submitted': 'amber', 'Review Not Completed': 'red', Pending: 'blue', 'Not started': 'grey', 'Within due date': 'green', 'After due date': 'red' }[st] || 'grey';
   return `<span class="badge b-${c}">${esc(st)}</span>`;
 };
 const fmtD = d => { if (!d) return '–'; const [y, m, dd] = d.split('-'); return `${+dd} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
 const monthOpts = sel => S.me.months.filter(m => m.started).map(m => `<option value="${m.key}" ${m.key === sel ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('');
+// ratings are 0-5 picked from a dropdown; a 5 needs a remark explaining it
+const RATINGS = [0, 1, 2, 3, 4, 5];
+const rateSel = (val, attrs, enabled, cls = '') => `<select class="num ${cls}" ${attrs} ${enabled ? '' : 'disabled'}><option value="">–</option>${RATINGS.map(n => `<option value="${n}" ${val != null && val !== '' && +val === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
 const errBox = e => `<div class="warn">${(e.data?.errors || [e.message]).map(esc).join('<br>')}</div>`;
 function modal(html) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.addEventListener('mousedown', ev => { if (ev.target === m) m.remove(); }); document.body.appendChild(m); return m; }
+
+// ---------- theme (light by default, choice remembered in this browser) ----------
+const themeBtn = () => `<button class="theme-btn" id="themeBtn" title="Switch light / dark">${document.documentElement.dataset.theme === 'dark' ? '☀ Light' : '☾ Dark'}</button>`;
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('pmsTheme', t); } catch {}
+  document.querySelectorAll('#themeBtn').forEach(b => { b.outerHTML = themeBtn(); });
+}
+document.addEventListener('click', e => { if (e.target.closest('#themeBtn')) toggleTheme(); });
 
 // ---------- shell ----------
 async function boot() {
   const users = await api('/users');
-  $('#root').innerHTML = `<div class="login"><h1 style="color:var(--navy)">VERVE PMS</h1><p class="small">Local demo with dummy data. Pick a user to sign in as.</p><div class="card">
+  $('#root').innerHTML = `<div class="login">${themeBtn()}<h1 style="color:var(--navy)">VERVE PMS</h1><p class="small">Local demo with dummy data. Pick a user to sign in as.</p><div class="card">
   ${users.map(u => `<button class="btn" data-u="${u.id}"><b>${esc(u.name)}</b> <span class="small">${esc(u.designation)} · ${ROLE_LABEL[u.role]}</span></button>`).join('')}</div></div>`;
   $('#root').onclick = async e => { const b = e.target.closest('[data-u]'); if (b) { S.user = b.dataset.u; sessionStorage.setItem('pmsUser', S.user); await start(); } };
   const saved = sessionStorage.getItem('pmsUser');
@@ -55,10 +70,10 @@ async function start() {
     r === 'admin' && ['Audit Log', '#/audit'],
     r === 'admin' && ['Settings', '#/config'],
   ].filter(Boolean);
-  $('#root').innerHTML = `<div id="app"><nav><div class="logo">VERVE<small>HR TOOL · PMS</small></div>
+  $('#root').innerHTML = `<div id="app"><nav><div class="logo">VERVE<small>HR TOOL · PMS</small>${IS_STAGING ? `<span class="stage" title="Staging: dummy data, resets when the server restarts">STAGING</span>` : ''}</div>
     ${items.map(i => typeof i === 'string' ? `<div class="grp">${i.slice(2)}</div>` : `<a data-h="${i[1]}" href="${i[1]}">${i[0]}</a>`).join('')}
     <a id="logout" style="margin-top:20px;color:var(--mut)">Switch user</a></nav>
-    <main><header><div class="who"><b>${esc(S.me.name)}</b><br><small>${ROLE_LABEL[S.me.role]} · ${esc(S.me.designation)}</small></div><div class="avatar">${esc(S.me.name.split(' ').map(x => x[0]).join(''))}</div></header><div id="view"></div></main></div>`;
+    <main><header>${themeBtn()}<div class="who"><b>${esc(S.me.name)}</b><br><small>${ROLE_LABEL[S.me.role]} · ${esc(S.me.designation)}</small></div><div class="avatar">${esc(S.me.name.split(' ').map(x => x[0]).join(''))}</div></header><div id="view"></div></main></div>`;
   $('#root').onclick = e => { if (e.target.id === 'logout') { sessionStorage.removeItem('pmsUser'); S.user = null; S.month = null; boot(); } };
   window.onhashchange = route;
   route();
@@ -100,12 +115,14 @@ let FP = null, attempted = false;
 pages.form = async (v, emp, month) => {
   if (month === 'annual') return drawAppraisal(v, emp);
   S.month = month || S.month;
-  attempted = false; editingQ.clear();
+  attempted = false; editingQ.clear(); focusQ = null;
   FP = await api(`/form?emp=${emp}&month=${S.month}`);
   drawForm(v);
 };
 
 const editingQ = new Set();
+let focusQ = null; // question answer box to put the cursor in after a redraw
+const qOriginal = {}; // answer text when its box was opened, to skip saving when nothing changed
 function drawForm(v, errors) {
   const { form: f, perms: p, employee: e, manager: m } = FP;
   const sec = (k, label, desc) => {
@@ -120,17 +137,17 @@ function drawForm(v, errors) {
     if (!rows.length) return head + `<div class="${FP.newJoiner ? 'info' : 'warn'}">${FP.newJoiner ? 'New joiner: no KRAs set yet. Only the questionnaire is checked.' : `${label} KRA is not set.`}</div>` + btns;
     return head + `<div class="tablewrap"><table><tr><th>Sr.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th></tr>
     ${rows.map((r, i) => {
-      const diff = r.self != null && r.mgr != null && +r.self !== +r.mgr, needRemark = diff && !(r.mgrRemark || '').trim();
-      const needSelf = attempted && (r.self == null || !(r.selfRemark || '').trim());
+      const diff = r.self != null && r.mgr != null && +r.self !== +r.mgr, needRemark = (diff || (r.mgr != null && +r.mgr === 5)) && !(r.mgrRemark || '').trim();
+      const needSelf = attempted && (r.self == null || !(r.selfRemark || '').trim()), selfTop = r.self != null && +r.self === 5 && !(r.selfRemark || '').trim();
       return `<tr><td>${ed ? `<button class="xdel" data-del="${k}:${i}" title="Remove sub-KRA">✖</button> ` : ''}${i + 1}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="kpi">${esc(r.kpi)}</textarea>` : esc(r.kpi)}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="target">${esc(r.target)}</textarea>` : esc(r.target)}</td>
       <td>${ed ? `<input class="num" type="number" data-k="${k}" data-i="${i}" data-f="weight" value="${r.weight}">` : r.weight}</td>
-      <td><input class="num ${r.self != null ? 'filled' : ''} ${needSelf && r.self == null ? 'err' : ''}" type="number" min="0" max="100" data-k="${k}" data-i="${i}" data-f="self" value="${r.self ?? ''}" ${p.editSelf ? '' : 'disabled'}></td>
-      <td><input class="num ${r.mgr != null ? 'filled' : ''}" type="number" min="0" max="100" data-k="${k}" data-i="${i}" data-f="mgr" value="${r.mgr ?? ''}" ${p.editManager ? '' : 'disabled'}></td>
-      <td><textarea class="${needSelf && !(r.selfRemark || '').trim() ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="selfRemark" ${p.editSelf ? '' : 'disabled'}>${esc(r.selfRemark)}</textarea></td>
+      <td>${rateSel(r.self, `data-k="${k}" data-i="${i}" data-f="self"`, p.editSelf, `${r.self != null ? 'filled' : ''} ${needSelf && r.self == null ? 'err' : ''}`)}</td>
+      <td>${rateSel(r.mgr, `data-k="${k}" data-i="${i}" data-f="mgr"`, p.editManager, r.mgr != null ? 'filled' : '')}</td>
+      <td><textarea class="${(needSelf || selfTop) && !(r.selfRemark || '').trim() ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="selfRemark" ${selfTop ? 'placeholder="Remark required for a rating of 5"' : ''} ${p.editSelf ? '' : 'disabled'}>${esc(r.selfRemark)}</textarea>${selfTop ? '<div class="flag">Remark required: rating is 5.</div>' : ''}</td>
       <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'}>${esc(r.mgrRemark)}</textarea>
-      ${needRemark ? '<div class="flag">Manager remarks are required because there is a difference between the employee\'s self-rating and the manager\'s rating.</div>' : ''}</td></tr>`;
+      ${needRemark ? `<div class="flag">${diff ? 'Manager remarks are required because there is a difference between the employee\'s self-rating and the manager\'s rating.' : 'Manager remark required: rating is 5.'}</div>` : ''}</td></tr>`;
     }).join('')}
     <tr class="sub"><td></td><td></td><td><b>Totals</b></td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td colspan="2">Total Calculation : ${calc}</td></tr></table></div>` + btns;
   };
@@ -157,13 +174,13 @@ function drawForm(v, errors) {
     ${sec('process', 'Process', '(SOP and ClickUp)')}
     ${sec('people', 'People', '(Learning)')}
     <div class="kra" id="sec-questionnaire" style="background:var(--navy);color:#fff;border-left:0;border-radius:0">Question-Answers</div>
-    <div class="tablewrap"><table style="table-layout:fixed"><colgroup><col style="width:90px"><col style="width:38%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Not Added" style="background:var(--bg)">${esc(f.qa[q.id] || '')}</textarea><div><button class="xdel" data-qsave="${q.id}" title="Save" style="color:var(--ink)"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1h9l3 3v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V1zm2 1v4h7V2H4zm1 7v5h6V9H5z"/></svg></button></div>`
+    <div class="tablewrap"><table style="table-layout:fixed"><colgroup><col style="width:90px"><col style="width:38%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer" style="background:var(--bg)">${esc(f.qa[q.id] || '')}</textarea><div class="small">Saves automatically when you click away.</div>`
       : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : 'Not Added'}</span> ${p.editSelf || p.editManager ? `<button class="xdel" data-qedit="${q.id}" title="Edit" style="color:var(--ink)"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4"/><path d="M11 2l3 3-6 6H5V8z"/></svg></button>` : ''}`}</td></tr>`).join('')}${rate.map((q, i) => {
-      const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
+      const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, top = (a.self != null && +a.self === 5) || (a.mgr != null && +a.mgr === 5), need = (diff || top) && !(a.remark || '').trim();
       return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)} (Rate out of 5)</td><td style="padding:6px"><table style="table-layout:fixed"><tr><th style="width:90px">Self Rating</th><th style="width:90px">Manager Rating</th><th>Remark</th></tr><tr>
-        <td><input class="num" type="number" min="0" max="5" data-qr="${q.id}" data-f="self" value="${a.self ?? ''}" ${p.editSelf ? '' : 'disabled'}></td>
-        <td><input class="num" type="number" min="0" max="5" data-qr="${q.id}" data-f="mgr" value="${a.mgr ?? ''}" ${p.editManager ? '' : 'disabled'}></td>
-        <td><textarea class="${need ? 'err' : ''}" rows="1" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'}>${esc(a.remark || '')}</textarea>${need ? '<div class="flag">Manager remark required: ratings differ.</div>' : ''}</td></tr></table></td></tr>`;
+        <td>${rateSel(a.self, `data-qr="${q.id}" data-f="self"`, p.editSelf)}</td>
+        <td>${rateSel(a.mgr, `data-qr="${q.id}" data-f="mgr"`, p.editManager)}</td>
+        <td><textarea class="${need ? 'err' : ''}" rows="1" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'}>${esc(a.remark || '')}</textarea>${need ? `<div class="flag">${diff ? 'Manager remark required: ratings differ.' : 'Remark required: rating is 5.'}</div>` : ''}</td></tr></table></td></tr>`;
     }).join('')}</table></div>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
     ${S.me.role === 'employee' || (!p.editSelf && !p.editManager) ? '' : '<button class="btn" id="save">Save draft</button>'}
@@ -172,6 +189,7 @@ function drawForm(v, errors) {
   wireForm(v);
 }
 
+let changeSeq = 0; // only the latest form change redraws, so an older autosave cannot undo the jump to a remark
 function wireForm(v) {
   const { form: f } = FP;
   $('#msel').onchange = e => { location.hash = `#/form/${f.empId}/${e.target.value}`; };
@@ -179,16 +197,26 @@ function wireForm(v) {
     const t = e.target;
     if (t.id === 'reviewDate') f.reviewDate = t.value;
     else if (t.dataset.kw) f.kras[t.dataset.kw].weight = +t.value;
-    else if (t.dataset.k) { const r = f.kras[t.dataset.k].rows[+t.dataset.i]; r[t.dataset.f] = t.type === 'number' ? (t.value === '' ? null : +t.value) : t.value; }
+    else if (t.dataset.k) { const r = f.kras[t.dataset.k].rows[+t.dataset.i]; r[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value; }
     else if (t.dataset.qt) f.qa[t.dataset.qt] = t.value;
-    else if (t.dataset.qr) { const a = f.qa[t.dataset.qr] ||= {}; a[t.dataset.f] = t.type === 'number' ? (t.value === '' ? null : +t.value) : t.value; }
+    else if (t.dataset.qr) { const a = f.qa[t.dataset.qr] ||= {}; a[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value; }
   };
   // re-render on blur-ish changes so remark requirements update
   v.onchange = async e => {
     if (e.target.id === 'msel' || e.target.dataset.qt) return;
     // employees have no Save draft button, so their entries are saved as they type
-    if (S.me.role === 'employee' && (FP.perms.editSelf || FP.perms.editManager)) { try { await save(); } catch (er) { toast(er.message); } }
+    const mine = ++changeSeq;
+    if (S.me.role === 'employee' && (FP.perms.editSelf || FP.perms.editManager)) { try { await save(); } catch (er) { toast(er.message, 'err'); } }
+    if (mine !== changeSeq) return; // a newer change is in flight; it will redraw (and keep any remark focus)
     const y = window.scrollY; drawForm(v); window.scrollTo(0, y);
+    // a rating of 5 needs a remark: move straight to it
+    const t = e.target;
+    if (t.tagName === 'SELECT' && t.value === '5') {
+      const sel = t.dataset.k ? `textarea[data-k="${t.dataset.k}"][data-i="${t.dataset.i}"][data-f="${t.dataset.f === 'self' ? 'selfRemark' : 'mgrRemark'}"]`
+        : t.dataset.qr ? `textarea[data-qr="${t.dataset.qr}"][data-f="remark"]` : null;
+      const box = sel && v.querySelector(sel);
+      if (box && !box.disabled && !box.value.trim()) { box.focus({ preventScroll: true }); box.scrollIntoView({ block: 'center' }); toast('Rating 5 given: please add a remark.'); }
+    }
   };
   $('#tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) $('#sec-' + b.dataset.t).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const secs = ['operational', 'process', 'people', 'questionnaire'].map(k => $('#sec-' + k));
@@ -198,7 +226,23 @@ function wireForm(v) {
     document.querySelectorAll('#tabs button').forEach((b, i) => b.classList.toggle('on', i === cur));
   };
   const save = async () => { FP = await api('/form', { method: 'PUT', body: { empId: f.empId, month: f.month, reviewDate: f.reviewDate, kras: f.kras, qa: f.qa } }); };
-  if ($('#save')) $('#save').onclick = async () => { try { await save(); toast('Draft saved'); drawForm(v); } catch (e) { toast(e.message); } };
+  const redraw = () => { const y = window.scrollY; drawForm(v); window.scrollTo(0, y); };
+  // question answers: the pencil opens a box; clicking away saves it and closes the box
+  v.querySelectorAll('textarea[data-qt]').forEach(ta => {
+    ta.onblur = async () => {
+      await Promise.resolve();
+      if (!ta.isConnected) return; // the box was replaced by a redraw, not left by the user
+      const id = ta.dataset.qt;
+      if (focusQ === id) focusQ = null;
+      editingQ.delete(id);
+      f.qa[id] = ta.value;
+      if (ta.value === qOriginal[id]) return redraw();
+      try { await save(); toast('Answer saved'); } catch (er) { editingQ.add(id); toast(er.message, 'err'); }
+      redraw();
+    };
+  });
+  if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+  if ($('#save')) $('#save').onclick = async () => { try { await save(); toast('Draft saved'); drawForm(v); } catch (e) { toast(e.message, 'err'); } };
   if ($('#submit')) $('#submit').onclick = async () => {
     attempted = true;
     try { await save(); FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Review submitted'); drawForm(v); }
@@ -207,8 +251,8 @@ function wireForm(v) {
   v.onclick = async e => {
     const t = e.target, post = (u, b) => api(u, { method: 'POST', body: { empId: f.empId, month: f.month, ...b } });
     try {
-      if (t.dataset.qedit) { editingQ.add(t.dataset.qedit); drawForm(v); }
-      else if (t.dataset.qsave) { await save(); editingQ.delete(t.dataset.qsave); toast('Answer saved'); drawForm(v); }
+      const qe = t.closest('[data-qedit]'); // the click usually lands on the pencil's svg, not the button
+      if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; qOriginal[id] = f.qa[id] || ''; redraw(); }
       else if (t.dataset.add) { const k = t.dataset.add; f.kras[k].rows.push({ id: k[0] + Date.now(), kpi: '', target: '', weight: 0, self: null, selfRemark: '', mgr: null, mgrRemark: '' }); drawForm(v); }
       else if (t.dataset.del) { const [k, i] = t.dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); drawForm(v); }
       else if (t.dataset.savek) {
@@ -222,7 +266,7 @@ function wireForm(v) {
       }
       else if (t.id === 'kreq') { FP = await post('/form/kra-request'); toast('Request sent to your manager'); drawForm(v); }
       else if (t.dataset.kapp) { FP = await post('/form/kra-approve', { approve: t.dataset.kapp === '1' }); toast(t.dataset.kapp === '1' ? 'Approved' : 'Declined'); drawForm(v); }
-    } catch (er) { toast(er.message); }
+    } catch (er) { toast(er.message, 'err'); }
   };
   if ($('#req')) $('#req').onclick = async () => { await api('/form/request-edit', { method: 'POST', body: { empId: f.empId, month: f.month } }); toast('Edit access requested'); };
   if ($('#unlock')) $('#unlock').onclick = async () => { FP = await api('/form/unlock', { method: 'POST', body: { empId: f.empId, month: f.month } }); drawForm(v); };
@@ -280,13 +324,13 @@ pages.scheduling = async v => {
   onMonth(() => pages.scheduling(v));
   v.onchange = async e => {
     const id = e.target.dataset.sch; if (!id || !e.target.value) return;
-    try { await api('/scheduling/schedule', { method: 'POST', body: { empId: id, month: S.month, date: e.target.value } }); toast('Review scheduled'); pages.scheduling(v); } catch (er) { toast(er.message); }
+    try { await api('/scheduling/schedule', { method: 'POST', body: { empId: id, month: S.month, date: e.target.value } }); toast('Review scheduled'); pages.scheduling(v); } catch (er) { toast(er.message, 'err'); }
   };
   v.onclick = e => {
     const id = e.target.dataset.resch; if (!id) return;
     const m = modal(`<h2>Reschedule review</h2><label class="f">New date <i>*</i></label><input type="date" id="nd"><div class="row" style="margin-top:14px"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
     m.querySelector('#no').onclick = () => m.remove();
-    m.querySelector('#ok').onclick = async () => { try { await api('/scheduling/reschedule', { method: 'POST', body: { empId: id, month: S.month, date: m.querySelector('#nd').value } }); m.remove(); pages.scheduling(v); } catch (er) { toast(er.message); } };
+    m.querySelector('#ok').onclick = async () => { try { await api('/scheduling/reschedule', { method: 'POST', body: { empId: id, month: S.month, date: m.querySelector('#nd').value } }); m.remove(); pages.scheduling(v); } catch (er) { toast(er.message, 'err'); } };
   };
 };
 
@@ -393,7 +437,7 @@ pages.questions = async v => {
     m.querySelector('#no').onclick = () => m.remove();
     m.querySelector('#ok').onclick = async () => {
       const body = { id: q?.id, text: m.querySelector('#qt').value.trim(), type: m.querySelector('#qty').value, mandatory: m.querySelector('#qm').value === 'true', from: m.querySelector('#eff').value };
-      try { await api('/questions', { method: q ? 'PUT' : 'POST', body }); m.remove(); pages.questions(v); } catch (e) { toast(e.message); }
+      try { await api('/questions', { method: q ? 'PUT' : 'POST', body }); m.remove(); pages.questions(v); } catch (e) { toast(e.message, 'err'); }
     };
   };
   v.onclick = async e => {
@@ -568,7 +612,7 @@ function wireAppraisal(v) {
       else if (b.dataset.apdel) { const [k, i] = b.dataset.apdel.split(':'); AP.form[k].splice(+i, 1); if (!AP.form[k].length) AP.form[k].push(k === 'recap' ? { expectation: '', achievements: '', improvement: '' } : { kra: '', progress: '' }); paintAppraisal(v); }
       else if (b.id === 'apsub') { await saveAp(true); toast('Appraisal submitted'); apStep = 6; paintAppraisal(v); }
       else if (b.id === 'apxls') apExcel();
-    } catch (er) { toast(er.message); }
+    } catch (er) { toast(er.message, 'err'); }
   };
 }
 

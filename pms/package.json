@@ -3,5 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "Verve HRMS - Performance Management System (local demo, dummy data)",
-  "scripts": { "start": "node server.js" }
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

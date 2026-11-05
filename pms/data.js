@@ -8,10 +8,11 @@ const config = {
   operationalRange: [40, 80],
   peopleMin: 10,
   peopleMax: 20,
-  clickupMin: 60,
-  learningMin: 40,
-  ratingGapFlag: 20,           // section 8.4 O3
-  emailGapFlag: 15,            // section 11
+  // ratings are on a 0-5 scale
+  clickupMin: 3,
+  learningMin: 2,
+  ratingGapFlag: 1,            // section 8.4 O3
+  emailGapFlag: 0.75,          // section 11
   selfShare: 0.3,
   mgrShare: 0.7,
   lookbackMonths: 5,
@@ -136,16 +137,16 @@ function buildForm(emp, month, state = 'submitted') {
   const SOP = 'SOP link: https://docs.company.com/sop/qa';
   const LRN = 'Document link: https://docs.company.com/learn/ads';
   for (const k of Object.keys(kras)) for (const r of kras[k].rows) {
-    r.self = pick(80, 92);
+    r.self = pick(4, 5);
     r.selfRemark = r.kpi.startsWith('SOP') ? SOP : r.kpi.startsWith('Learning') ? LRN : 'Completed as planned this month';
-    r.mgr = rnd() < 0.7 ? r.self : r.self - pick(2, 8);
-    r.mgrRemark = r.mgr !== r.self ? 'Adjusted for delivery quality vs target' : '';
+    r.mgr = rnd() < 0.7 ? r.self : r.self - 1;
+    r.mgrRemark = r.mgr !== r.self ? 'Adjusted for delivery quality vs target' : r.mgr === 5 ? 'Exceeded the target this month' : '';
   }
   [['q1', 'Tight deadlines on two accounts; planned work earlier in the week'], ['q2', 'No issues at the moment'], ['q3', 'Launched 3 campaigns and automated the weekly report'], ['q4', 'Helped onboard a new teammate'], ['q5', 'Share a reusable report template across the team']]
     .forEach(([id, v]) => f.qa[id] = v);
   for (let i = 6; i <= 12; i++) {
     const s = pick(3, 5), m = rnd() < 0.75 ? s : Math.max(1, s - 1);
-    f.qa['q' + i] = { self: s, mgr: m, remark: m !== s ? 'Slightly below expectation this month' : '' };
+    f.qa['q' + i] = { self: s, mgr: m, remark: m !== s ? 'Slightly below expectation this month' : s === 5 ? 'Excellent this month' : '' };
   }
   if (state === 'submitted') { f.actualDate = f.reviewDate; f.submitted = true; f.locked = true; }
   if (emp.newJoiner) { Object.keys(f.qa).forEach(k => { }); }
@@ -182,23 +183,23 @@ function seedForms() {
   F(9).kras.operational.rows.forEach(r => { r.mgr = null; r.mgrRemark = ''; });
   F(9).kras.process.rows.forEach(r => { r.mgr = null; r.mgrRemark = ''; });
   F(9).kras.people.rows.forEach(r => { r.mgr = null; r.mgrRemark = ''; });
-  F(9).kras.process.rows[1].self = 58; F(9).kras.process.rows[1].selfRemark = 'Tasks updated weekly';
+  F(9).kras.process.rows[1].self = 3; F(9).kras.process.rows[1].selfRemark = 'Tasks updated weekly';
   for (let i = 6; i <= 12; i++) F(9).qa['q' + i].mgr = null;
   // Neha: not completed, review date missing, partial manager ratings
   const n = F(14); n.reviewDate = ''; n.scheduledDate = '2026-10-12'; n.actualDate = null; n.submitted = false; n.locked = false;
   n.kras.operational.rows[1].mgr = null; n.kras.people.rows.forEach(r => r.mgr = null);
-  // Meera: submitted with a 20 point gap
-  const m = F(15); m.kras.operational.rows.forEach(r => { r.self = 90; r.mgr = 70; r.mgrRemark = 'Targets missed on two accounts'; });
+  // Meera: submitted with a 2 point gap
+  const m = F(15); m.kras.operational.rows.forEach(r => { r.self = 5; r.mgr = 3; r.mgrRemark = 'Targets missed on two accounts'; });
   // Kabir: learning KRA not set for 3 months, complete, not submitted
   for (const mm of ['2026-08', '2026-09', '2026-10']) { const f = forms[`18|${mm}`]; if (f) { f.kras.people.rows = []; f.kras.people.weight = 20; } }
   F(18).submitted = false; F(18).locked = false;
   // Zoya: learning done, effective, recognised (mgr rating high)  |  Debarima: ClickUp low
-  F(5).kras.process.rows[1].mgr = 55; F(5).kras.process.rows[1].mgrRemark = 'Tasks not updated daily';
+  F(5).kras.process.rows[1].mgr = 2; F(5).kras.process.rows[1].mgrRemark = 'Tasks not updated daily';
   // Rahul (new joiner): questionnaire only; two complete months so the "set KRA" message appears
   const r = F(12); r.submitted = false; r.locked = false; r.actualDate = null; r.scheduledDate = '2026-10-27'; r.reviewDate = '2026-10-27';
   r.qa.q3 = 'N/A';
   // Aarav: a manager remark missing
-  const a = F(7); a.kras.operational.rows[1].mgr = a.kras.operational.rows[1].self - 5; a.kras.operational.rows[1].mgrRemark = '';
+  const a = F(7); a.kras.operational.rows[1].mgr = a.kras.operational.rows[1].self - 1; a.kras.operational.rows[1].mgrRemark = '';
   a.submitted = false; a.locked = false; a.actualDate = '2026-10-27';
   // Operational weight deviation for Tanvi (sub-KRAs also adjusted to match)
   const t = F(10); t.kras.operational.weight = 90; t.kras.operational.rows[0].weight = 45; t.kras.operational.rows[1].weight = 45;

@@ -12,6 +12,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 class HttpError extends Error { constructor(code, msg, extra) { super(msg); this.code = code; this.extra = extra; } }
 const bad = (msg, extra) => new HttpError(400, msg, extra);
 const forbid = () => new HttpError(403, 'You do not have access to this.');
+const notFound = msg => new HttpError(404, msg);
+// look up an employee from a request id; a missing or unknown id is a 404, not a crash
+const mustEmp = id => { const e = L.emp(+id); if (!e) throw notFound('Employee not found.'); return e; };
 
 const view = (u, i) => ({ id: u.id, code: u.code, name: u.name, designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
@@ -83,6 +86,8 @@ route('PUT', '/api/form', ({ user, body }) => {
   if (!manage && !selfEdit) throw forbid();
   // managers often give ratings and remarks verbally, so the team member may enter those too
   const mgrFields = manage || selfEdit;
+  const ratings = [...L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r.self, r.mgr])), ...Object.values(body.qa || {}).filter(a => a && typeof a === 'object').flatMap(a => [a.self, a.mgr])];
+  if (!ratings.every(okRating)) throw bad('Ratings must be a whole number from 0 to 5.');
   if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
   for (const [k] of L.KRAS) (body.kras?.[k]?.rows || []).forEach(br => {
     const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) return;
@@ -99,6 +104,7 @@ route('PUT', '/api/form', ({ user, body }) => {
 });
 const has = v => v;
 const num = v => (v === '' || v === null || v === undefined) ? null : Number(v);
+const okRating = v => num(v) === null || [0, 1, 2, 3, 4, 5].includes(num(v));
 
 route('POST', '/api/form/submit', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
@@ -257,7 +263,7 @@ route('GET', '/api/report', ({ user, q }) => {
   const view = q.view === 'team' || user.role === 'manager' || user.role === 'teamlead' ? q.view || 'team' : q.view || 'org';
   const rows = L.reportRows(user, month, { team: q.team, manager: q.manager, status: q.status });
   const all = L.reportRows(user, month);
-  const managers = [...new Set(all.map(r => r.managerId))].map(id => ({ id, name: L.emp(id).name, team: L.emp(id).team }));
+  const managers = [...new Set(all.map(r => r.managerId))].map(id => L.emp(id)).filter(Boolean).map(m => ({ id: m.id, name: m.name, team: m.team }));
   const byTeam = {};
   rows.forEach(r => (byTeam[`${r.manager} / ${r.team}`] ||= []).push(r));
   return {
@@ -281,7 +287,7 @@ route('GET', '/api/emails', ({ user, q }) => {
   return allowed.map(m => ({ managerId: m.id, name: m.name, team: m.team, state: (emailsOutbox.find(x => x.managerId === m.id && x.month === month) || {}).state || 'not generated' }));
 });
 route('GET', '/api/email', ({ user, q }) => {
-  const id = +q.manager;
+  const id = mustEmp(q.manager).id;
   if (user.role !== 'admin' && user.role !== 'director' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
   const month = q.month || config.currentMonth;
   const e = emailsOutbox.find(x => x.managerId === id && x.month === month);
@@ -299,19 +305,20 @@ route('POST', '/api/emails/generate', ({ user, body }) => {
 });
 route('POST', '/api/emails/send', ({ user, body }) => {
   if (user.role === 'employee') throw forbid();
+  const mgr = mustEmp(body.managerId);
+  if (user.role !== 'admin' && user.role !== 'director' && mgr.id !== user.id && !L.isAncestor(user.id, mgr.id)) throw forbid();
   const month = body.month || config.currentMonth;
   let e = emailsOutbox.find(x => x.managerId === +body.managerId && x.month === month);
   if (!e) emailsOutbox.push(e = { managerId: +body.managerId, month });
   e.state = 'sent'; e.sentAt = new Date().toISOString();
-  audit(user.name, 'email sent', `${L.emp(+body.managerId).name} ${month} (local demo: logged, no SMTP)`);
+  audit(user.name, 'email sent', `${mgr.name} ${month} (local demo: logged, no SMTP)`);
   return { ok: true, sentAt: e.sentAt };
 });
 
 // Annual review + one page summary
 route('GET', '/api/annual', ({ user, q }) => {
-  const empId = +(q.emp || user.id);
+  const e = mustEmp(q.emp || user.id), empId = e.id;
   if (!L.canView(user, empId)) throw forbid();
-  const e = L.emp(empId);
   const months = D.fyMonths();
   const summary = months.map(m => {
     const f = L.peek(empId, m);
@@ -364,7 +371,7 @@ route('GET', '/api/employees', ({ user, q }) => {
 });
 route('GET', '/api/employee-forms', ({ user, q }) => {
   adminOnly(user);
-  const id = +q.emp, e = L.emp(id);
+  const e = mustEmp(q.emp), id = e.id;
   const rows = D.fyMonths().map(m => { const f = L.peek(id, m); return { month: m, label: D.monthLabel(m), reviewDate: f ? f.reviewDate : '', status: f ? L.reviewStatus(f) : (m > config.currentMonth ? 'Not started' : 'Not started'), rating: f && f.submitted ? L.monthlyRating(f) : null, open: !!f }; });
   return { employee: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '' }, rows, annual: annualForms[`${id}|FY2026`] ? 'Submitted' : 'Opens in March' };
 });
@@ -381,7 +388,7 @@ route('POST', '/api/employees', ({ user, body }) => {
 });
 route('POST', '/api/employees/inactive', ({ user, body }) => {
   adminOnly(user);
-  const e = L.emp(+body.id);
+  const e = mustEmp(body.id);
   if (!body.date || !body.reason) throw bad('Inactive-from date and reason are required.');
   const f = L.peek(e.id, config.currentMonth);
   const warning = f && !['Completed and Submitted', 'Completed but Not Submitted'].includes(L.reviewStatus(f)) && body.date.slice(0, 7) === config.currentMonth
@@ -393,7 +400,7 @@ route('POST', '/api/employees/inactive', ({ user, body }) => {
 });
 route('POST', '/api/employees/reactivate', ({ user, body }) => {
   adminOnly(user);
-  const e = L.emp(+body.id); e.active = true; delete e.inactiveFrom; delete e.reason;
+  const e = mustEmp(body.id); e.active = true; delete e.inactiveFrom; delete e.reason;
   audit(user.name, 'reactivate', `${e.name} from ${body.date || config.today}`);
   return { ok: true };
 });
@@ -412,7 +419,7 @@ route('GET', '/api/reporting', ({ user, q }) => {
 });
 route('GET', '/api/reporting/person', ({ user, q }) => {
   adminOnly(user);
-  const e = L.emp(+q.id), month = config.currentMonth;
+  const e = mustEmp(q.id), month = config.currentMonth;
   const team = L.subordinates(e.id).filter(x => x.managerId === e.id).map(x => { const f = L.peek(x.id, month); return { id: x.id, name: x.name, designation: x.designation, reviewDate: f && f.reviewDate, status: f ? L.reviewStatus(f) : '-', rating: f && f.submitted ? L.monthlyRating(f) : null }; });
   return { person: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '', director: (() => { let c = e; while (c && c.role !== 'director') c = L.emp(c.managerId); return c ? c.name : ''; })() }, team, counts: L.counts(team) };
 });
@@ -510,7 +517,8 @@ const server = http.createServer((req, res) => {
       if (!r) return send(404, { error: 'Not found' });
       const user = L.emp(+req.headers['x-user']);
       if (url.pathname !== '/api/users' && (!user || !user.active)) return send(401, { error: 'Pick a user to continue.' });
-      const body = raw ? JSON.parse(raw) : {};
+      let body = {};
+      if (raw) { try { body = JSON.parse(raw); } catch { return send(400, { error: 'Request body is not valid JSON.' }); } }
       send(200, r.fn({ user, q: Object.fromEntries(url.searchParams), body }));
     } catch (e) {
       if (e instanceof HttpError) return send(e.code, { error: e.message, ...e.extra });
