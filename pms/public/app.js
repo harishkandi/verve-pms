@@ -21,7 +21,7 @@ const badge = st => {
   return `<span class="badge b-${c}">${esc(st)}</span>`;
 };
 const fmtD = d => { if (!d) return '–'; const [y, m, dd] = d.split('-'); return `${+dd} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
-const monthOpts = sel => S.me.months.filter(m => m.started).map(m => `<option value="${m.key}" ${m.key === sel ? 'selected' : ''}>${m.label}</option>`).join('');
+const monthOpts = sel => S.me.months.filter(m => m.started).map(m => `<option value="${m.key}" ${m.key === sel ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('');
 const errBox = e => `<div class="warn">${(e.data?.errors || [e.message]).map(esc).join('<br>')}</div>`;
 function modal(html) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.addEventListener('mousedown', ev => { if (ev.target === m) m.remove(); }); document.body.appendChild(m); return m; }
 
@@ -142,7 +142,7 @@ function drawForm(v, errors) {
   const noDate = !f.reviewDate && attempted;
   const pi = (FP.previewRating != null) ? `Monthly rating${FP.rating == null ? ' (preview, shown after submit)' : ''}: <b>${FP.previewRating}</b>` : 'Monthly rating: not available until all ratings are in';
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(S.me.months.find(x => x.key === S.month).label)}`) +
-    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label}</option>`).join('')}<option value="annual">Annual Review</option></select>${p.editKras ? '<button class="btn" id="copyk">Copy KRAs from last month</button>' : ''}<span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : ''}
+    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual Review</option></select>${p.copyKras ? '<button class="btn" id="copyk">Copy KRAs from last month</button>' : ''}<span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : ''}
      ${p.requestEdit ? '<button class="btn" id="req">Request edit access</button>' : ''}${p.unlock ? '<button class="btn" id="unlock">Reopen form</button>' : ''}</div>
     <div class="formhead">KRA : ${FP.fy} ${esc(S.me.months.find(x => x.key === S.month).label.replace(' ', ', '))}</div>
     <div class="card" style="margin-top:8px"><div class="row" style="margin:0"><div><b>Employee Name:</b> ${esc(e.name)} (${esc(e.designation)})<br><b>Reporting Manager:</b> ${m ? esc(m.name) : '–'}</div>
@@ -151,7 +151,6 @@ function drawForm(v, errors) {
     ${noDate ? '<div class="warn">Review Date is mandatory. Please enter the review date before submitting the form.</div>' : ''}
     ${errors ? `<div class="warn">${errors.map(esc).join('<br>')}</div>` : ''}
     <div class="small">${pi}</div></div>
-    ${p.upcoming ? '<div class="info">Upcoming month: you can plan the KRAs now. Ratings and the questionnaire open when the month starts.</div>' : ''}
     ${kraBanner}
     <div class="tabs" id="tabs">${[['operational', 'Operational'], ['process', 'Process'], ['people', 'People'], ['questionnaire', 'Questionnaire']].map(([k, l], i) => `<button data-t="${k}" class="${i ? '' : 'on'}">${l}</button>`).join('')}</div>
     ${sec('operational', 'Operational', '(Our value addition to the client via quality/financially)')}
@@ -270,14 +269,19 @@ pages.report = async v => {
 // ---------- scheduling ----------
 pages.scheduling = async v => {
   const d = await api('/scheduling?month=' + S.month);
-  v.innerHTML = head('Review scheduling and tracking', 'PMS › Scheduling') + `<div class="row">${monthSel()}<span class="sp"></span><span class="small">Dates are collected about 3 days before each window opens</span></div>
-  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Collected</th></tr>${d.windows.map(w => `<tr><td>${esc(w.team)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td></tr>`).join('')}</table></div>
-  <h2>Scheduled and actual dates</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Scheduled (chain)</th><th>Reschedules</th><th>Actual date</th><th>Due</th><th>Status</th><th></th></tr>
-  ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${esc(r.team)}</td><td>${r.history.length ? r.history.map(h => fmtD(h.from)).join(' → ') + ' → ' : ''}${fmtD(r.scheduled)}</td><td>${r.reschedules}</td>
-  <td><input type="date" data-act="${r.empId}" value="${r.actual || ''}"></td><td>${r.actual ? badge(r.dueStatus) : badge('Pending')}</td><td>${badge(r.status)}</td><td><button class="btn sm" data-resch="${r.empId}">Reschedule</button></td></tr>`).join('')}</table></div>
-  <p class="small">Each new date and who changed it is kept as history. Within/after due date compares the actual date with the end of the window; pending means there is no actual date.</p>`;
+  v.innerHTML = head('Review scheduling', 'PMS › Scheduling') + `<div class="row">${monthSel()}<span class="sp"></span><span class="small">Pick a review date for each team member. Use Reschedule to change a date that is already set.</span></div>
+  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th></tr>${d.windows.map(w => `<tr><td>${esc(w.team)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td></tr>`).join('')}</table></div>
+  <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Schedule date</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
+  ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${esc(r.team)}</td>
+  <td>${r.scheduled ? `${fmtD(r.scheduled)} <button class="btn sm" data-resch="${r.empId}">Reschedule</button>` : `<input type="date" data-sch="${r.empId}">`}</td>
+  <td>${r.reschedules ? `${r.reschedules}× <span class="small">${r.history.map(h => fmtD(h.from)).join(' → ')} → ${fmtD(r.scheduled)}</span>` : '–'}</td>
+  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('')}</table></div>
+  <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form.</p>`;
   onMonth(() => pages.scheduling(v));
-  v.onchange = async e => { if (e.target.dataset.act) { await api('/scheduling/actual', { method: 'POST', body: { empId: e.target.dataset.act, month: S.month, date: e.target.value } }); toast('Actual date saved'); pages.scheduling(v); } };
+  v.onchange = async e => {
+    const id = e.target.dataset.sch; if (!id || !e.target.value) return;
+    try { await api('/scheduling/schedule', { method: 'POST', body: { empId: id, month: S.month, date: e.target.value } }); toast('Review scheduled'); pages.scheduling(v); } catch (er) { toast(er.message); }
+  };
   v.onclick = e => {
     const id = e.target.dataset.resch; if (!id) return;
     const m = modal(`<h2>Reschedule review</h2><label class="f">New date <i>*</i></label><input type="date" id="nd"><div class="row" style="margin-top:14px"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
@@ -538,7 +542,7 @@ function paintAppraisal(v) {
   ];
   const [title, desc, body] = steps[apStep - 1];
   v.innerHTML = head('Appraisal Form ' + AP.fy, `PMS › ${esc(e.name)} › Annual Review`) +
-    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}">${m.label}</option>`).join('')}<option value="annual" selected>Annual Review</option></select>${sub ? '<span class="badge b-green">Submitted</span>' : ''}</div>
+    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}">${m.label.split(" ")[0]}</option>`).join('')}<option value="annual" selected>Annual Review</option></select>${sub ? '<span class="badge b-green">Submitted</span>' : ''}</div>
     <div class="apcard"><div class="aphead"><b class="aplogo">Verve <small>Advisory</small></b><span><b>Appraisal ${AP.fy}</b><small>PERFORMANCE REVIEW FORM</small></span></div>
     <div class="apsteps">${AP_STEPS.map((s, i) => `<button class="apstep ${i + 1 < apStep ? 'done' : ''} ${i + 1 === apStep ? 'cur' : ''}" data-apgo="${i + 1}"><i>${i + 1 < apStep ? '✓' : i + 1}</i><span>${s}</span></button>`).join('')}</div>
     <div class="apbody"><h2 class="aptitle">${title.toUpperCase()}</h2>${desc ? `<p class="apdesc">${desc}</p>` : ''}${body}</div>

@@ -1,7 +1,7 @@
 // Seed data and shared config for the PMS demo. Everything lives in memory and resets on restart.
 
 const config = {
-  currentMonth: '2026-10',     // review month being run (screens in the spec show October 2026)
+  currentMonth: '2026-11',     // review month being run; its forms are open from the 1st of the month
   fyStartMonth: '2026-04',
   today: '2026-11-04',
   weights: { operational: 60, process: 20, people: 20 },
@@ -152,32 +152,33 @@ function buildForm(emp, month, state = 'submitted') {
   return f;
 }
 
+const SEED_MONTH = '2026-10';   // demo history runs up to October 2026; the current month starts blank
 function seedForms() {
-  const months = fyMonths(2026).filter(m => m <= config.currentMonth);
+  const months = fyMonths(2026).filter(m => m <= SEED_MONTH);
   for (const emp of employees) {
     if (!emp.managerId || emp.role === 'admin') continue;
     for (const m of months) {
       const joinedMonth = emp.joined.slice(0, 7);
       if (m < joinedMonth) continue;
       if (!emp.active && m > emp.inactiveFrom.slice(0, 7)) continue;
-      const state = m === config.currentMonth ? 'open' : 'submitted';
+      const state = m === SEED_MONTH ? 'open' : 'submitted';
       const f = buildForm(emp, m, state);
       if (emp.newJoiner) { f.kras = emptyKras(); }
       forms[`${emp.id}|${m}`] = f;
     }
   }
-  const cm = config.currentMonth;
+  const cm = SEED_MONTH;
   const F = id => forms[`${id}|${cm}`];
   const sub = f => { f.submitted = true; f.locked = true; f.actualDate = f.actualDate || f.reviewDate; };
   // October states shown in the spec mock-ups
   for (const id of [6, 4, 13, 17, 3]) { sub(F(id) || {}); }              // managers
   sub(F(7)); sub(F(10)); sub(F(11)); sub(F(5)); sub(F(15)); sub(F(16));
   // Aarav: submitted on time (default)  |  Isha: complete, not submitted, after due date, rescheduled twice, SOP link missing
-  F(8).actualDate = '2026-11-01'; F(8).submitted = false; F(8).locked = false; F(8).scheduledDate = '2026-10-28';
+  F(8).reviewDate = '2026-11-01'; F(8).actualDate = '2026-11-01'; F(8).submitted = false; F(8).locked = false; F(8).scheduledDate = '2026-10-28';
   F(8).reschedules = [{ from: '2026-10-28', to: '2026-10-30', by: 'Rohan Shah', at: '2026-10-28' }, { from: '2026-10-30', to: '2026-11-01', by: 'Rohan Shah', at: '2026-10-30' }];
   F(8).kras.process.rows[0].selfRemark = 'Updated checklist';
   // Dev: pending - nothing from manager, no actual date
-  F(9).actualDate = null; F(9).submitted = false; F(9).locked = false; F(9).scheduledDate = '2026-10-29';
+  F(9).reviewDate = ''; F(9).actualDate = null; F(9).submitted = false; F(9).locked = false; F(9).scheduledDate = '2026-10-29';
   F(9).kras.operational.rows.forEach(r => { r.mgr = null; r.mgrRemark = ''; });
   F(9).kras.process.rows.forEach(r => { r.mgr = null; r.mgrRemark = ''; });
   F(9).kras.people.rows.forEach(r => { r.mgr = null; r.mgrRemark = ''; });

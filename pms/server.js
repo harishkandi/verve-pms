@@ -15,6 +15,8 @@ const forbid = () => new HttpError(403, 'You do not have access to this.');
 
 const view = (u, i) => ({ id: u.id, code: u.code, name: u.name, designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
+// anyone who can edit the KRAs, and the employee on their own form, may choose to copy last month's KRAs
+const canCopyKras = (viewer, f) => !f.locked && (canEditKras(viewer, f) || viewer.id === f.empId);
 function formPayload(viewer, f) {
   const e = L.emp(f.empId);
   const month = f.month;
@@ -27,9 +29,8 @@ function formPayload(viewer, f) {
     rating: f.submitted ? L.monthlyRating(f) : null, previewRating: L.monthlyRating(f),
     newJoiner: L.isNewJoiner(f), validation: valid,
     perms: {
-      upcoming: month > config.currentMonth,
-      editSelf: selfEdit && open && month <= config.currentMonth, editManager: manage && open && month <= config.currentMonth, canSubmit: manage && open && month <= config.currentMonth,
-      editKras: canEditKras(viewer, f), requestEdit: f.locked && selfEdit && viewer.role !== 'admin',
+      editSelf: selfEdit && open, editManager: (manage || selfEdit) && open, canSubmit: manage && open,
+      editKras: canEditKras(viewer, f), copyKras: canCopyKras(viewer, f), requestEdit: f.locked && selfEdit && viewer.role !== 'admin',
       requestKra: !f.locked && viewer.id === f.empId && !hasReports(viewer.id) && !f.kraAccess && !f.kraRequested && viewer.role !== 'admin',
       kraRequested: !!f.kraRequested && !f.kraAccess, approveKra: !!f.kraRequested && manage && !f.locked, kraAccess: !!f.kraAccess,
       unlock: f.locked && manage,
@@ -55,7 +56,10 @@ const routes = [];
 const route = (method, pattern, fn) => routes.push({ method, re: new RegExp('^' + pattern + '$'), fn });
 
 route('GET', '/api/users', () => employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation })));
-route('GET', '/api/me', ({ user }) => ({ ...view(user), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth) }));
+// the current month's form is open for everyone from the 1st, whether or not last month's review is complete
+const ensureMonthForms = () => employees.filter(e => e.active && e.managerId && e.role !== 'admin').forEach(e => L.getForm(e.id, config.currentMonth));
+ensureMonthForms();
+route('GET', '/api/me', ({ user }) => (ensureMonthForms(), { ...view(user), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth) }));
 
 // Home
 route('GET', '/api/home', ({ user, q }) => {
@@ -77,16 +81,18 @@ route('PUT', '/api/form', ({ user, body }) => {
   if (f.locked) throw bad('This form is locked. Request edit access to reopen it.');
   const manage = L.canManage(user, f.empId), selfEdit = L.canSelfEdit(user, f.empId);
   if (!manage && !selfEdit) throw forbid();
+  // managers often give ratings and remarks verbally, so the team member may enter those too
+  const mgrFields = manage || selfEdit;
   if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
   for (const [k] of L.KRAS) (body.kras?.[k]?.rows || []).forEach(br => {
     const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) return;
     if (selfEdit) { r.self = num(br.self); r.selfRemark = br.selfRemark ?? r.selfRemark; }
-    if (manage) { r.mgr = num(br.mgr); r.mgrRemark = br.mgrRemark ?? r.mgrRemark; }
+    if (mgrFields) { r.mgr = num(br.mgr); r.mgrRemark = br.mgrRemark ?? r.mgrRemark; }
   });
   for (const [id, a] of Object.entries(body.qa || {})) {
     if (typeof a === 'string') { if (selfEdit || manage) f.qa[id] = a; continue; }
     const cur = f.qa[id] || {};
-    f.qa[id] = { self: selfEdit ? num(a.self) : cur.self, mgr: manage ? num(a.mgr) : cur.mgr, remark: manage ? (a.remark ?? cur.remark) : cur.remark };
+    f.qa[id] = { self: selfEdit ? num(a.self) : cur.self, mgr: mgrFields ? num(a.mgr) : cur.mgr, remark: mgrFields ? (a.remark ?? cur.remark) : cur.remark };
   }
   audit(user.name, 'save form', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
@@ -101,7 +107,7 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   const errs = L.validate(f).filter(x => x.level === 'block').map(x => x.msg);
   if (!L.ratingsComplete(f)) errs.push('All self and manager ratings must be entered before the form is submitted.');
   if (errs.length) throw bad('Form cannot be submitted.', { errors: [...new Set(errs)] });
-  f.submitted = true; f.locked = true; f.actualDate = f.actualDate || f.reviewDate;
+  f.submitted = true; f.locked = true;
   f.qSnapshot = L.activeQuestions(f.month, null);
   audit(user.name, 'submit form', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
@@ -174,7 +180,7 @@ route('PUT', '/api/kras', ({ user, body }) => {
 // copy the KRA structure (KPIs, targets, weightages) from the previous month; ratings and remarks start empty
 route('POST', '/api/form/copy-kras', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
-  if (!canEditKras(user, f)) throw new HttpError(403, 'You cannot change KRA settings or weightage. Send a request for edit to your manager.');
+  if (!canCopyKras(user, f)) throw forbid();
   const months = D.fyMonths(), i = months.indexOf(f.month);
   const src = i > 0 ? L.getForm(f.empId, months[i - 1]) : null;
   if (!src) throw bad('There is no previous month to copy KRAs from.');
@@ -216,6 +222,7 @@ route('PUT', '/api/appraisal', ({ user, body }) => {
 // Scheduling
 route('GET', '/api/scheduling', ({ user, q }) => {
   const month = q.month || config.currentMonth;
+  L.visibleEmployees(user).filter(e => e.id !== user.id || user.role === 'employee').forEach(e => L.getForm(e.id, month));
   const rows = L.reportRows(user, month, { team: q.team });
   const teams = [...new Set(rows.map(r => r.team))];
   const windows = teams.map(t => {
@@ -234,17 +241,13 @@ route('POST', '/api/scheduling/reschedule', ({ user, body }) => {
   audit(user.name, 'reschedule', `${L.emp(f.empId).name} to ${body.date}`);
   return { ok: true };
 });
-route('POST', '/api/scheduling/actual', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  if (!L.canManage(user, f.empId)) throw forbid();
-  f.actualDate = body.date || null;
-  audit(user.name, 'actual date', `${L.emp(f.empId).name} ${body.date}`);
-  return { ok: true };
-});
 route('POST', '/api/scheduling/schedule', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
   if (!L.canManage(user, f.empId)) throw forbid();
+  if (!body.date) throw bad('Select a schedule date.');
+  if (f.scheduledDate) throw bad('This review is already scheduled. Use Reschedule to change the date.');
   f.scheduledDate = body.date;
+  audit(user.name, 'schedule', `${L.emp(f.empId).name} ${body.date}`);
   return { ok: true };
 });
 

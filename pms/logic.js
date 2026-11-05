@@ -37,11 +37,10 @@ function getForm(empId, month) {
   if (forms[k]) return forms[k];
   const e = emp(empId);
   if (!e || !D.fyMonths().includes(month) || month < e.joined.slice(0, 7)) return null;
-  const prev = peek(empId, D.fyMonths().includes(prevMonth(month)) ? prevMonth(month) : '');
-  const kras = prev ? JSON.parse(JSON.stringify(prev.kras)) : (e.newJoiner ? D.emptyKras() : D.defaultRows());
-  for (const [k2] of KRAS) kras[k2].rows.forEach(r => { r.self = null; r.selfRemark = ''; r.mgr = null; r.mgrRemark = ''; });
+  // a new month starts with no KRAs; the person chooses whether to copy last month's (Copy KRAs from last month)
+  const kras = D.emptyKras();
   const win = D.windowFor(e.team, month);
-  return forms[k] = { empId, month, reviewDate: '', scheduledDate: win.start, actualDate: null, reschedules: [], submitted: false, locked: false, kras, qa: {}, qSnapshot: null };
+  return forms[k] = { empId, month, reviewDate: '', scheduledDate: null, actualDate: null, reschedules: [], submitted: false, locked: false, kras, qa: {}, qSnapshot: null };
 }
 
 function activeQuestions(month, form) {
@@ -186,9 +185,11 @@ function reviewStatus(f) {
   // incomplete: Pending once the due date (end of the team's window) has passed, otherwise still in progress
   return dueInfo(f).dueDate < config.today ? 'Pending' : 'Review Not Completed';
 }
+// the actual review date is the Review Date entered on the monthly form
+const actualDate = f => f.reviewDate || null;
 function dueInfo(f) {
   const e = emp(f.empId), w = D.windowFor(e.team, f.month);
-  const due = f.actualDate ? (f.actualDate <= w.end ? 'Within due date' : 'After due date') : 'Pending';
+  const actual = actualDate(f), due = actual ? (actual <= w.end ? 'Within due date' : 'After due date') : 'Pending';
   return { windowStart: w.start, dueDate: w.end, due };
 }
 
@@ -204,7 +205,7 @@ function reportRows(viewer, month, filters = {}) {
     const di = dueInfo(f);
     rows.push({
       empId: e.id, name: e.name, team: e.team, designation: e.designation, managerId: e.managerId, manager: mgr ? mgr.name : '',
-      scheduled: f.scheduledDate, due: di.dueDate, actual: f.actualDate, dueStatus: di.due,
+      scheduled: f.scheduledDate, due: di.dueDate, actual: actualDate(f), dueStatus: di.due,
       reschedules: f.reschedules.length, status: reviewStatus(f), rating: f.submitted ? monthlyRating(f) : null,
       flags: [...new Set(v.filter(x => x.level !== 'info').map(x => x.short))], allFlags: v,
     });
