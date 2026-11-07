@@ -27,8 +27,8 @@ The first start against an empty database saves the seeded demo data. Without `D
 One staging environment per HRMS module, each deploying from its own branch of `adminsoftware-alt/verve-hrms`.
 For PMS: branch `feature/pms`, Neon project `verve-pms` (Singapore).
 
-- **API (Render)**: `render.yaml` at the repo root. render.com -> New -> Blueprint -> this repo; paste the Neon
-  pooled connection string when asked for `DATABASE_URL`. Free tier sleeps after 15 minutes idle (first visit ~1 minute).
-- **Frontend (Vercel)**: new project from this repo, Root Directory `pms/public`, Framework "Other", no build command.
-  `pms/public/vercel.json` forwards `/api/*` to the Render service, so the pages need no API URL.
+- **Render** hosts the whole app (pages + API) from `render.yaml` at the repo root: render.com -> New -> Blueprint ->
+  this repo; paste the Neon pooled connection string when asked for `DATABASE_URL`.
+  Free tier sleeps after 15 minutes idle (first visit ~1 minute).
+- Workflow: work on your own branch (e.g. `pms/harish`), open a pull request into `feature/pms`; merging it redeploys staging.
 - The hosted site shows a STAGING badge.

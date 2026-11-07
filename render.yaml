@@ -1,4 +1,4 @@
-# Render Blueprint: staging API for Verve PMS. Data lives in Neon Postgres (DATABASE_URL), so it survives restarts and deploys.
+# Render Blueprint: staging for Verve PMS (pages + API from one Node service). Data lives in Neon Postgres (DATABASE_URL), so it survives restarts and deploys.
 # Each HRMS module gets its own service from its own branch (feature/pms, feature/attendance, ...).
 services:
   - type: web
