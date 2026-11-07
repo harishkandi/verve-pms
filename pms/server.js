@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const D = require('./data');
 const L = require('./logic');
+const DB = require('./db');
 const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, editRequests, audit } = D;
 
 const PORT = process.env.PORT || 3000;
@@ -510,7 +511,7 @@ const server = http.createServer((req, res) => {
   }
   let raw = '';
   req.on('data', c => raw += c);
-  req.on('end', () => {
+  req.on('end', async () => {
     const send = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
     try {
       const r = routes.find(x => x.method === req.method && x.re.test(url.pathname));
@@ -519,11 +520,16 @@ const server = http.createServer((req, res) => {
       if (url.pathname !== '/api/users' && (!user || !user.active)) return send(401, { error: 'Pick a user to continue.' });
       let body = {};
       if (raw) { try { body = JSON.parse(raw); } catch { return send(400, { error: 'Request body is not valid JSON.' }); } }
-      send(200, r.fn({ user, q: Object.fromEntries(url.searchParams), body }));
+      const result = r.fn({ user, q: Object.fromEntries(url.searchParams), body });
+      // store any change before answering, so a saved form survives a restart
+      try { await DB.save(); } catch (e) { console.error('Saving to Postgres failed:', e.message); return send(503, { error: 'Could not save to the database. Please try again.' }); }
+      send(200, result);
     } catch (e) {
       if (e instanceof HttpError) return send(e.code, { error: e.message, ...e.extra });
       console.error(e); send(500, { error: 'Server error: ' + e.message });
     }
   });
 });
-server.listen(PORT, () => console.log(`Verve PMS demo running at http://localhost:${PORT}`));
+DB.init().then(
+  () => server.listen(PORT, () => console.log(`Verve PMS demo running at http://localhost:${PORT}`)),
+  e => { console.error('Could not connect to Postgres:', e.message); process.exit(1); });

@@ -1,15 +1,19 @@
-# Render Blueprint: staging for Verve PMS (in-memory seeded demo data; resets on every restart/deploy)
+# Render Blueprint: staging API for Verve PMS. Data lives in Neon Postgres (DATABASE_URL), so it survives restarts and deploys.
+# Each HRMS module gets its own service from its own branch (feature/pms, feature/attendance, ...).
 services:
   - type: web
     name: verve-pms-staging
     runtime: node
     plan: free
+    region: singapore          # same region as the Neon project (aws-ap-southeast-1)
     rootDir: pms
-    branch: pms/kandi-dev
-    buildCommand: npm install
+    branch: feature/pms
+    buildCommand: npm ci
     startCommand: node server.js
     healthCheckPath: /api/users
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: DATABASE_URL
+        sync: false            # Render asks for it when the Blueprint is created; paste the Neon pooled connection string

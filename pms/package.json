@@ -2,11 +2,16 @@
   "name": "verve-pms",
   "version": "0.1.0",
   "private": true,
-  "description": "Verve HRMS - Performance Management System (local demo, dummy data)",
+  "description": "Verve HRMS - Performance Management System (demo data; stored in Postgres when DATABASE_URL is set)",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --env-file-if-exists=../.env.local server.js",
+    "db:reset": "node --env-file-if-exists=../.env.local db.js --reset"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
   }
 }
