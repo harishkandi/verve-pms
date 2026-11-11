@@ -5,7 +5,7 @@
 const D = require('./data');
 
 // the in-memory containers that make up the app state; they are refilled in place so every module keeps its references
-const KEYS = ['config', 'employees', 'questions', 'paramsVersions', 'forms', 'annualForms', 'auditLog', 'emailsOutbox', 'editRequests', 'appraisals', 'calendarLinks'];
+const KEYS = ['config', 'employees', 'questions', 'paramsVersions', 'forms', 'annualForms', 'auditLog', 'emailsOutbox', 'appraisals', 'calendarLinks'];
 const ROW_ID = 1;
 // pg 8 already treats sslmode=require as verify-full; say so explicitly to keep that behaviour and silence its warning
 const URL = process.env.DATABASE_URL && process.env.DATABASE_URL.replace(/sslmode=(prefer|require|verify-ca)\b/, 'sslmode=verify-full');

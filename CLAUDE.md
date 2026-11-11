@@ -21,7 +21,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   them from one jsonb row (`pms_state`, id 1) on boot (seeding it when empty) and saves after any request that changed
   state; the server answers only after the save. No `DATABASE_URL` → in memory, resets on restart.
   New state containers must be added to `KEYS` in `db.js` and mutated in place (never reassigned).
-- Domain rules: ratings are 0-5; a 5 needs a remark; monthly rating = per sub-KRA 30% self + 70% manager, weighted by
+- Domain rules: ratings are 0-5; a manager remark is needed only when self and manager ratings differ; a submitted
+  monthly form is locked for good (no reopen, no edit request, admins included); until then the employee edits their
+  own KRAs directly (there is no request/approve step); the One Pager Document is hidden from
+  employees; monthly rating = per sub-KRA 30% self + 70% manager, weighted by
   sub-KRA then KRA weight; demo "today" is `config.today` in `data.js`.
 
 ## Commands (run in `pms/`)

@@ -15,6 +15,12 @@ async function api(path, opts = {}) {
   });
   const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
   if (res.status === 401 && S.me) { S.me = null; S.month = null; boot(); }
+  if (res.status === 404 && data.code === 'NO_ROUTE') {
+    // this page is older than the server (PMS was updated): load the new version, at most once a minute
+    let last = 0; try { last = +sessionStorage.getItem('pmsReloadedAt') || 0; sessionStorage.setItem('pmsReloadedAt', String(Date.now())); } catch {}
+    if (Date.now() - last > 60000) { location.reload(); return new Promise(() => {}); }
+    data.error = 'PMS was just updated. Please reload the page (Ctrl+F5).';
+  }
   if (!res.ok) { const e = new Error(data.error || 'Error'); e.data = data; throw e; }
   return data;
 }
@@ -244,7 +250,7 @@ async function start() {
     ['Parameters Summary', '#/params', 'list'],
     r === 'admin' && '--Admin',
     r === 'admin' && ['Employees', '#/employees', 'idcard'],
-    r === 'admin' && ['Reporting Manager', '#/reporting/Manager', 'sitemap'],
+    r === 'admin' && ['Reporting Manager', '#/reporting', 'sitemap'],
     r === 'admin' && ['Audit Log', '#/audit', 'clock'],
     r === 'admin' && ['Settings', '#/config', 'sliders'],
   ].filter(Boolean);
@@ -462,7 +468,7 @@ pages.home = async (v, opts = {}) => {
   const c = d.counts, pct = pctOf(c.submitted, c.scheduled), month = d.label.split(' ')[0];
   let html = null;
   if (mgr) {
-    const q = d.quick, teams = d.teams, reqs = d.editRequests, att = d.attention, SHOW = 8;
+    const q = d.quick, teams = d.teams, att = d.attention, SHOW = 8;
     const quick = [
       ['calendar', '', 'Scheduling', '#/scheduling', `${q.datesCollected} of ${q.datesTotal} dates collected`],
       ['chart', 'y', 'Status report', '#/report', 'Org and team views'],
@@ -488,8 +494,7 @@ pages.home = async (v, opts = {}) => {
     <div class="wgrid">
       ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(a.team)} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
       <div class="m" style="box-shadow:none;background:none;gap:14px">
-        ${widget('pencil', 'Edit requests', reqs.length ? `<span class="badge b-amber">${reqs.length} open</span>` : '', reqs.length ? `<div class="mb flush">${reqs.map(r => `<div class="lrow"><span class="avatar s">${initials(r.name)}</span><div class="t"><b>${esc(r.name)}</b><span>${r.type === 'kra' ? 'Edit KRAs' : 'Reopen form'} · ${esc(monthLabel(r.month).split(' ')[0] || r.month)}</span></div><a class="btn sm yel" href="#/form/${r.empId}/${r.month}">Review</a></div>`).join('')}</div>` : '<div class="empty">No open requests.</div>', 'w12')}
-        ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => `<div class="win"><b title="${esc(t.team)}">${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
+             ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => `<div class="win"><b title="${esc(t.team)}">${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
       </div>
     </div>`;
     if (v.querySelector('#hShell') && opts.partial) {
@@ -568,9 +573,6 @@ function drawForm(v, errors) {
     }).join('')}
     <tr class="sub"><td></td><td></td><td><b>Totals</b></td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td colspan="2">Total Calculation : ${calc}</td></tr></table></div>` + btns;
   };
-  const kraBanner = p.approveKra ? `<div class="warn" style="display:flex;gap:10px;align-items:center">${esc(e.name)} has requested to edit their KRAs. <span class="sp"></span><button class="btn pri sm" data-kapp="1">Approve</button><button class="btn sm" data-kapp="0">Decline</button></div>`
-    : p.kraRequested ? '<div class="warn" style="background:var(--ambbg);color:var(--amb);border-color:var(--amb);font-weight:600">Your request to edit KRAs has been sent. You can update or add KRAs once your manager approves it.</div>'
-    : (p.kraAccess && e.id === S.me.id && p.editKras) ? '<div class="ok">Your manager approved KRA editing. You can update or add sub-KRAs below.</div>' : '';
   const qs = FP.questions;
   const text = qs.filter(q => q.type === 'text'), rate = qs.filter(q => q.type === 'rating');
   const noDate = !f.reviewDate && attempted;
@@ -580,12 +582,11 @@ function drawForm(v, errors) {
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>' : ''}
     <div class="formhead">KRA : ${FP.fy} ${esc(monthLabel(S.month).replace(' ', ', '))}</div>
     <div class="card" style="margin-top:8px"><div class="row" style="margin:0"><div><b>Employee Name:</b> ${esc(e.name)} (${esc(e.designation)})<br><b>Reporting Manager:</b> ${m ? esc(m.name) : 'Not assigned'}</div>
-    ${p.requestKra ? '<button class="btn yel" id="kreq" style="margin-left:24px;min-width:280px;padding:10px 16px">Send Request for edit access</button>' : ''}<span class="sp"></span>
+<span class="sp"></span>
     <div><label class="f" style="margin:0">Review Date <i>*</i></label><input type="date" id="reviewDate" class="${noDate ? 'err' : ''}" value="${esc(f.reviewDate)}" ${p.editSelf || p.editManager ? '' : 'disabled'}></div></div>
     ${noDate ? '<div class="warn">Review Date is mandatory. Please enter the review date before submitting the form.</div>' : ''}
     ${errors ? `<div class="warn">${errors.map(esc).join('<br>')}</div>` : ''}
     <div class="small">${pi}</div></div>
-    ${kraBanner}
     <div class="tabs" id="tabs">${[['operational', 'Operational'], ['process', 'Process'], ['people', 'People'], ['questionnaire', 'Questionnaire']].map(([k, l], i) => `<button data-t="${k}" class="${i ? '' : 'on'}">${l}</button>`).join('')}</div>
     ${sec('operational', 'Operational', '(Our value addition to the client via quality/financially)')}
     ${sec('process', 'Process', '(SOP and ClickUp)')}
@@ -690,8 +691,6 @@ function wireForm(v) {
         if (!await confirmBox('Copy KRAs from last month?', 'This replaces this month\'s KRAs with last month\'s. Ratings and remarks for this month will be cleared.', { ok: 'Copy KRAs', danger: true })) return;
         FP = await post('/form/copy-kras'); toast('KRAs copied from last month'); drawForm(v);
       }
-      else if (t.id === 'kreq') { FP = await post('/form/kra-request'); toast('Request sent to your manager'); drawForm(v); }
-      else if (t.dataset.kapp) { FP = await post('/form/kra-approve', { approve: t.dataset.kapp === '1' }); toast(t.dataset.kapp === '1' ? 'Approved' : 'Declined'); drawForm(v); }
     } catch (er) { toast(er.message, 'err'); }
   };
 }
@@ -949,23 +948,72 @@ async function questionsBox(v) {
 
 // ---------- employees (admin) ----------
 pages.employees = async v => {
-  const d = await api('/employees');
-  const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '';
-  const rows = (tab === 'active' ? d.active : d.inactive).filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl));
-  const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length;
-  v.innerHTML = head(`Employees: ${tab}`, 'PMS › Employees (admin view)') + `<div class="row"><button class="btn ${tab === 'active' ? 'pri' : ''}" data-tab="active">Active (${d.active.length})</button><button class="btn ${tab === 'inactive' ? 'pri' : ''}" data-tab="inactive">Inactive (${d.inactive.length})</button>
-  <input id="eq" placeholder="Search by name, code or email…" value="${esc(S.eq || '')}" style="width:270px"><select id="et"><option value="">All teams</option>${d.teams.map(t => `<option ${t === fl ? 'selected' : ''}>${t}</option>`).join('')}</select><span class="sp"></span><button class="btn yel" data-a="add">+ Add new member</button></div>
+  const d = await api('/employees'), st = d.stats;
+  // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
+  const ROLEF = { director: ['director'], manager: ['manager', 'teamlead'], employee: ['employee'] };
+  const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '', rf = tab === 'active' && ROLEF[S.erole] ? S.erole : '';
+  const rows = (tab === 'active' ? d.active : d.inactive).filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && (!rf || ROLEF[rf].includes(e.role)));
+  const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
+  const tile = (key, cls, n, label, on, hint) => `<button class="tile stat ${cls} ${on ? 'on' : ''}" data-stat="${key}" title="${hint}"><b>${n}</b><span>${label}</span></button>`;
+  const shown = tab === 'inactive' ? 'Inactive members' : { director: 'Directors', manager: 'Managers and team leads', employee: 'Executives and interns' }[rf] || 'All active members';
+  const opts = (list, cur) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
+  const mgrOpts = e => {
+    const list = d.managers.filter(x => x.id !== e.id);
+    if (e.managerId && !list.some(x => x.id === e.managerId)) list.push({ id: e.managerId, name: e.manager }); // keep a current manager who is no longer in the list
+    return '<option value="">No manager</option>' + list.map(x => `<option value="${x.id}" ${x.id === e.managerId ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  };
+  const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
+  v.innerHTML = head('Employees', 'PMS › Employees (admin view) · change team, designation or manager right in the table') + `<div class="tiles stats">
+    ${tile('all', '', st.members, 'Active members', tab === 'active' && !rf, 'Show all active members')}
+    ${tile('director', 'b', st.directors, 'Directors', rf === 'director', 'Show directors')}
+    ${tile('manager', 'g', st.managers, 'Managers and team leads', rf === 'manager', 'Show managers and team leads')}
+    ${tile('employee', 'a', st.executives, 'Executives and interns', rf === 'employee', 'Show executives and interns')}
+    ${tile('inactive', 'r', st.inactive, 'Inactive', tab === 'inactive', 'Show inactive members')}
+    ${tile('questions', '', st.questions, 'Review questions', false, 'Open the questionnaire in Parameters Summary')}</div>
+  <div class="row"><b>${shown} (${rows.length})</b><input id="eq" placeholder="Search by name, code or email…" value="${esc(S.eq || '')}" style="width:270px"><select id="et"><option value="">All teams</option>${d.teams.map(t => `<option ${t === fl ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select><span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn yel" data-a="add">+ Add new member</button></div>
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
-  <div class="tablewrap"><table><tr><th>Code</th><th>Employee</th><th>Designation</th><th>Team</th><th>Reporting manager</th><th>Joined</th><th>${tab === 'active' ? esc(monthLabel(S.me.currentMonth).split(' ')[0]) + ' review' : 'Inactive from'}</th>${tab === 'inactive' ? '<th>Reason</th>' : ''}<th>Actions</th></tr>
-  ${rows.map(e => `<tr><td>${esc(e.code)}</td><td><a href="#/empforms/${e.id}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a><div class="small" style="max-width:200px;overflow-wrap:anywhere">${e.email ? esc(e.email) : 'No work email'}</div></td><td>${esc(e.designation)}</td><td>${esc(e.team)}</td><td>${esc(e.manager)}</td><td style="white-space:nowrap">${fmtY(e.joined)}</td><td>${tab === 'active' ? badge(e.reviewStatus) : `<span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span>`}</td>${tab === 'inactive' ? `<td>${esc(e.reason)}</td>` : ''}
-  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Forms' : 'Past forms'}</a><button class="btn sm" data-a="edit" data-id="${e.id}">Edit</button>${tab === 'active' ? `<button class="btn sm" data-a="off" data-id="${e.id}" data-n="${esc(e.name)}" title="Move to inactive">Deactivate</button>` : `<button class="btn sm pri" data-a="on" data-id="${e.id}">Reactivate</button>`}</span></td></tr>`).join('') || `<tr><td colspan="10">No one matches.</td></tr>`}</table></div>
-  <p class="small">Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
+  <div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
+  ${rows.map(e => `<tr><td><a href="#/empforms/${e.id}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a><div class="small" style="max-width:220px;overflow-wrap:anywhere">${esc(e.code)} · ${e.email ? esc(e.email) : 'No work email'}</div></td>
+  <td>${cell(e, 'team', opts(d.teams, e.team), e.team)}</td>
+  <td>${cell(e, 'designation', opts(d.designations, e.designation) + '<option value="__new">Other…</option>', e.designation)}</td>
+  <td>${cell(e, 'managerId', mgrOpts(e), e.manager || 'No manager')}</td>
+  ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
+  <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
+  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a><button class="btn sm" data-a="edit" data-id="${e.id}">Edit</button></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 6 : 7}">No one matches.</td></tr>`}</table></div>
+  <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
   v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); }); } };
   const emailOk = s => !s || s.toLowerCase().endsWith(dom.toLowerCase()) && /^[^@\s]+@[^@\s]+$/.test(s);
-  v.onchange = e => { if (e.target.id === 'et') { S.eteam = e.target.value; pages.employees(v); } };
+  const LABEL = { team: 'team', designation: 'designation', managerId: 'reporting manager' };
+  // a new designation typed in when "Other…" is picked
+  const askText = (title, val) => new Promise(res => {
+    const m = modal(`<h2>${title}</h2><input id="tv" style="width:100%" value="${esc(val)}"><div class="row" style="margin-top:12px"><button class="btn pri" id="ok">OK</button><button class="btn" id="no">Cancel</button></div>`);
+    const done = x => { m.remove(); res(x); };
+    m.querySelector('#no').onclick = () => done('');
+    m.querySelector('#ok').onclick = () => done(m.querySelector('#tv').value.trim());
+    m.querySelector('#tv').onkeydown = e => { if (e.key === 'Enter') done(e.target.value.trim()); };
+    m.querySelector('#tv').focus();
+  });
+  v.onchange = async e => {
+    if (e.target.id === 'et') { S.eteam = e.target.value; return pages.employees(v); }
+    const sel = e.target.closest('select[data-f]'); if (!sel) return;
+    const p = d.active.find(x => String(x.id) === sel.dataset.id), f = sel.dataset.f;
+    let val = sel.value;
+    if (f === 'designation' && val === '__new') { val = await askText('New designation for ' + esc(p.name), ''); if (!val) { sel.value = p.designation; return; } }
+    // the edit route takes the whole record, so send the current values with the one change
+    const b = { id: p.id, name: p.name, email: p.email || '', designation: p.designation, team: p.team, role: p.role, managerId: p.managerId ?? '', [f]: val };
+    sel.disabled = true;
+    try { await api('/employees', { method: 'PUT', body: b }); toast(`${p.name}: ${LABEL[f]} updated`); }
+    catch (er) { toast(er.message, 'err'); }
+    pages.employees(v);
+  };
   v.onclick = async e => {
-    const t = e.target, a = t.dataset.a;
-    if (t.dataset.tab) { S.etab = t.dataset.tab; pages.employees(v); }
+    const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
+    if (t.dataset.stat) {
+      const k = t.dataset.stat;
+      if (k === 'questions') { location.hash = '#/params'; return; }
+      S.etab = k === 'inactive' ? 'inactive' : 'active'; S.erole = ['director', 'manager', 'employee'].includes(k) ? k : '';
+      return pages.employees(v);
+    }
     if (a === 'add') {
       const m = modal(`<h2>Add new member</h2><div id="er"></div>${[['name', 'Full name', ''], ['code', 'Employee code', ''], ['email', 'Work email', 'name' + dom], ['designation', 'Designation', '']].map(([k, l, ph]) => `<label class="f">${l} <i>*</i></label><input id="n_${k}" style="width:100%" placeholder="${esc(ph)}" ${k === 'email' ? 'type="email" autocomplete="off"' : ''}>`).join('')}
       <div class="small">They sign in with this Google account. It must end with ${esc(dom)}.</div>
@@ -991,7 +1039,7 @@ pages.employees = async v => {
       <label class="f">Designation <i>*</i></label><input id="u_designation" style="width:100%" value="${esc(p.designation)}">
       <div class="row" style="margin:0;align-items:flex-end"><div><label class="f">Team</label><select id="u_team">${[...new Set([...d.teams, p.team])].map(x => `<option ${x === p.team ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
       <div><label class="f">Access role</label><select id="u_role">${roles.map(([k, l]) => `<option value="${k}" ${k === p.role ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
-      <label class="f">Reporting manager</label><select id="u_managerId"><option value="">No manager</option>${d.managers.filter(x => x.id !== p.id).map(x => `<option value="${x.id}" ${x.id === p.managerId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+      <label class="f">Reporting manager</label><select id="u_managerId">${mgrOpts(p)}</select>
       <div class="row"><button class="btn pri" id="ok">Save changes</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
       m.querySelector('#ok').onclick = async () => {
@@ -1008,7 +1056,7 @@ pages.employees = async v => {
       const go = async confirmed => { try { const r = await api('/employees/inactive', { method: 'POST', body: { id: t.dataset.id, date: m.querySelector('#d').value, reason: m.querySelector('#r').value, note: m.querySelector('#note').value, confirm: confirmed } }); if (r.needsConfirm) { m.querySelector('#er').innerHTML = `<div class="warn">${esc(r.warning)} Click again to confirm.</div>`; m.querySelector('#ok').onclick = () => go(true); return; } m.remove(); pages.employees(v); } catch (er) { m.querySelector('#er').innerHTML = errBox(er); } };
       m.querySelector('#ok').onclick = () => go(false);
     }
-    if (a === 'on') { await api('/employees/reactivate', { method: 'POST', body: { id: t.dataset.id } }); toast('Reactivated'); pages.employees(v); }
+    if (a === 'on' && await confirmBox(`Reactivate ${t.dataset.n}?`, 'They can sign in again and are counted in schedules, reports and emails from today.', { ok: 'Reactivate' })) { await api('/employees/reactivate', { method: 'POST', body: { id: t.dataset.id } }); toast('Reactivated'); pages.employees(v); }
   };
 };
 
@@ -1019,22 +1067,56 @@ pages.empforms = async (v, id) => {
   <tr><td><b>Annual Review 2027</b></td><td>N/A</td><td>${badge(d.annual === 'Submitted' ? 'Completed and Submitted' : 'Not started')}</td><td>N/A</td><td><a class="btn sm yel" href="#/annual/${e.id}">Open form</a></td></tr></table></div>`;
 };
 
-// ---------- reporting manager (admin) ----------
-pages.reporting = async (v, level) => {
-  level = decodeURIComponent(level || 'Manager');
-  const list = await api('/reporting?level=' + encodeURIComponent(level));
-  v.innerHTML = head('Reporting Manager: ' + esc(level), 'PMS › Reporting Manager › ' + esc(level)) + `<div class="row">${['Directors', 'Senior Manager', 'Manager', 'Senior Executives'].map(l => `<a class="btn ${l === level ? 'pri' : ''}" href="#/reporting/${encodeURIComponent(l)}">${l}</a>`).join('')}</div>
-  <div class="tablewrap"><table><tr><th></th><th>Name</th><th>Designation</th><th>Email</th><th>Employees (direct)</th><th>Director</th><th>Team report</th><th>MIS report</th></tr>
-  ${list.map(p => `<tr><td><button class="btn sm" data-x="${p.id}">▸</button></td><td><a href="#/person/${p.id}" style="color:var(--navy);font-weight:600">${esc(p.name)}</a></td><td>${esc(p.designation)}</td><td>${esc(p.email)}</td><td>${p.employees}</td><td>${esc(p.director)}</td><td><a class="btn sm" href="#/report">Team report</a></td><td><button class="btn sm" data-mis="1">MIS report</button></td></tr>
-  <tr class="sub" id="x${p.id}" hidden><td></td><td colspan="7">${p.team.map(t => `${nameLink(t.id, t.name)} <span class="small">${esc(t.designation)}</span> ${badge(t.status)} <a class="btn sm" href="#/empforms/${t.id}">Monthly forms</a>`).join('<br>') || '<span class="small">No team members.</span>'}</td></tr>`).join('') || '<tr><td colspan="8">No people at this level.</td></tr>'}</table></div>
-  <p class="small">Open points: whether the Employees count includes indirect reports, and what the MIS report contains, are still to be confirmed. The count here is direct reports only.</p>`;
-  v.onclick = e => { const x = e.target.dataset.x; if (x) { const r = $('#x' + x); r.hidden = !r.hidden; } if (e.target.dataset.mis) toast('MIS report contents are still to be defined'); };
-};
-pages.person = async (v, id) => {
-  const d = await api('/reporting/person?id=' + id), p = d.person, c = d.counts;
-  v.innerHTML = head('Details: ' + esc(p.name), `PMS › Reporting Manager › ${esc(p.name)}`) + `<div class="card"><b>${esc(p.name)}</b> (${esc(p.designation)}) · ${esc(p.email || 'no work email')} · Director: ${esc(p.director)} · Team of ${d.team.length} <span class="sp"></span> <a class="btn sm yel" href="#/form/${p.id}/${S.me.currentMonth}">Own forms</a></div>
+// ---------- reporting hierarchy (admin) ----------
+// Directors | Managers | Employees lists, and a drill-down: director -> their managers -> a manager's employees.
+// #/reporting = directors, #/reporting/managers, #/reporting/employees, #/reporting/<id> = who reports to that person
+const ORG_TABS = [['director', 'Directors', ''], ['manager', 'Managers', 'managers'], ['employee', 'Employees', 'employees']];
+pages.reporting = async (v, arg) => {
+  arg = String(arg || '').toLowerCase();
+  const id = /^\d+$/.test(arg) ? arg : '', level = id ? '' : ({ managers: 'manager', employees: 'employee' }[arg] || 'director');
+  const d = await api(`/org?month=${S.month}${id ? '&id=' + id : '&level=' + level}`), p = d.person, c = d.counts;
+  const mon = esc(monthLabel(S.month).split(' ')[0]), tabOf = k => ORG_TABS.find(t => t[0] === k);
+  const tabHref = k => '#/reporting' + (tabOf(k)[2] ? '/' + tabOf(k)[2] : '');
+  const pname = x => x ? `<a class="lk" href="#/reporting/${x.id}">${esc(x.name)}</a>` : '<span class="small">None</span>';
+  const up = d.path.length ? `#/reporting/${d.path[d.path.length - 1].id}` : '#/reporting';
+  const crumbs = p ? ['<a href="#/reporting">Directors</a>', ...d.path.map(x => `<a href="#/reporting/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ')
+    : `PMS › Reporting Manager › ${tabOf(level)[1]}`;
+  const prog = t => t.scheduled ? `<div class="tbar" style="margin:0"><div class="tr" title="${t.submitted} submitted, ${t.notSubmitted} not submitted, ${t.pending} pending, ${t.notCompleted} not completed"><i style="width:${pctOf(t.submitted, t.scheduled)}%;background:var(--grn)"></i><i style="width:${pctOf(t.notSubmitted, t.scheduled)}%;background:var(--amb)"></i><i style="width:${pctOf(t.pending, t.scheduled)}%;background:var(--blu)"></i></div><b>${t.submitted}/${t.scheduled}</b></div>` : '<span class="small">No reviews</span>';
+  const progCell = r => r.total ? prog(r.teamCounts) : '<span class="small">N/A</span>';
+  const own = r => r ? `${badge(r.status)}${r.rating != null ? ` <b title="Monthly rating">${r.rating}</b>` : ''}` : '<span class="small">No form this month</span>';
+  const forms = r => `<span class="acts"><a class="btn sm" href="#/form/${r.id}/${S.month}" title="${mon} monthly review form">${mon.slice(0, 3)} form</a><a class="btn sm" href="#/empforms/${r.id}">All months</a></span>`;
+  const team = r => r.direct ? `<a class="btn sm" href="#/reporting/${r.id}" title="Open the people who report to ${esc(r.name)}">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
+  const nameCell = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${r.direct ? `<a class="nm" href="#/reporting/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`}<div class="small">${esc(r.designation)} · ${esc(r.team)}</div>${r.email ? `<div class="small">${esc(r.email)}</div>` : ''}</div></div>`;
+  // the columns depend on what is listed: [header, cell]
+  const COLS = {
+    director: [['Director', nameCell], ['Managers', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)], ['Reports', forms]],
+    manager: [['Manager', nameCell], ['Director', r => pname(r.director)], ['Employees', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)], ['Reports', forms]],
+    employee: [['Employee', nameCell], ['Reporting manager', r => pname(r.manager)], ['Director', r => pname(r.director)], [`Review (${mon})`, r => own(r.review)], ['Reports', forms]],
+    drill: [['Name', nameCell], ['Team members', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)], ['Reports', forms]],
+    // a team with no managers in it: just the employees and their reviews
+    team: [['Employee', nameCell], [`Review (${mon})`, r => own(r.review)], ['Review date', r => r.review && r.review.reviewDate ? fmtD(r.review.reviewDate) : '<span class="small">Not held yet</span>'], ['Reports', forms]],
+  }[p ? (d.rows.some(r => r.direct) ? 'drill' : 'team') : level];
+  const title = p ? `Reporting to ${esc(p.name)} (${d.rows.length})` : `${tabOf(level)[1]} (${d.rows.length})`;
+  const scope = p ? `${mon} reviews of everyone under ${esc(p.name)} (all levels)` : level === 'employee' ? `${mon} reviews of all employees` : `${mon} reviews across the organisation`;
+  v.innerHTML = head('Reporting Manager', crumbs) + `<div class="seg" role="tablist">${ORG_TABS.map(([k, l]) => `<a role="tab" href="${tabHref(k)}" class="${k === level ? 'on' : ''}" aria-selected="${k === level}">${l} <span class="cnt">${d.levelCounts[k]}</span></a>`).join('')}</div>
+  <div class="row">${monthSel()}<input id="orgq" type="search" placeholder="Search name, team or email" value="${esc(S.orgq || '')}" style="max-width:260px"><span class="sp"></span>${p ? `<a class="btn" href="${up}">← Back</a>` : ''}<a class="btn" href="#/employees">Edit people on Employees</a></div>
+  ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${esc(p.designation)} · ${esc(p.team)}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div></div>` : ''}
+  <div class="small" style="margin:4px 0 8px">${scope}</div>
   <div class="tiles"><div class="tile"><b>${c.scheduled}</b><span>Scheduled</span></div><div class="tile g"><b>${c.submitted}</b><span>Submitted</span></div><div class="tile a"><b>${c.notSubmitted}</b><span>Not submitted</span></div><div class="tile r"><b>${c.notCompleted}</b><span>Not completed</span></div><div class="tile b"><b>${c.pending}</b><span>Pending</span></div></div>
-  <div class="tablewrap"><table><tr><th>Name</th><th>Designation</th><th>Review date</th><th>${esc(monthLabel(S.me.currentMonth).split(' ')[0])} review</th><th>Rating</th><th>Forms</th></tr>${d.team.map(t => `<tr><td>${nameLink(t.id, t.name)}</td><td>${esc(t.designation)}</td><td>${fmtD(t.reviewDate)}</td><td>${badge(t.status)}</td><td>${t.rating ?? 'N/A'}</td><td><a class="btn sm" href="#/empforms/${t.id}">Monthly forms</a></td></tr>`).join('')}</table></div>`;
+  <h2>${title}</h2>
+  <div class="tablewrap"><table><tr>${COLS.map(([h]) => `<th>${h}</th>`).join('')}</tr>
+  ${d.rows.map(r => `<tr data-s="${esc(`${r.name} ${r.designation} ${r.team} ${r.email} ${r.manager ? r.manager.name : ''} ${r.director ? r.director.name : ''}`.toLowerCase())}">${COLS.map(([, cell]) => `<td>${cell(r)}</td>`).join('')}</tr>`).join('')
+    || `<tr><td colspan="${COLS.length}" class="small">${p ? `Nobody reports to ${esc(p.name)}.` : 'No one at this level.'}</td></tr>`}
+  <tr id="orgnone" hidden><td colspan="${COLS.length}" class="small">No one here matches your search.</td></tr></table></div>
+  <p class="small">Flow: Directors → click a director to see their managers → click a manager to see their employees. The path at the top takes you back up. Team progress counts everyone under that person, at every level.</p>`;
+  onMonth(() => pages.reporting(v, arg));
+  const filter = () => {
+    const s = (S.orgq || '').trim().toLowerCase(); let n = 0;
+    v.querySelectorAll('tr[data-s]').forEach(tr => { const hit = !s || tr.dataset.s.includes(s); tr.hidden = !hit; n += hit; });
+    $('#orgnone').hidden = !(s && d.rows.length && !n);
+  };
+  $('#orgq').oninput = e => { S.orgq = e.target.value; filter(); };
+  filter();
 };
 
 // ---------- audit & settings ----------

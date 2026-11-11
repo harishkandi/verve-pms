@@ -100,7 +100,6 @@ const forms = {};           // `${empId}|${month}` -> form
 const annualForms = {};     // `${empId}|${fy}` -> form
 const auditLog = [];
 const emailsOutbox = [];
-const editRequests = [];
 const appraisals = {};      // empId -> annual appraisal form (6 steps)
 const calendarLinks = {};   // empId -> { email, token (encrypted Google refresh token), connectedAt }
 const audit = (who, action, detail) => auditLog.unshift({ at: new Date().toISOString(), who, action, detail });
@@ -212,4 +211,4 @@ function seedForms() {
 }
 seedForms();
 
-module.exports = { config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, editRequests, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, buildForm, pad };
+module.exports = { config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, buildForm, pad };

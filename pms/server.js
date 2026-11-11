@@ -6,7 +6,7 @@ const L = require('./logic');
 const DB = require('./db');
 const A = require('./auth');
 const C = require('./calendar');
-const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, editRequests, appraisals, audit } = D;
+const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, appraisals, audit } = D;
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
@@ -23,8 +23,8 @@ class Redirect { constructor(url) { this.url = url; } }
 
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
-// anyone who can edit the KRAs, and the employee on their own form, may choose to copy last month's KRAs
-const canCopyKras = (viewer, f) => !f.locked && (canEditKras(viewer, f) || viewer.id === f.empId);
+// anyone who can edit the KRAs may choose to copy last month's KRAs
+const canCopyKras = (viewer, f) => canEditKras(viewer, f);
 function formPayload(viewer, f) {
   const e = L.emp(f.empId);
   const month = f.month;
@@ -39,15 +39,12 @@ function formPayload(viewer, f) {
     perms: {
       editSelf: selfEdit && open, editManager: (manage || selfEdit) && open, canSubmit: manage && open,
       editKras: canEditKras(viewer, f), copyKras: canCopyKras(viewer, f),
-      requestKra: !f.locked && viewer.id === f.empId && !hasReports(viewer.id) && !f.kraAccess && !f.kraRequested && viewer.role !== 'admin',
-      kraRequested: !!f.kraRequested && !f.kraAccess, approveKra: !!f.kraRequested && manage && !f.locked, kraAccess: !!f.kraAccess,
     },
     fy: fyLabel(month),
   };
 }
-// reporting persons, managers, directors and admin edit KRAs directly; an employee with no reports needs approval first
-const hasReports = id => D.employees.some(e => e.managerId === id && e.active);
-const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || (viewer.id === f.empId && (hasReports(viewer.id) || !!f.kraAccess)));
+// the employee and their reviewers (managers, directors, admin) edit KRAs directly until the review is submitted
+const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || viewer.id === f.empId);
 const fyLabel = m => { const [y, mo] = m.split('-').map(Number); const s = mo >= 4 ? y : y - 1; return `FY ${s}-${s + 1}`; };
 
 function mustForm(viewer, empId, month) {
@@ -215,8 +212,6 @@ const emailStates = (user, month) => {
   const allowed = mgrs.filter(m => user.role === 'admin' || user.role === 'director' || m.id === user.id || L.isAncestor(user.id, m.id));
   return allowed.map(m => ({ managerId: m.id, name: m.name, team: m.team, state: (emailsOutbox.find(x => x.managerId === m.id && x.month === month) || {}).state || 'not generated' }));
 };
-// only KRA edit requests remain (submitted forms can no longer be reopened, so old form requests are not shown)
-const openEditRequests = user => editRequests.filter(r => r.status === 'open' && r.type !== 'form' && (user.role === 'admin' || L.canManage(user, r.empId))).map(r => ({ ...r, name: L.emp(r.empId).name }));
 
 route('GET', '/api/home', ({ user, q }) => {
   const month = q.month || config.currentMonth;
@@ -243,7 +238,6 @@ route('GET', '/api/home', ({ user, q }) => {
       datesCollected: all.filter(r => r.scheduled).length, datesTotal: all.length, emails, teamReviews: all.length,
       employees: user.role === 'admin' ? { active: employees.filter(e => e.role !== 'admin' && e.active).length, inactive: employees.filter(e => e.role !== 'admin' && !e.active).length } : null,
     };
-    out.editRequests = openEditRequests(user);
     out.tips = homeTips(scoped, counts, emails);
   }
   const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
@@ -299,31 +293,14 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   return formPayload(user, f);
 });
 
-// a submitted review is final: there is no reopen and no edit request, for anyone (admins included)
+// a submitted review is final: nobody can reopen or change it (admins included)
 const LOCKED_MSG = 'This review is completed and submitted, so the form can no longer be changed.';
-route('POST', '/api/form/kra-request', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  if (user.id !== f.empId || f.locked) throw forbid();
-  f.kraRequested = true; f.kraAccess = false;
-  editRequests.unshift({ type: 'kra', empId: f.empId, month: f.month, by: user.name, at: new Date().toISOString(), status: 'open' });
-  audit(user.name, 'KRA edit requested', `${L.emp(f.empId).name} ${f.month}`);
-  return formPayload(user, f);
-});
-route('POST', '/api/form/kra-approve', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  if (!L.canManage(user, f.empId)) throw forbid();
-  f.kraAccess = !!body.approve; f.kraRequested = false;
-  editRequests.filter(r => r.type === 'kra' && r.empId === f.empId && r.month === f.month && r.status === 'open').forEach(r => r.status = body.approve ? 'granted' : 'declined');
-  audit(user.name, body.approve ? 'KRA edit approved' : 'KRA edit declined', `${L.emp(f.empId).name} ${f.month}`);
-  return formPayload(user, f);
-});
-route('GET', '/api/edit-requests', ({ user }) => openEditRequests(user));
 
 // KRA settings: sub-KRA totals must equal the parent KRA weight
 route('PUT', '/api/kras', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
   if (f.locked) throw bad(LOCKED_MSG);
-  if (!canEditKras(user, f)) throw new HttpError(403, 'You cannot change KRA settings or weightage. Send a request for edit to your manager.');
+  if (!canEditKras(user, f)) throw new HttpError(403, 'You cannot change KRA settings or weightage for this person.');
   const errors = [];
   for (const [k, label] of L.KRAS) {
     const nk = body.kras[k]; if (!nk) continue;
@@ -381,7 +358,8 @@ route('PUT', '/api/appraisal', ({ user, body }) => {
   if (!L.emp(id) || !L.canView(user, id)) throw forbid();
   if (!L.canSelfEdit(user, id) && !L.canManage(user, id)) throw forbid();
   const s = v => String(v ?? '');
-  const f = body.form || {}, cur = appraisals[id] || blankAppraisal();  appraisals[id] = {
+  const f = body.form || {}, cur = appraisals[id] || blankAppraisal();
+  appraisals[id] = {
     recap: (f.recap || []).map(r => ({ expectation: s(r.expectation), achievements: s(r.achievements), improvement: s(r.improvement) })),
     kraProgress: (f.kraProgress || []).map(r => ({ kra: s(r.kra), progress: s(r.progress) })),
     strengths: s(f.strengths), improvements: s(f.improvements), operational: s(f.operational), process: s(f.process), people: s(f.people),
@@ -609,7 +587,14 @@ route('GET', '/api/employees', ({ user, q }) => {
   adminOnly(user);
   const month = config.currentMonth;
   const rows = employees.filter(e => e.role !== 'admin').map(e => { const f = L.peek(e.id, month); return { ...e, manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a' }; });
-  return { active: rows.filter(e => e.active), inactive: rows.filter(e => !e.active), teams: Object.keys(config.windows), managers: employees.filter(e => e.role === 'manager' || e.role === 'director' || e.role === 'teamlead').map(e => ({ id: e.id, name: e.name })) };
+  const active = rows.filter(e => e.active), role = r => active.filter(e => e.role === r).length;
+  // organisation counts shown as tiles on top of the Employees page
+  const stats = { members: active.length, directors: role('director'), managers: role('manager') + role('teamlead'), executives: role('employee'),
+    inactive: rows.length - active.length, questions: L.activeQuestions(month).length };
+  return { active, inactive: rows.filter(e => !e.active), stats,
+    teams: [...new Set([...Object.keys(config.windows), ...rows.map(e => e.team)])].filter(Boolean).sort(),
+    designations: [...new Set(rows.map(e => e.designation))].filter(Boolean).sort(),
+    managers: employees.filter(e => e.active && (e.role === 'manager' || e.role === 'director' || e.role === 'teamlead')).map(e => ({ id: e.id, name: e.name })) };
 });
 route('GET', '/api/employee-forms', ({ user, q }) => {
   adminOnly(user);
@@ -653,8 +638,13 @@ route('PUT', '/api/employees', ({ user, body }) => {
     // a manager cannot report to themselves or to someone in their own team
     if (managerId === e.id || L.subordinates(e.id).some(x => x.id === managerId)) throw bad('That reporting manager would create a loop.', { errors: ['That reporting manager would create a loop.'] });
   }
-  Object.assign(e, { name: String(body.name).trim(), email, designation: String(body.designation).trim(), team: body.team || e.team, role: body.role || e.role, managerId });
-  audit(user.name, 'edit member', `${e.name} (${e.code})`);
+  const next = { name: String(body.name).trim(), email, designation: String(body.designation).trim(), team: body.team || e.team, role: body.role || e.role, managerId };
+  // the audit line says what changed, e.g. "team Finance → Operations"
+  const show = (k, v) => k === 'managerId' ? (v ? (L.emp(v) || {}).name || v : 'none') : (v || 'none');
+  const LBL = { name: 'name', email: 'email', designation: 'designation', team: 'team', role: 'role', managerId: 'manager' };
+  const changes = Object.keys(next).filter(k => (next[k] ?? '') !== (e[k] ?? '')).map(k => `${LBL[k]} ${show(k, e[k])} → ${show(k, next[k])}`);
+  Object.assign(e, next);
+  audit(user.name, 'edit member', `${e.name} (${e.code})${changes.length ? ': ' + changes.join(', ') : ''}`);
   return { ok: true };
 });
 route('POST', '/api/employees/inactive', ({ user, body }) => {
@@ -676,23 +666,37 @@ route('POST', '/api/employees/reactivate', ({ user, body }) => {
   return { ok: true };
 });
 
-// Reporting managers (admin)
-route('GET', '/api/reporting', ({ user, q }) => {
+// Reporting hierarchy (admin). Three lists, the same as the role tiles on Employees:
+//   level=director | manager (managers and team leads) | employee
+// and a drill-down: id=<person> lists the people who report to that person, so the admin follows
+// director -> their managers -> a manager's employees, with the path back up.
+const ORG_LEVELS = { director: ['director'], manager: ['manager', 'teamlead'], employee: ['employee'] };
+route('GET', '/api/org', ({ user, q }) => {
   adminOnly(user);
-  const lv = q.level, month = config.currentMonth;
-  const direct = e => employees.filter(x => x.managerId === e.id && x.active);
-  const director = e => { let c = e; while (c && c.role !== 'director') c = L.emp(c.managerId); return c && c.id !== e.id ? c.name : (c ? '' : ''); };
-  const list = employees.filter(e => e.active && e.level === lv).map(e => ({
-    id: e.id, name: e.name, designation: e.designation, email: e.email || '', employees: direct(e).length, director: director(e),
-    team: direct(e).map(x => { const f = L.peek(x.id, month); return { id: x.id, name: x.name, designation: x.designation, status: f ? L.reviewStatus(f) : '-' }; }),
-  }));
-  return list;
-});
-route('GET', '/api/reporting/person', ({ user, q }) => {
-  adminOnly(user);
-  const e = mustEmp(q.id), month = config.currentMonth;
-  const team = L.subordinates(e.id).filter(x => x.managerId === e.id).map(x => { const f = L.peek(x.id, month); return { id: x.id, name: x.name, designation: x.designation, reviewDate: f && f.reviewDate, status: f ? L.reviewStatus(f) : '-', rating: f && f.submitted ? L.monthlyRating(f) : null }; });
-  return { person: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '', director: (() => { let c = e; while (c && c.role !== 'director') c = L.emp(c.managerId); return c ? c.name : ''; })() }, team, counts: L.counts(team) };
+  const month = q.month || config.currentMonth;
+  const people = employees.filter(e => e.active && e.role !== 'admin');
+  const direct = id => people.filter(e => e.managerId === id);
+  const reviewOf = e => { const f = L.peek(e.id, month); return f ? { status: L.reviewStatus(f), rating: f.submitted ? L.monthlyRating(f) : null, reviewDate: f.reviewDate || null } : null; };
+  // review counts for a set of people (only those with a form this month)
+  const countsOf = list => L.counts(list.map(reviewOf).filter(Boolean));
+  const above = e => { const out = []; for (let c = L.emp(e.managerId); c && c.role !== 'admin' && out.length < 20; c = L.emp(c.managerId)) out.unshift(c); return out; };
+  const rowFor = e => {
+    const under = L.subordinates(e.id), up = above(e), mgr = up[up.length - 1], dir = up.find(x => x.role === 'director');
+    return { id: e.id, name: e.name, designation: e.designation, email: e.email || '', team: e.team, role: e.role,
+      manager: mgr ? { id: mgr.id, name: mgr.name } : null, director: dir ? { id: dir.id, name: dir.name } : null,
+      direct: direct(e.id).length, total: under.length, review: reviewOf(e), teamCounts: countsOf(under) };
+  };
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  const levelCounts = Object.fromEntries(Object.entries(ORG_LEVELS).map(([k, roles]) => [k, people.filter(e => roles.includes(e.role)).length]));
+  if (!q.id) {
+    const level = ORG_LEVELS[q.level] ? q.level : 'director';
+    const list = people.filter(e => ORG_LEVELS[level].includes(e.role)).sort(byName);
+    return { month, level, levelCounts, person: null, path: [], counts: countsOf(level === 'employee' ? list : people), rows: list.map(rowFor) };
+  }
+  const p = mustEmp(q.id);
+  if (p.role === 'admin') throw notFound('Employee not found.');
+  return { month, level: null, levelCounts, person: { ...rowFor(p), active: p.active }, path: above(p).map(c => ({ id: c.id, name: c.name })),
+    counts: countsOf(L.subordinates(p.id)), rows: direct(p.id).sort((a, b) => (b.role !== 'employee') - (a.role !== 'employee') || byName(a, b)).map(rowFor) };
 });
 
 // Parameters summary
@@ -786,8 +790,14 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (!url.pathname.startsWith('/api/')) {
     const file = path.join(PUBLIC, url.pathname === '/' ? 'index.html' : url.pathname);
-    if (!file.startsWith(PUBLIC) || !fs.existsSync(file)) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+    const st = file.startsWith(PUBLIC) && fs.existsSync(file) && fs.statSync(file);
+    if (!st || !st.isFile()) { res.writeHead(404); return res.end('Not found'); }
+    // browsers must check for a newer copy every time (a quick 304 when unchanged), so after an update
+    // nobody keeps running old page code against the new server
+    const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: etag, 'Last-Modified': st.mtime.toUTCString() };
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
+    res.writeHead(200, headers);
     return fs.createReadStream(file).pipe(res);
   }
   let raw = '';
@@ -797,7 +807,8 @@ const server = http.createServer((req, res) => {
     const send = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(setCookies.length && { 'Set-Cookie': setCookies }) }); res.end(JSON.stringify(data)); };
     try {
       const r = routes.find(x => x.method === req.method && x.re.test(url.pathname));
-      if (!r) return send(404, { error: 'Not found' });
+      // NO_ROUTE tells an out-of-date page that the server was updated (the page then reloads itself)
+      if (!r) return send(404, { error: 'Not found', code: 'NO_ROUTE' });
       // changes must come from the app itself (JSON), which a form on another site cannot send with our cookie
       if (req.method !== 'GET' && !/application\/json/.test(req.headers['content-type'] || '')) return send(415, { error: 'Send JSON.' });
       const cookies = A.parseCookies(req.headers.cookie), s = A.session(cookies);
