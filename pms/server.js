@@ -4,11 +4,13 @@ const path = require('path');
 const D = require('./data');
 const L = require('./logic');
 const DB = require('./db');
-const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, editRequests, audit } = D;
+const A = require('./auth');
+const C = require('./calendar');
+const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, editRequests, appraisals, audit } = D;
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.webp': 'image/webp' };
 
 class HttpError extends Error { constructor(code, msg, extra) { super(msg); this.code = code; this.extra = extra; } }
 const bad = (msg, extra) => new HttpError(400, msg, extra);
@@ -17,7 +19,9 @@ const notFound = msg => new HttpError(404, msg);
 // look up an employee from a request id; a missing or unknown id is a 404, not a crash
 const mustEmp = id => { const e = L.emp(+id); if (!e) throw notFound('Employee not found.'); return e; };
 
-const view = (u, i) => ({ id: u.id, code: u.code, name: u.name, designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
+class Redirect { constructor(url) { this.url = url; } }
+
+const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
 // anyone who can edit the KRAs, and the employee on their own form, may choose to copy last month's KRAs
 const canCopyKras = (viewer, f) => !f.locked && (canEditKras(viewer, f) || viewer.id === f.empId);
@@ -34,10 +38,9 @@ function formPayload(viewer, f) {
     newJoiner: L.isNewJoiner(f), validation: valid,
     perms: {
       editSelf: selfEdit && open, editManager: (manage || selfEdit) && open, canSubmit: manage && open,
-      editKras: canEditKras(viewer, f), copyKras: canCopyKras(viewer, f), requestEdit: f.locked && selfEdit && viewer.role !== 'admin',
+      editKras: canEditKras(viewer, f), copyKras: canCopyKras(viewer, f),
       requestKra: !f.locked && viewer.id === f.empId && !hasReports(viewer.id) && !f.kraAccess && !f.kraRequested && viewer.role !== 'admin',
       kraRequested: !!f.kraRequested && !f.kraAccess, approveKra: !!f.kraRequested && manage && !f.locked, kraAccess: !!f.kraAccess,
-      unlock: f.locked && manage,
     },
     fy: fyLabel(month),
   };
@@ -57,24 +60,200 @@ function mustForm(viewer, empId, month) {
 
 // ---------- route table ----------
 const routes = [];
-const route = (method, pattern, fn) => routes.push({ method, re: new RegExp('^' + pattern + '$'), fn });
+// open: no sign-in needed (login page and the Google sign-in round trip)
+const route = (method, pattern, fn, open = false) => routes.push({ method, re: new RegExp('^' + pattern + '$'), fn, open });
 
-route('GET', '/api/users', () => employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation })));
+// ---------- sign-in ----------
+const findByEmail = email => employees.find(e => (e.email || '').toLowerCase() === String(email || '').toLowerCase());
+// "harish.kandi@..." -> "Harish Kandi"
+const nameFromEmail = email => email.split('@')[0].split(/[._-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+// people in ADMIN_EMAILS get an admin record as soon as the server starts, plus one shared test admin (no email: never invited)
+function ensureAccounts() {
+  const add = (match, rec) => {
+    if (employees.some(match)) return;
+    const id = Math.max(...employees.map(x => x.id)) + 1;
+    employees.push({ id, code: 'A' + String(id).padStart(3, '0'), team: 'HR', managerId: null, role: 'admin', level: null, joined: config.today, active: true, ...rec });
+  };
+  add(e => e.code === 'A900', { code: 'A900', name: 'Verve Admin', designation: 'System Admin', demo: true });
+  A.ADMIN_EMAILS.forEach(email => add(e => (e.email || '').toLowerCase() === email, { name: nameFromEmail(email), email, designation: 'PMS Admin' }));
+}
+// test logins: the role addresses are login names only, never stored as the person's email, so no invite can reach those inboxes
+const byCode = c => employees.find(e => e.code === c);
+const testAccounts = () => [
+  ['admin', 'Admin', byCode('A900')], ['hr', 'HR', byCode('E001')], ['manager', 'Manager', byCode('E006')], ['employee', 'Employee', byCode('E101')],
+  ...A.ADMIN_EMAILS.map(em => [em, 'Admin (you)', findByEmail(em)]),
+].filter(([, , e]) => e && e.active).map(([login, label, emp]) => ({ email: login.includes('@') ? login : `${login}@${A.ORG_DOMAIN}`, label, emp }));
+route('GET', '/api/auth/status', ({ user }) => ({
+  google: A.google, demo: A.demo, domain: A.ORG_DOMAIN, signedIn: !!user,
+  ...(A.demo && { accounts: testAccounts().map(a => ({ email: a.email, label: a.label, name: a.emp.name })), password: A.DEMO_PASSWORD }),
+}), true);
+route('POST', '/api/auth/password', ({ body, setCookie, secure }) => {
+  if (!A.demo) throw forbidMsg('Password sign-in is not switched on. Please use Sign in with Google.');
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!A.isOrgEmail(email)) throw bad(`Use your @${A.ORG_DOMAIN} email.`);
+  const acc = testAccounts().find(a => a.email === email);
+  if (!acc || !A.checkPassword(body.password || '')) throw bad('Wrong email or password.');
+  setCookie(A.sessionCookie(acc.emp.id, null, secure, body.remember !== false));
+  audit(acc.emp.name, 'signed in', `${email} (password)`);
+  return { ok: true };
+}, true);
+const forbidMsg = msg => new HttpError(403, msg);
+// demo picker: dummy users, only when the server allows it (no Google sign-in set up, or DEMO_LOGIN=1)
+route('GET', '/api/users', () => {
+  if (!A.demo) throw notFound('Not found');
+  return employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation }));
+}, true);
+route('POST', '/api/auth/demo', ({ body, setCookie, secure }) => {
+  if (!A.demo) throw forbid();
+  const e = L.emp(+body.id); if (!e || !e.active) throw notFound('User not found.');
+  setCookie(A.sessionCookie(e.id, null, secure));
+  return { ok: true };
+}, true);
+route('POST', '/api/auth/logout', ({ setCookie, secure }) => (setCookie(A.clearSession(secure)), { ok: true }), true);
+
+// Google: /start sends the browser to Google; Google sends it back to /callback on the same address (origin)
+route('GET', '/api/auth/google/start', ({ q, realUser, setCookie }) => {
+  if (!A.google) throw bad('Google sign-in is not set up on this server.');
+  const origin = A.okOrigin(q.origin); if (!origin) throw bad('This app address is not allowed for sign-in. Add it to APP_ORIGINS.');
+  const calendar = q.calendar === '1';
+  if (calendar && !realUser) throw new HttpError(401, 'Sign in first.');
+  const s = A.authStart({ origin, calendar, uid: calendar ? realUser.id : null, loginHint: calendar ? realUser.email : undefined });
+  setCookie(s.cookie);
+  return new Redirect(s.url);
+}, true);
+const AUTH_ERRORS = ['cancelled', 'expired', 'google', 'domain', 'not_registered', 'inactive', 'calendar_mismatch', 'calendar_norefresh'];
+route('GET', '/api/auth/google/callback', async ({ q, cookies, setCookie }) => {
+  const s = A.oauthState(q.state);
+  if (!s) throw bad('This sign-in link has expired. Please go back to PMS and try again.');
+  const { origin } = s, secure = origin.startsWith('https');
+  // back to the app; problems are shown on the page that opens (login, or Scheduling for calendar)
+  const back = (params = {}, page = '') => new Redirect(`${origin}/${Object.keys(params).length ? '?' + new URLSearchParams(params) : ''}#/${page}`);
+  setCookie(A.clearOauth(secure));
+  const page = s.calendar ? 'scheduling' : '';
+  if (q.error) return back({ auth_error: q.error === 'access_denied' ? 'cancelled' : 'google' }, page);
+  if (!cookies.pms_oauth || cookies.pms_oauth !== s.nonce) return back({ auth_error: 'expired' }, page);
+  let tok, id;
+  try { tok = await A.exchange(q.code, origin); id = A.identity(tok.id_token); }
+  catch (e) { console.error('Google sign-in failed:', e.message); return back({ auth_error: 'google' }, page); }
+  if (!A.orgAccount(id)) return back({ auth_error: 'domain', email: id.email }, page);
+
+  if (s.calendar) {
+    const u = L.emp(s.uid);
+    if (!u || (u.email || '').toLowerCase() !== id.email) return back({ auth_error: 'calendar_mismatch', email: id.email }, page);
+    if (!tok.refresh_token) return back({ auth_error: 'calendar_norefresh' }, page);
+    C.link(u.id, id.email, tok.refresh_token, tok.access_token, tok.expires_in);
+    audit(u.name, 'Google Calendar connected', id.email);
+    return back({ calendar: 'connected' }, page);
+  }
+
+  let e = findByEmail(id.email);
+  if (!e && A.ADMIN_EMAILS.includes(id.email)) {
+    const nid = Math.max(...employees.map(x => x.id)) + 1;
+    e = { id: nid, code: 'A' + String(nid).padStart(3, '0'), name: id.name || id.email.split('@')[0], email: id.email, designation: 'PMS Admin', team: 'HR', managerId: null, role: 'admin', level: null, joined: new Date().toISOString().slice(0, 10), active: true };
+    employees.push(e);
+    audit(e.name, 'admin added', `${id.email} (from ADMIN_EMAILS)`);
+  }
+  if (!e) return back({ auth_error: 'not_registered', email: id.email });
+  if (!e.active) return back({ auth_error: 'inactive', email: id.email });
+  setCookie(A.sessionCookie(e.id, null, secure));
+  audit(e.name, 'signed in', id.email);
+  return back();
+}, true);
+
+// admins can look at PMS as anyone else, to check what each role sees
+route('GET', '/api/auth/view-as', ({ realUser }) => {
+  if (realUser.role !== 'admin') throw forbid();
+  return employees.filter(e => e.active && e.id !== realUser.id).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation, team: e.team }));
+});
+route('POST', '/api/auth/view-as', ({ realUser, body, setCookie, secure, session }) => {
+  if (realUser.role !== 'admin') throw forbid();
+  const as = body.id ? mustEmp(body.id) : null;
+  if (as && !as.active) throw bad('That employee is inactive.');
+  setCookie(A.sessionCookie(realUser.id, as && as.id !== realUser.id ? as.id : null, secure, session.keep !== false));
+  audit(realUser.name, as ? 'view as' : 'view as ended', as ? as.name : '');
+  return { ok: true };
+});
+
 // the current month's form is open for everyone from the 1st, whether or not last month's review is complete
 const ensureMonthForms = () => employees.filter(e => e.active && e.managerId && e.role !== 'admin').forEach(e => L.getForm(e.id, config.currentMonth));
 ensureMonthForms();
-route('GET', '/api/me', ({ user }) => (ensureMonthForms(), { ...view(user), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth) }));
+const calendarState = real => { const l = C.linked(real.id); return { google: A.google, connected: !!l, email: l ? l.email : '', canConnect: A.google && A.isOrgEmail(real.email) }; };
+route('GET', '/api/me', ({ user, realUser }) => (ensureMonthForms(), {
+  ...view(user), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth),
+  real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
+}));
 
-// Home
+// Home dashboard: every number shown on the page is computed here, in one call
+const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+// where the team's review window stands on the demo "today"
+const windowState = w => config.today < w.start ? { state: 'upcoming', days: daysBetween(config.today, w.start) }
+  : config.today > w.end ? { state: 'closed', days: daysBetween(w.end, config.today) } : { state: 'open', days: daysBetween(config.today, w.end) };
+const fmtDay = iso => { const [, m, d] = iso.split('-').map(Number); return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
+const joinNames = a => a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+// one short line for the hero banner: scheduled count, then the most useful window fact
+function homeSummary(teams, counts) {
+  const bits = [`${plural(counts.scheduled, 'review')} scheduled`];
+  const open = teams.filter(t => t.state === 'open'), up = teams.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
+  if (open.length) { const last = open.map(t => t.window.end).sort().pop(); bits.push(open.length === 1 ? `${open[0].team} window open until ${fmtDay(last)}` : `${open.length} windows open until ${fmtDay(last)}`); }
+  else if (up.length) bits.push(`Next window: ${up[0].team}, ${fmtDay(up[0].window.start)}`);
+  else if (teams.length) bits.push('All windows closed');
+  if (counts.pending) bits.push(`${plural(counts.pending, 'review')} past due`);
+  return bits.join(' · ');
+}
+function homeTips(teams, counts, emails) {
+  const tips = [];
+  const up = teams.filter(t => t.state === 'upcoming' && t.collected < t.total);
+  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; const [y, m, d] = first.split('-').map(Number); const by = new Date(y, m - 1, d - 3); tips.push(`Collect ${joinNames(up.map(t => t.team))} review dates before ${fmtDay(by.toISOString().slice(0, 10))} to avoid pending reviews.`); }
+  teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.team} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
+  teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.team} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
+  if (emails && counts.scheduled && counts.submitted === counts.scheduled && !emails.drafts && !emails.sent) tips.push('All reviews are submitted. Generate the manager emails from Manager Emails.');
+  return tips.slice(0, 2);
+}
+const emailStates = (user, month) => {
+  const mgrs = employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && L.canView(user, e.id) && e.role !== 'admin');
+  const allowed = mgrs.filter(m => user.role === 'admin' || user.role === 'director' || m.id === user.id || L.isAncestor(user.id, m.id));
+  return allowed.map(m => ({ managerId: m.id, name: m.name, team: m.team, state: (emailsOutbox.find(x => x.managerId === m.id && x.month === month) || {}).state || 'not generated' }));
+};
+// only KRA edit requests remain (submitted forms can no longer be reopened, so old form requests are not shown)
+const openEditRequests = user => editRequests.filter(r => r.status === 'open' && r.type !== 'form' && (user.role === 'admin' || L.canManage(user, r.empId))).map(r => ({ ...r, name: L.emp(r.empId).name }));
+
 route('GET', '/api/home', ({ user, q }) => {
   const month = q.month || config.currentMonth;
-  const rows = L.reportRows(user, month);
+  const mgr = user.role !== 'employee';
+  const all = L.reportRows(user, month);
+  const rows = q.team ? all.filter(r => r.team === q.team) : all;
+  const teams = [...new Set(all.map(r => r.team))].map(t => {
+    const tr = all.filter(r => r.team === t), w = D.windowFor(t, month);
+    return { team: t, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: w, ...windowState(w) };
+  });
+  const counts = L.counts(rows);
   const attention = rows.filter(r => r.status !== 'Completed and Submitted' || r.flags.length)
-    .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.status === 'Pending' ? 'Review pending' : r.status), status: r.status, reschedules: r.reschedules }))
-    .slice(0, 12);
-  const own = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
+    .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.status === 'Pending' ? 'Review pending' : r.status), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
   const win = D.windowFor(user.team, month);
-  return { counts: L.counts(rows), attention, window: win, ownStatus: own ? L.reviewStatus(own) : null, month };
+  const scoped = q.team ? teams.filter(t => t.team === q.team) : teams; // hero text and tips follow the team filter
+  const out = { month, label: D.monthLabel(month), today: config.today, counts, teams, attention, window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };
+  const openT = scoped.filter(t => t.state === 'open'), upT = scoped.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
+  out.nextWindow = openT.length ? { state: 'open', team: openT.length === 1 ? openT[0].team : `${openT.length} teams`, date: openT.map(t => t.window.end).sort().pop() }
+    : upT.length ? { state: 'upcoming', team: upT[0].team, date: upT[0].window.start, days: upT[0].days } : { state: 'closed' };
+  if (mgr) {
+    const em = emailStates(user, month);
+    const emails = { total: em.length, drafts: em.filter(x => x.state === 'draft').length, sent: em.filter(x => x.state === 'sent').length };
+    out.quick = {
+      datesCollected: all.filter(r => r.scheduled).length, datesTotal: all.length, emails, teamReviews: all.length,
+      employees: user.role === 'admin' ? { active: employees.filter(e => e.role !== 'admin' && e.active).length, inactive: employees.filter(e => e.role !== 'admin' && !e.active).length } : null,
+    };
+    out.editRequests = openEditRequests(user);
+    out.tips = homeTips(scoped, counts, emails);
+  }
+  const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
+  if (ownForm) {
+    const v = L.validate(ownForm), di = L.dueInfo(ownForm);
+    out.own = { status: L.reviewStatus(ownForm), scheduled: ownForm.scheduledDate, time: ownForm.scheduledTime || null, invite: inviteView(ownForm), zoom: ownForm.zoomLink || null, reviewDate: ownForm.reviewDate, due: di.due, submitted: ownForm.submitted, reschedules: ownForm.reschedules.length,
+      rating: ownForm.submitted ? L.monthlyRating(ownForm) : null, preview: !ownForm.submitted && L.ratingsComplete(ownForm) ? L.monthlyRating(ownForm) : null,
+      issues: [...new Set(v.filter(x => x.level !== 'info').map(x => x.short))] };
+  }
+  return out;
 });
 
 // Forms
@@ -82,7 +261,7 @@ route('GET', '/api/form', ({ user, q }) => formPayload(user, mustForm(user, q.em
 
 route('PUT', '/api/form', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
-  if (f.locked) throw bad('This form is locked. Request edit access to reopen it.');
+  if (f.locked) throw bad(LOCKED_MSG);
   const manage = L.canManage(user, f.empId), selfEdit = L.canSelfEdit(user, f.empId);
   if (!manage && !selfEdit) throw forbid();
   // managers often give ratings and remarks verbally, so the team member may enter those too
@@ -120,12 +299,8 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   return formPayload(user, f);
 });
 
-route('POST', '/api/form/request-edit', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  editRequests.unshift({ type: 'form', empId: f.empId, month: f.month, by: user.name, at: new Date().toISOString(), status: 'open', note: body.note || '' });
-  audit(user.name, 'edit access requested', `${L.emp(f.empId).name} ${f.month}`);
-  return { ok: true };
-});
+// a submitted review is final: there is no reopen and no edit request, for anyone (admins included)
+const LOCKED_MSG = 'This review is completed and submitted, so the form can no longer be changed.';
 route('POST', '/api/form/kra-request', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
   if (user.id !== f.empId || f.locked) throw forbid();
@@ -142,20 +317,12 @@ route('POST', '/api/form/kra-approve', ({ user, body }) => {
   audit(user.name, body.approve ? 'KRA edit approved' : 'KRA edit declined', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
 });
-route('GET', '/api/edit-requests', ({ user }) => editRequests.filter(r => r.status === 'open' && (user.role === 'admin' || L.canManage(user, r.empId))).map(r => ({ ...r, name: L.emp(r.empId).name })));
-route('POST', '/api/form/unlock', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  if (!L.canManage(user, f.empId)) throw forbid();
-  f.locked = false; f.submitted = false;
-  editRequests.filter(r => r.empId === f.empId && r.month === f.month).forEach(r => r.status = 'granted');
-  audit(user.name, 'form reopened', `${L.emp(f.empId).name} ${f.month}`);
-  return formPayload(user, f);
-});
+route('GET', '/api/edit-requests', ({ user }) => openEditRequests(user));
 
 // KRA settings: sub-KRA totals must equal the parent KRA weight
 route('PUT', '/api/kras', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
-  if (f.locked) throw bad('This form is locked.');
+  if (f.locked) throw bad(LOCKED_MSG);
   if (!canEditKras(user, f)) throw new HttpError(403, 'You cannot change KRA settings or weightage. Send a request for edit to your manager.');
   const errors = [];
   for (const [k, label] of L.KRAS) {
@@ -198,11 +365,10 @@ route('POST', '/api/form/copy-kras', ({ user, body }) => {
 });
 
 // ---------- Appraisal form (annual, 6 steps) ----------
-const appraisals = {};
 const blankAppraisal = () => ({ recap: [{ expectation: '', achievements: '', improvement: '' }], kraProgress: [{ kra: '', progress: '' }], strengths: '', improvements: '', operational: '', process: '', people: '', submittedAt: null });
 const appraisalPayload = (user, empId) => {
   const e = L.emp(empId), m = e.managerId ? L.emp(e.managerId) : null, a = appraisals[empId] || blankAppraisal();
-  return { employee: { id: e.id, name: e.name, designation: e.designation, department: e.team, reviewer: m ? m.name : '–' }, fy: '2026-27', form: a,
+  return { employee: { id: e.id, name: e.name, designation: e.designation, department: e.team, reviewer: m ? m.name : 'Not assigned' }, fy: '2026-27', form: a,
     perms: { edit: L.canSelfEdit(user, empId) || L.canManage(user, empId) } };
 };
 route('GET', '/api/appraisal', ({ user, q }) => {
@@ -215,8 +381,7 @@ route('PUT', '/api/appraisal', ({ user, body }) => {
   if (!L.emp(id) || !L.canView(user, id)) throw forbid();
   if (!L.canSelfEdit(user, id) && !L.canManage(user, id)) throw forbid();
   const s = v => String(v ?? '');
-  const f = body.form || {}, cur = appraisals[id] || blankAppraisal();
-  appraisals[id] = {
+  const f = body.form || {}, cur = appraisals[id] || blankAppraisal();  appraisals[id] = {
     recap: (f.recap || []).map(r => ({ expectation: s(r.expectation), achievements: s(r.achievements), improvement: s(r.improvement) })),
     kraProgress: (f.kraProgress || []).map(r => ({ kra: s(r.kra), progress: s(r.progress) })),
     strengths: s(f.strengths), improvements: s(f.improvements), operational: s(f.operational), process: s(f.process), people: s(f.people),
@@ -227,7 +392,7 @@ route('PUT', '/api/appraisal', ({ user, body }) => {
 });
 
 // Scheduling
-route('GET', '/api/scheduling', ({ user, q }) => {
+route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const month = q.month || config.currentMonth;
   L.visibleEmployees(user).filter(e => e.id !== user.id || user.role === 'employee').forEach(e => L.getForm(e.id, month));
   const rows = L.reportRows(user, month, { team: q.team });
@@ -235,27 +400,104 @@ route('GET', '/api/scheduling', ({ user, q }) => {
   const windows = teams.map(t => {
     const w = D.windowFor(t, month), tr = rows.filter(r => r.team === t);
     const [y, m, d] = w.start.split('-').map(Number); const c = new Date(y, m - 1, d - 3);
-    return { team: t, start: w.start, end: w.end, collectedOn: c.toISOString().slice(0, 10), collected: tr.filter(r => r.scheduled).length, total: tr.length };
+    const days = config.windows[t] || { start: 25, end: 31 };
+    return { team: t, start: w.start, end: w.end, startDay: days.start, endDay: days.end, collectedOn: c.toISOString().slice(0, 10), collected: tr.filter(r => r.scheduled).length, total: tr.length };
   });
-  return { windows, rows: rows.map(r => ({ ...r, history: L.peek(r.empId, month).reschedules })) };
+  return { windows, canEditWindows: user.role === 'admin', calendar: calendarState(realUser), rows: rows.map(r => {
+    const f = L.peek(r.empId, month), e = L.emp(r.empId);
+    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: L.canManage(user, r.empId) };
+  }) };
 });
-route('POST', '/api/scheduling/reschedule', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  if (!L.canManage(user, f.empId)) throw forbid();
-  if (!body.date) throw bad('A new date is required.');
-  f.reschedules.push({ from: f.scheduledDate, to: body.date, by: user.name, at: config.today });
-  f.scheduledDate = body.date;
-  audit(user.name, 'reschedule', `${L.emp(f.empId).name} to ${body.date}`);
-  return { ok: true };
-});
-route('POST', '/api/scheduling/schedule', ({ user, body }) => {
-  const f = mustForm(user, body.empId, body.month);
-  if (!L.canManage(user, f.empId)) throw forbid();
-  if (!body.date) throw bad('Select a schedule date.');
+
+// ---------- calendar invites ----------
+const DURATIONS = [15, 30, 45, 60, 90];
+// the Zoom link the manager pasted: optional, and only real https zoom.us links, because employees get it as a button
+function zoomOf(body, f) {
+  if (body.zoom === undefined) return f.zoomLink || '';
+  const s = String(body.zoom).trim(); if (!s) return '';
+  let u = null; try { u = new URL(s); } catch {}
+  if (!u || u.protocol !== 'https:' || !/(^|\.)zoom\.us$/i.test(u.hostname)) throw bad('Enter a valid Zoom link, for example https://zoom.us/j/123456789.');
+  return u.href;
+}
+// the review slot from a request: date (required), time (default 11:00), length in minutes (default 30) and Zoom link
+function slotOf(body, f) {
+  const date = String(body.date || ''), time = String(body.time || f.scheduledTime || '11:00'), duration = +(body.duration || (f.invite && f.invite.duration) || 30);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date))) throw bad('Select a review date.');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw bad('Select a valid time.');
+  if (!DURATIONS.includes(duration)) throw bad('Select how long the review takes.');
+  return { date, time, duration, tz: config.timeZone || 'Asia/Kolkata', zoom: zoomOf(body, f) };
+}
+const inviteView = f => f.invite ? { link: f.invite.link, owner: f.invite.owner, guests: f.invite.guests, date: f.invite.date, time: f.invite.time, duration: f.invite.duration, sentAt: f.invite.sentAt } : null;
+// Google errors are shown to the user as they are (expired access, calendar not connected, ...)
+const viaGoogle = async fn => { try { return await fn(); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(502, e.message); } };
+// the text of the calendar event, including the manager's Zoom link
+function reviewNote(f, body, senderName, zoom) {
+  const origin = A.okOrigin(body.origin) || A.ORIGINS.find(o => !o.includes('localhost')) || A.ORIGINS[0];
+  return `Monthly performance review for ${D.monthLabel(f.month)}.\n\n${zoom ? `Join the Zoom meeting: ${zoom}\n\n` : ''}Review form: ${origin}/#/form/${f.empId}/${f.month}\n\nPlease fill in your self ratings and remarks before the meeting.\n\nSent from Verve PMS by ${senderName}.`;
+}
+// the invite comes from the signed-in person's own calendar; guests are the employee and, if someone else schedules, their manager
+async function sendInvite(sender, f, slot, body) {
+  const e = L.emp(f.empId), mgr = e.managerId ? L.emp(e.managerId) : null;
+  if (!A.google) throw bad('Calendar invites need Google sign-in to be set up on the server.');
+  if (!A.isOrgEmail(e.email)) throw bad(`${e.name} has no @${A.ORG_DOMAIN} email in PMS. An admin can add it on the Employees page.`);
+  if (!C.linked(sender.id)) throw bad('Connect your Google Calendar first (top of this page).');
+  const guests = [e.email.toLowerCase()];
+  if (mgr && mgr.id !== sender.id && A.isOrgEmail(mgr.email)) guests.push(mgr.email.toLowerCase());
+  const ev = await viaGoogle(() => C.create(sender.id, { ...slot, guests,
+    summary: `PMS review: ${e.name} (${D.monthLabel(f.month)})`,
+    description: reviewNote(f, body, sender.name, slot.zoom) }));
+  f.invite = { eventId: ev.id, ownerId: sender.id, owner: sender.name, link: ev.link, guests, date: slot.date, time: slot.time, duration: slot.duration, sentAt: new Date().toISOString() };
+}
+const manageForm = (user, body) => { const f = mustForm(user, body.empId, body.month); if (!L.canManage(user, f.empId)) throw forbid(); return f; };
+
+route('POST', '/api/scheduling/schedule', async ({ user, realUser, body }) => {
+  const f = manageForm(user, body);
   if (f.scheduledDate) throw bad('This review is already scheduled. Use Reschedule to change the date.');
-  f.scheduledDate = body.date;
-  audit(user.name, 'schedule', `${L.emp(f.empId).name} ${body.date}`);
+  const slot = slotOf(body, f);
+  if (body.invite) await sendInvite(realUser, f, slot, body);
+  f.scheduledDate = slot.date; f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
+  audit(user.name, 'schedule', `${L.emp(f.empId).name} ${slot.date} ${slot.time}${f.invite ? ' (calendar invite sent)' : ''}`);
+  return { ok: true, invite: inviteView(f) };
+});
+route('POST', '/api/scheduling/reschedule', async ({ user, realUser, body }) => {
+  const f = manageForm(user, body);
+  const slot = slotOf(body, f);
+  if (slot.date === f.scheduledDate && slot.time === f.scheduledTime && (!f.invite || slot.duration === f.invite.duration) && slot.zoom === (f.zoomLink || '')) throw bad('Pick a different date or time, or change the Zoom link.');
+  // an existing invite moves with the review; Google tells every guest. It lives on the calendar of whoever sent it.
+  if (f.invite) {
+    if (!C.linked(f.invite.ownerId)) throw bad(`The invite was sent from ${f.invite.owner}'s Google Calendar, which is no longer connected. ${f.invite.owner} needs to connect it again to move the invite.`);
+    await viaGoogle(() => C.move(f.invite.ownerId, f.invite.eventId, { ...slot, description: reviewNote(f, body, f.invite.owner, slot.zoom) }));
+    Object.assign(f.invite, { date: slot.date, time: slot.time, duration: slot.duration });
+  } else if (body.invite) await sendInvite(realUser, f, slot, body);
+  if (slot.date !== f.scheduledDate) f.reschedules.push({ from: f.scheduledDate, to: slot.date, by: user.name, at: config.today });
+  f.scheduledDate = slot.date; f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
+  audit(user.name, 'reschedule', `${L.emp(f.empId).name} to ${slot.date} ${slot.time}${f.invite ? ' (calendar invite updated)' : ''}`);
+  return { ok: true, invite: inviteView(f) };
+});
+// send an invite for a review that already has a date
+route('POST', '/api/scheduling/invite', async ({ user, realUser, body }) => {
+  const f = manageForm(user, body);
+  if (!f.scheduledDate) throw bad('Schedule the review first.');
+  if (f.invite) throw bad('An invite was already sent. Use Reschedule to change it.');
+  const slot = slotOf({ ...body, date: f.scheduledDate }, f);
+  await sendInvite(realUser, f, slot, body);
+  f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
+  audit(user.name, 'calendar invite sent', `${L.emp(f.empId).name} ${slot.date} ${slot.time}`);
+  return { ok: true, invite: inviteView(f) };
+});
+route('POST', '/api/scheduling/cancel-invite', async ({ user, body }) => {
+  const f = manageForm(user, body);
+  if (!f.invite) throw bad('There is no invite to cancel.');
+  if (!C.linked(f.invite.ownerId)) throw bad(`The invite is on ${f.invite.owner}'s Google Calendar, which is no longer connected. ${f.invite.owner} can delete it in Google Calendar.`);
+  await viaGoogle(() => C.cancel(f.invite.ownerId, f.invite.eventId));
+  delete f.invite;
+  audit(user.name, 'calendar invite cancelled', `${L.emp(f.empId).name} ${f.month}`);
   return { ok: true };
+});
+route('POST', '/api/calendar/disconnect', async ({ realUser }) => {
+  await C.unlink(realUser.id);
+  audit(realUser.name, 'Google Calendar disconnected', '');
+  return calendarState(realUser);
 });
 
 // Review status report
@@ -281,12 +523,7 @@ route('GET', '/api/report.csv', ({ user, q }) => {
 });
 
 // Emails (not sent automatically: generate drafts, then send)
-route('GET', '/api/emails', ({ user, q }) => {
-  const month = q.month || config.currentMonth;
-  const mgrs = employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && L.canView(user, e.id) && e.role !== 'admin');
-  const allowed = mgrs.filter(m => user.role === 'admin' || user.role === 'director' || m.id === user.id || L.isAncestor(user.id, m.id));
-  return allowed.map(m => ({ managerId: m.id, name: m.name, team: m.team, state: (emailsOutbox.find(x => x.managerId === m.id && x.month === month) || {}).state || 'not generated' }));
-});
+route('GET', '/api/emails', ({ user, q }) => emailStates(user, q.month || config.currentMonth));
 route('GET', '/api/email', ({ user, q }) => {
   const id = mustEmp(q.manager).id;
   if (user.role !== 'admin' && user.role !== 'director' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
@@ -317,7 +554,10 @@ route('POST', '/api/emails/send', ({ user, body }) => {
 });
 
 // Annual review + one page summary
+// the One Pager Document is for reviewers only: employees do not see it
+const noEmployees = u => { if (u.role === 'employee') throw forbid(); };
 route('GET', '/api/annual', ({ user, q }) => {
+  noEmployees(user);
   const e = mustEmp(q.emp || user.id), empId = e.id;
   if (!L.canView(user, empId)) throw forbid();
   const months = D.fyMonths();
@@ -344,6 +584,7 @@ route('GET', '/api/annual', ({ user, q }) => {
     perms: { editSelf: (L.canSelfEdit(user, empId)) && !(annualForms[key] || {}).submitted, editMgr: L.canManage(user, empId) && !(annualForms[key] || {}).submitted, submit: L.canManage(user, empId) } };
 });
 route('PUT', '/api/annual', ({ user, body }) => {
+  noEmployees(user);
   const empId = +body.empId; if (!L.canView(user, empId)) throw forbid();
   const key = `${empId}|FY2026`;
   const cur = annualForms[key] || {};
@@ -382,10 +623,39 @@ route('POST', '/api/employees', ({ user, body }) => {
   const miss = need.filter(k => !body[k]);
   if (miss.length) throw bad('Mandatory fields missing: ' + miss.join(', '), { errors: ['Mandatory fields missing: ' + miss.join(', ')] });
   if (employees.some(e => e.code === body.code)) throw bad('Employee code already exists.');
+  const email = checkEmail(body.email, null, true);
+  mustEmp(body.managerId);
   const id = Math.max(...employees.map(e => e.id)) + 1;
-  employees.push({ id, code: body.code, name: body.name, email: body.email, designation: body.designation, team: body.team, managerId: +body.managerId, role: body.role, level: null, joined: body.joined, active: true, newJoiner: true });
+  employees.push({ id, code: body.code, name: body.name, email, designation: body.designation, team: body.team, managerId: +body.managerId, role: body.role, level: null, joined: body.joined, active: true, newJoiner: true });
   audit(user.name, 'add member', `${body.name} (${body.code})`);
   return { id };
+});
+// work emails are how people sign in, so they must be on the org domain and belong to one person only
+function checkEmail(raw, selfId, required) {
+  const email = String(raw || '').trim().toLowerCase();
+  if (!email) { if (required) throw bad('Work email is required.'); return ''; }
+  if (!A.isOrgEmail(email)) throw bad(`Work email must end with @${A.ORG_DOMAIN}.`, { errors: [`Work email must end with @${A.ORG_DOMAIN}.`] });
+  const other = findByEmail(email);
+  if (other && other.id !== selfId) throw bad(`${email} already belongs to ${other.name}.`, { errors: [`${email} already belongs to ${other.name}.`] });
+  return email;
+}
+const ROLES = ['employee', 'teamlead', 'manager', 'director', 'admin'];
+route('PUT', '/api/employees', ({ user, body }) => {
+  adminOnly(user);
+  const e = mustEmp(body.id);
+  const email = checkEmail(body.email, e.id, false);
+  if (!String(body.name || '').trim() || !String(body.designation || '').trim()) throw bad('Name and designation are required.', { errors: ['Name and designation are required.'] });
+  if (body.role && !ROLES.includes(body.role)) throw bad('Unknown access role.');
+  if (e.id === user.id && body.role && body.role !== 'admin') throw bad('You cannot remove your own admin access.', { errors: ['You cannot remove your own admin access.'] });
+  let managerId = e.managerId;
+  if (body.managerId !== undefined) {
+    managerId = body.managerId ? mustEmp(body.managerId).id : null;
+    // a manager cannot report to themselves or to someone in their own team
+    if (managerId === e.id || L.subordinates(e.id).some(x => x.id === managerId)) throw bad('That reporting manager would create a loop.', { errors: ['That reporting manager would create a loop.'] });
+  }
+  Object.assign(e, { name: String(body.name).trim(), email, designation: String(body.designation).trim(), team: body.team || e.team, role: body.role || e.role, managerId });
+  audit(user.name, 'edit member', `${e.name} (${e.code})`);
+  return { ok: true };
 });
 route('POST', '/api/employees/inactive', ({ user, body }) => {
   adminOnly(user);
@@ -413,7 +683,7 @@ route('GET', '/api/reporting', ({ user, q }) => {
   const direct = e => employees.filter(x => x.managerId === e.id && x.active);
   const director = e => { let c = e; while (c && c.role !== 'director') c = L.emp(c.managerId); return c && c.id !== e.id ? c.name : (c ? '' : ''); };
   const list = employees.filter(e => e.active && e.level === lv).map(e => ({
-    id: e.id, name: e.name, designation: e.designation, email: e.email || `${e.name.toLowerCase().replace(/ /g, '.')}@company.com`, employees: direct(e).length, director: director(e),
+    id: e.id, name: e.name, designation: e.designation, email: e.email || '', employees: direct(e).length, director: director(e),
     team: direct(e).map(x => { const f = L.peek(x.id, month); return { id: x.id, name: x.name, designation: x.designation, status: f ? L.reviewStatus(f) : '-' }; }),
   }));
   return list;
@@ -499,6 +769,17 @@ route('PUT', '/api/config', ({ user, body }) => {
   audit(user.name, 'config updated', 'thresholds / windows');
   return config;
 });
+// one team's review window (day of month, same every month), edited from the Scheduling page
+route('PUT', '/api/windows', ({ user, body }) => {
+  adminOnly(user);
+  const team = String(body.team || '').trim(), start = Number(body.start), end = Number(body.end);
+  if (!team) throw bad('Team is required.');
+  if (![start, end].every(n => Number.isInteger(n) && n >= 1 && n <= 31)) throw bad('Days must be whole numbers from 1 to 31.');
+  if (start > end) throw bad('The window must start on or before the day it ends.');
+  config.windows[team] = { start, end };
+  audit(user.name, 'review window updated', `${team}: day ${start} to ${end}`);
+  return config.windows[team];
+});
 
 // ---------- server ----------
 const server = http.createServer((req, res) => {
@@ -512,17 +793,25 @@ const server = http.createServer((req, res) => {
   let raw = '';
   req.on('data', c => raw += c);
   req.on('end', async () => {
-    const send = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+    const setCookies = [];
+    const send = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(setCookies.length && { 'Set-Cookie': setCookies }) }); res.end(JSON.stringify(data)); };
     try {
       const r = routes.find(x => x.method === req.method && x.re.test(url.pathname));
       if (!r) return send(404, { error: 'Not found' });
-      const user = L.emp(+req.headers['x-user']);
-      if (url.pathname !== '/api/users' && (!user || !user.active)) return send(401, { error: 'Pick a user to continue.' });
+      // changes must come from the app itself (JSON), which a form on another site cannot send with our cookie
+      if (req.method !== 'GET' && !/application\/json/.test(req.headers['content-type'] || '')) return send(415, { error: 'Send JSON.' });
+      const cookies = A.parseCookies(req.headers.cookie), s = A.session(cookies);
+      const realUser = s ? L.emp(s.uid) : null, signedIn = realUser && realUser.active ? realUser : null;
+      // an admin "viewing as" someone gets that person's permissions; realUser stays the admin
+      const asUser = signedIn && s.as && signedIn.role === 'admin' ? L.emp(s.as) : null;
+      const user = asUser && asUser.active ? asUser : signedIn;
+      if (!r.open && !user) return send(401, { error: 'Please sign in to continue.' });
       let body = {};
       if (raw) { try { body = JSON.parse(raw); } catch { return send(400, { error: 'Request body is not valid JSON.' }); } }
-      const result = r.fn({ user, q: Object.fromEntries(url.searchParams), body });
+      const result = await r.fn({ user, realUser: signedIn, session: s, q: Object.fromEntries(url.searchParams), body, cookies, secure: A.isSecure(req), setCookie: c => setCookies.push(c) });
       // store any change before answering, so a saved form survives a restart
       try { await DB.save(); } catch (e) { console.error('Saving to Postgres failed:', e.message); return send(503, { error: 'Could not save to the database. Please try again.' }); }
+      if (result instanceof Redirect) { res.writeHead(302, { Location: result.url, 'Cache-Control': 'no-store', ...(setCookies.length && { 'Set-Cookie': setCookies }) }); return res.end(); }
       send(200, result);
     } catch (e) {
       if (e instanceof HttpError) return send(e.code, { error: e.message, ...e.extra });
@@ -530,6 +819,6 @@ const server = http.createServer((req, res) => {
     }
   });
 });
-DB.init().then(
-  () => server.listen(PORT, () => console.log(`Verve PMS demo running at http://localhost:${PORT}`)),
+DB.init().then(() => { ensureAccounts(); return DB.save(); }).then(
+  () => server.listen(PORT, () => console.log(`Verve PMS running at http://localhost:${PORT} · sign-in: ${[A.google && `Google (@${A.ORG_DOMAIN})`, A.demo && 'demo users'].filter(Boolean).join(' + ') || 'none'}`)),
   e => { console.error('Could not connect to Postgres:', e.message); process.exit(1); });

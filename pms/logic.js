@@ -98,10 +98,7 @@ function validate(f) {
       const miss = [];
       rows.forEach((r, i) => {
         if (!has(r.self) || blank(r.selfRemark)) miss.push(r.kpi);
-        if (has(r.self) && +r.self === 5 && blank(r.selfRemark))
-          add('block', label, 'TOP_SELF_REMARK', `A self rating of 5 needs a remark. (${label}: ${r.kpi})`, `Remark missing for rating 5 (${r.kpi})`);
-        if (has(r.mgr) && +r.mgr === 5 && blank(r.mgrRemark) && !(has(r.self) && +r.self !== 5))
-          add('block', label, 'TOP_MGR_REMARK', `A manager rating of 5 needs a manager remark. (${label}: ${r.kpi})`, `Manager remark missing for rating 5 (${r.kpi})`);
+        // a manager remark is needed only when the manager's rating differs from the self rating
         if (has(r.self) && has(r.mgr) && +r.self !== +r.mgr && blank(r.mgrRemark))
           add('block', label, 'MGR_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${label}: ${r.kpi})`, `Manager remark missing (${r.kpi})`);
       });
@@ -156,7 +153,6 @@ function validate(f) {
     } else {
       const s = a && a.self, m = a && a.mgr;
       if (!has(s) || !has(m)) { qComplete = false; add('flag', 'Questionnaire', 'Q_INCOMPLETE', `${q.text}: self and manager ratings are both needed.`, 'Questionnaire rating missing'); }
-      else if (+s === +m && +s === 5 && blank(a.remark)) add('block', 'Questionnaire', 'Q_TOP_REMARK', `A rating of 5 needs a remark. (${q.text})`, 'Questionnaire remark missing for rating 5');
       else if (+s !== +m && blank(a.remark)) add('block', 'Questionnaire', 'Q_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${q.text})`, 'Questionnaire manager remark missing');
     }
   }

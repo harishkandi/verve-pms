@@ -1,4 +1,4 @@
-# Verve HRMS — notes for Claude
+# Verve HRMS: notes for Claude
 
 Monorepo for Verve's internal HR tools. One folder per module; today only `pms/` (Performance Management System) has code.
 The other module branches in the org repo (`feature/attendance`, `feature/reimbursement`, `feature/onboarding`,
@@ -7,8 +7,16 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 ## PMS app (`pms/`)
 - Plain Node (>=20, deploy uses 22), no framework, one dependency (`pg`). `server.js` = HTTP server, route table and
   static file serving from `public/`; `logic.js` = business rules; `data.js` = seed data + shared config;
-  `db.js` = Postgres persistence; `public/index.html` + `public/app.js` = the whole frontend (vanilla JS).
-- Login is a user picker (no passwords): the browser sends `X-User: <employee id>`. Fine for demo data only.
+  `db.js` = Postgres persistence; `auth.js` = sign-in + session cookie; `calendar.js` = Google Calendar invites;
+  `public/index.html` + `public/app.js` = the whole frontend (vanilla JS).
+- Sign-in: "Sign in with Google", only verified accounts on the `verveadvisory.com` Workspace (`hd` claim) whose email
+  matches an active employee record; `ADMIN_EMAILS` become admin on first sign-in. Session = HMAC-signed HttpOnly cookie
+  `pms_session` (`SESSION_SECRET`). Without `GOOGLE_CLIENT_ID`/`SECRET` the old dummy-user picker is used (`POST /api/auth/demo`).
+  Admins can "View as" anyone (real user stays in the session). All `/api/auth/*` routes live under `/api` so Vercel forwards them.
+- Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
+  `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
+  Google emails the guests (employee + their manager when someone else schedules). Demo employees have no email on purpose.
+- Settings live in env vars, listed in `pms/.env.example`; `npm run dev` / `npm run local` read `pms/.env`.
 - Persistence: all state lives in the in-memory objects exported by `data.js`. With `DATABASE_URL` set, `db.js` loads
   them from one jsonb row (`pms_state`, id 1) on boot (seeding it when empty) and saves after any request that changed
   state; the server answers only after the save. No `DATABASE_URL` → in memory, resets on restart.
@@ -18,10 +26,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 
 ## Commands (run in `pms/`)
     npm install
-    npm run dev        # server on :3000, DATABASE_URL from ../.env.local (Neon) — same DB as staging!
+    npm run dev        # server on :3000, DATABASE_URL from ../.env.local (Neon), same DB as staging!
     npm start          # no .env loading; in-memory unless DATABASE_URL is set
     npm run db:reset   # drop pms_state; next start reseeds demo data
-Smoke test: `curl localhost:3000/api/users`; other routes need header `X-User: 1` (admin) or `7` (employee).
+Smoke test (demo sign-in, i.e. no Google env): `curl -c j -H 'Content-Type: application/json' -d '{"id":1}' localhost:3000/api/auth/demo`
+then `curl -b j localhost:3000/api/me` (1 = admin, 7 = employee). Non-GET calls must send `Content-Type: application/json`.
 
 ## Staging (live)
 | Piece | Where | Notes |
@@ -34,7 +43,7 @@ Smoke test: `curl localhost:3000/api/users`; other routes need header `X-User: 1
 `render.yaml` describes the planned org-repo Blueprint (`verve-pms-staging`, branch `feature/pms`); the live Render
 service was created by hand from the personal repo and does not use it.
 
-Check Vercel really forwards to Render: change a value on Render (`PUT /api/config {"clickupMin":4}` as `X-User: 1`),
+Check Vercel really forwards to Render: change a value on Render (`PUT /api/config {"clickupMin":4}` signed in as admin),
 read it back through Vercel, then restore it. Different values = Vercel is running its own copy.
 
 ## Git workflow

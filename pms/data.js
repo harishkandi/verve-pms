@@ -1,4 +1,5 @@
-// Seed data and shared config for the PMS demo. Everything lives in memory and resets on restart.
+// Seed data and shared config for the PMS demo. State lives in these objects; db.js stores them in Postgres when configured.
+// Demo employees have no email on purpose: no calendar invite can reach a real inbox by accident.
 
 const config = {
   currentMonth: '2026-11',     // review month being run; its forms are open from the 1st of the month
@@ -16,6 +17,7 @@ const config = {
   selfShare: 0.3,
   mgrShare: 0.7,
   lookbackMonths: 5,
+  timeZone: 'Asia/Kolkata',    // calendar invites use this time zone
   windows: {
     Operations: { start: 25, end: 31 },
     Marketing: { start: 10, end: 15 },
@@ -99,6 +101,8 @@ const annualForms = {};     // `${empId}|${fy}` -> form
 const auditLog = [];
 const emailsOutbox = [];
 const editRequests = [];
+const appraisals = {};      // empId -> annual appraisal form (6 steps)
+const calendarLinks = {};   // empId -> { email, token (encrypted Google refresh token), connectedAt }
 const audit = (who, action, detail) => auditLog.unshift({ at: new Date().toISOString(), who, action, detail });
 
 const defaultRows = () => ({
@@ -208,4 +212,4 @@ function seedForms() {
 }
 seedForms();
 
-module.exports = { config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, editRequests, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, buildForm, pad };
+module.exports = { config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, editRequests, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, buildForm, pad };
