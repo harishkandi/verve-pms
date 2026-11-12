@@ -6,6 +6,10 @@ const L = require('./logic');
 const DB = require('./db');
 const A = require('./auth');
 const C = require('./calendar');
+const N = require('./notify');
+// notification helpers: the person's reporting manager, and "November 2026 review"
+const mgrOf = id => N.managerOf(id);
+const revOf = f => `${D.monthLabel(f.month)} review`;
 const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, appraisals, audit } = D;
 
 const PORT = process.env.PORT || 3000;
@@ -35,7 +39,8 @@ function formPayload(viewer, f) {
   // once the employee has sent their part to the manager, it is read-only for them until the manager sends it back
   const selfOpen = open && (!f.selfSubmitted || manage);
   return {
-    form: f, employee: view(e), manager: e.managerId ? view(L.emp(e.managerId)) : null,
+    // a submitted form names the manager who reviewed it, even if the person reports to someone else now
+    form: f, employee: view(e), manager: f.reviewedBy && f.reviewedBy.managerId && L.emp(f.reviewedBy.managerId) ? view(L.emp(f.reviewedBy.managerId)) : e.managerId ? view(L.emp(e.managerId)) : null,
     questions: L.activeQuestions(month, f), status: L.reviewStatus(f), due: L.dueInfo(f),
     rating: f.submitted ? L.monthlyRating(f) : null, previewRating: L.monthlyRating(f), summary: L.kraSummary(f),
     newJoiner: L.isNewJoiner(f), validation: valid,
@@ -53,13 +58,16 @@ function formPayload(viewer, f) {
 // employees cannot change their own KRAs; they send a request, and once their manager approves it they can make the change (one save)
 const kraGrant = (viewer, f) => viewer.id === f.empId && !f.selfSubmitted && !!f.kraRequest && f.kraRequest.status === 'approved';
 const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || kraGrant(viewer, f));
-const canRequestKra = (viewer, f) => !f.locked && !f.selfSubmitted && viewer.id === f.empId && !L.canManage(viewer, f.empId) && !(f.kraRequest && ['pending', 'approved'].includes(f.kraRequest.status));
+// admins and directors set their own KRAs (no manager to approve), so they never request a change
+const canRequestKra = (viewer, f) => !['admin', 'director'].includes(viewer.role) && !!viewer.managerId && !f.locked && !f.selfSubmitted && viewer.id === f.empId && !L.canManage(viewer, f.empId) && !(f.kraRequest && ['pending', 'approved'].includes(f.kraRequest.status));
 const canDecideKra = (viewer, f) => !f.locked && viewer.id !== f.empId && L.canManage(viewer, f.empId) && !!f.kraRequest && f.kraRequest.status === 'pending';
 const fyLabel = m => { const [y, mo] = m.split('-').map(Number); const s = mo >= 4 ? y : y - 1; return `FY ${s}-${s + 1}`; };
 
 function mustForm(viewer, empId, month) {
   empId = +empId;
   if (!L.emp(empId) || !L.canView(viewer, empId)) throw forbid();
+  // people with no reporting manager (top-level directors) are not reviewed: no new form for them (old ones stay readable)
+  if (!L.emp(empId).managerId && !L.peek(empId, month)) throw bad('Top-level directors have no monthly review, so there is no form to open.');
   const f = L.getForm(empId, month);
   if (!f) throw bad('No form exists for this month.');
   return f;
@@ -186,9 +194,40 @@ const ensureMonthForms = () => employees.filter(e => e.active && e.managerId && 
 ensureMonthForms();
 const calendarState = real => { const l = C.linked(real.id); return { google: A.google, connected: !!l, email: l ? l.email : '', canConnect: A.google && A.isOrgEmail(real.email) }; };
 route('GET', '/api/me', ({ user, realUser }) => (ensureMonthForms(), {
-  ...view(user), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth),
-  real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
+  ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(Boolean))].sort(),
+  months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth),
+  photo: D.photos[user.id] || '', real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
 }));
+
+// Profile information (top bar menu): the person's own details as the admin set them; read-only for them.
+// Joining date and code from the employee list are placeholders until the admin sets them (joinedSet / codeSet).
+route('GET', '/api/profile', ({ user }) => {
+  const e = L.emp(user.id), mgr = e.managerId ? L.emp(e.managerId) : null;
+  // reporting line, top-level director first, the person last
+  const chain = [e]; for (let x = e, i = 0; x.managerId && i < 50; i++) { x = L.emp(x.managerId); if (!x) break; chain.unshift(x); }
+  const top = chain[0];
+  const unset = k => e.src === 'list' && !e[k + 'Set'];
+  const w = e.managerId ? D.windowFor(e.team, config.currentMonth) : null;
+  return {
+    name: e.name, code: unset('code') ? '' : e.code, email: e.email || '', designation: e.designation || '', team: e.team || '',
+    role: e.role, manager: mgr ? { name: mgr.name, designation: mgr.designation || '' } : null,
+    director: top.id !== e.id ? top.name : '', joined: unset('joined') ? '' : e.joined || '', active: e.active !== false,
+    reports: employees.filter(x => x.active && x.managerId === e.id).length,
+    chain: chain.map(x => ({ id: x.id, name: x.name, designation: x.designation || '', me: x.id === e.id, photo: D.photos[x.id] || '' })),
+    photo: D.photos[e.id] || '',
+    window: w ? { month: D.monthLabel(config.currentMonth), start: w.start, end: w.end } : null,
+  };
+});
+
+// profile photo: the person sets or removes their own (the browser crops it to a small square JPEG first)
+route('POST', '/api/profile/photo', ({ user, body }) => {
+  const photo = String(body.photo || '');
+  if (!photo) { delete D.photos[user.id]; audit(user.name, 'profile photo', 'removed'); return { photo: '' }; }
+  if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)) throw bad('That file is not a supported image (JPG, PNG or WebP).');
+  if (photo.length > 300000) throw bad('That photo is too large. Please pick a smaller image.');
+  D.photos[user.id] = photo; audit(user.name, 'profile photo', 'updated');
+  return { photo };
+});
 
 // Home dashboard: every number shown on the page is computed here, in one call
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
@@ -261,7 +300,7 @@ route('GET', '/api/home', ({ user, q }) => {
     // KRA change requests waiting for this person's approval (shown highlighted on their dashboard)
     out.kraRequests = Object.values(D.forms).filter(f => f.kraRequest && f.kraRequest.status === 'pending' && canDecideKra(user, f))
       .sort((a, b) => a.kraRequest.at.localeCompare(b.kraRequest.at))
-      .map(f => ({ empId: f.empId, name: L.emp(f.empId).name, designation: L.emp(f.empId).designation, team: L.emp(f.empId).team, month: f.month, label: D.monthLabel(f.month), at: f.kraRequest.at }));
+      .map(f => ({ empId: f.empId, name: L.emp(f.empId).name, designation: L.emp(f.empId).designation, team: L.emp(f.empId).team, month: f.month, label: D.monthLabel(f.month), at: f.kraRequest.at, movedFrom: f.kraRequest.movedFrom || null }));
   }
   const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
   if (ownForm) {
@@ -275,8 +314,15 @@ route('GET', '/api/home', ({ user, q }) => {
   return out;
 });
 
+// the bell: the signed-in person's notifications (an admin in "View as" sees that person's list but does not mark it read)
+route('GET', '/api/notifications', ({ user }) => N.listFor(user.id));
+route('POST', '/api/notifications/read', ({ user, realUser, body }) => {
+  if (realUser.id === user.id) N.markRead(user.id, body.id || null);
+  return N.listFor(user.id);
+});
+
 // Forms
-route('GET', '/api/form', ({ user, q }) => formPayload(user, mustForm(user, q.emp || user.id, q.month || config.currentMonth)));
+route('GET', '/api/form',({ user, q }) => formPayload(user, mustForm(user, q.emp || user.id, q.month || config.currentMonth)));
 
 route('PUT', '/api/form', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
@@ -291,15 +337,19 @@ route('PUT', '/api/form', ({ user, body }) => {
   if (!kraR.every(okIn(L.KRA_SCALE))) throw bad('KRA ratings must be a percentage from 10% to 100% in steps of 10.');
   if (!qR.every(okIn(L.Q_SCALE))) throw bad('Questionnaire ratings must be a whole number from 0 to 5.');
   if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
+  // only the fields that are sent change: the employee and the manager can have the form open at the same time,
+  // and one person's autosave must not wipe what the other entered meanwhile (the page sends just what was edited)
+  const sent = (o, key) => o && Object.prototype.hasOwnProperty.call(o, key);
   for (const [k] of L.KRAS) (body.kras?.[k]?.rows || []).forEach(br => {
     const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) return;
-    if (selfEdit) { r.self = num(br.self); r.selfRemark = br.selfRemark ?? r.selfRemark; }
-    if (mgrFields) { r.mgr = num(br.mgr); r.mgrRemark = br.mgrRemark ?? r.mgrRemark; }
+    if (selfEdit) { if (sent(br, 'self')) r.self = num(br.self); if (sent(br, 'selfRemark')) r.selfRemark = br.selfRemark ?? ''; }
+    if (mgrFields) { if (sent(br, 'mgr')) r.mgr = num(br.mgr); if (sent(br, 'mgrRemark')) r.mgrRemark = br.mgrRemark ?? ''; }
   });
   for (const [id, a] of Object.entries(body.qa || {})) {
     if (typeof a === 'string') { if (selfEdit || manage) f.qa[id] = a; continue; }
+    if (!a || typeof a !== 'object') continue;
     const cur = f.qa[id] || {};
-    f.qa[id] = { self: selfEdit ? num(a.self) : cur.self, mgr: mgrFields ? num(a.mgr) : cur.mgr, remark: mgrFields ? (a.remark ?? cur.remark) : cur.remark };
+    f.qa[id] = { self: selfEdit && sent(a, 'self') ? num(a.self) : cur.self, mgr: mgrFields && sent(a, 'mgr') ? num(a.mgr) : cur.mgr, remark: mgrFields && sent(a, 'remark') ? (a.remark ?? '') : cur.remark };
   }
   audit(user.name, 'save form', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
@@ -316,9 +366,16 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   if (!L.ratingsComplete(f)) errs.push('All self and manager ratings must be entered before the form is submitted.');
   if (errs.length) throw bad('Form cannot be submitted.', { errors: [...new Set(errs)] });
   f.submitted = true; f.locked = true;
+  // who the reporting manager was when the review was done: later reporting changes do not rewrite history
+  const rm = L.emp(L.emp(f.empId).managerId);
+  f.reviewedBy = { managerId: rm ? rm.id : null, manager: rm ? rm.name : '', by: user.name, at: config.today };
   if (!f.selfSubmitted) { f.selfSubmitted = true; f.selfSubmittedAt = new Date().toISOString(); }
   f.qSnapshot = L.activeQuestions(f.month, null);
   audit(user.name, 'submit form', `${L.emp(f.empId).name} ${f.month}`);
+  for (const k of ['sent', 'back', 'kra']) N.resolve(`${k}|${f.empId}|${f.month}`);
+  const rating = L.monthlyRating(f), link = N.formLink(f.empId, f.month);
+  N.push(f.empId, { type: 'review', link, text: `Your ${revOf(f)} was submitted by ${user.name}${rating != null ? `. Monthly rating: ${rating}%` : ''}. The form is now locked.` }, user);
+  if (rm && rm.id !== user.id) N.push(rm.id, { type: 'review', link, text: `${user.name} submitted ${L.emp(f.empId).name}'s ${revOf(f)}.` }, user);
   return formPayload(user, f);
 });
 
@@ -333,6 +390,9 @@ route('POST', '/api/form/self-submit', ({ user, body }) => {
   if (errs.length) throw bad('Form cannot be submitted yet. Please fill in:', { errors: errs });
   f.selfSubmitted = true; f.selfSubmittedAt = new Date().toISOString();
   audit(user.name, 'send form to manager', `${L.emp(f.empId).name} ${f.month}`);
+  N.resolve(`back|${f.empId}|${f.month}`);
+  const m = mgrOf(f.empId);
+  if (m) N.push(m.id, { type: 'review', action: true, key: `sent|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} sent you their part of the ${revOf(f)}. Add your ratings and submit it.` }, user);
   return formPayload(user, f);
 });
 // the manager hands the form back so the employee can change their part again
@@ -343,6 +403,8 @@ route('POST', '/api/form/return', ({ user, body }) => {
   if (!f.selfSubmitted) throw bad('The employee has not sent this form yet.');
   f.selfSubmitted = false; f.selfSubmittedAt = null;
   audit(user.name, 'send form back to employee', `${L.emp(f.empId).name} ${f.month}`);
+  N.resolve(`sent|${f.empId}|${f.month}`);
+  N.push(f.empId, { type: 'review', action: true, key: `back|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} sent your ${revOf(f)} back to you for changes.` }, user);
   return formPayload(user, f);
 });
 
@@ -376,7 +438,8 @@ route('PUT', '/api/kras', ({ user, body }) => {
   };
   const usedGrant = kraGrant(user, f);
   apply(f);
-  if (usedGrant) { audit(user.name, 'KRA change made after approval', `${L.emp(f.empId).name} ${f.month}`); delete f.kraRequest; }
+  if (usedGrant) { audit(user.name, 'KRA change made after approval', `${L.emp(f.empId).name} ${f.month}`); delete f.kraRequest; const m = mgrOf(f.empId); if (m) N.push(m.id, { type: 'request', link: N.formLink(f.empId, f.month), text: `${user.name} changed their KRAs for ${D.monthLabel(f.month)} (after your approval).` }, user); }
+  else if (user.id !== f.empId) N.push(f.empId, { type: 'change', key: `kras|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} updated your KRAs for ${D.monthLabel(f.month)}.` }, user);
   // later unsubmitted months follow the new structure
   D.fyMonths().filter(m => m > f.month && m <= config.currentMonth).forEach(m => { const g = D.forms[`${f.empId}|${m}`]; if (g && !g.locked) apply(g); });
   L.emp(f.empId).newJoiner = L.emp(f.empId).newJoiner && L.KRAS.every(([k]) => f.kras[k].rows.length === 0);
@@ -392,6 +455,8 @@ route('POST', '/api/kra-request', ({ user, body }) => {
   const note = String(body.note || '').trim().slice(0, 500);
   f.kraRequest = { status: 'pending', note, by: user.name, at: new Date().toISOString() };
   audit(user.name, 'KRA change requested', `${L.emp(f.empId).name} ${f.month}`);
+  const km = mgrOf(f.empId);
+  if (km) N.push(km.id, { type: 'request', action: true, key: `kra|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} asked to change their KRAs for ${D.monthLabel(f.month)}${note ? `: "${note.slice(0, 120)}"` : '.'}` }, user);
   return formPayload(user, f);
 });
 route('POST', '/api/kra-request/decide', ({ user, body }) => {
@@ -400,6 +465,8 @@ route('POST', '/api/kra-request/decide', ({ user, body }) => {
   const approve = !!body.approve;
   Object.assign(f.kraRequest, { status: approve ? 'approved' : 'rejected', decidedBy: user.name, decidedAt: new Date().toISOString(), reply: String(body.reply || '').trim().slice(0, 500) });
   audit(user.name, approve ? 'KRA change approved' : 'KRA change rejected', `${L.emp(f.empId).name} ${f.month}`);
+  N.resolve(`kra|${f.empId}|${f.month}`);
+  N.push(f.empId, { type: 'request', link: N.formLink(f.empId, f.month), text: approve ? `${user.name} approved your KRA change request for ${D.monthLabel(f.month)}. You can change your KRAs once.` : `${user.name} rejected your KRA change request for ${D.monthLabel(f.month)}${f.kraRequest.reply ? `: "${f.kraRequest.reply.slice(0, 120)}"` : '.'}` }, user);
   return formPayload(user, f);
 });
 
@@ -413,6 +480,7 @@ route('POST', '/api/form/copy-kras', ({ user, body }) => {
   f.kras = JSON.parse(JSON.stringify(src.kras));
   for (const [k] of L.KRAS) f.kras[k].rows.forEach(r => { r.self = null; r.selfRemark = ''; r.mgr = null; r.mgrRemark = ''; });
   audit(user.name, 'KRAs copied from last month', `${L.emp(f.empId).name} ${f.month}`);
+  if (user.id !== f.empId) N.push(f.empId, { type: 'change', key: `kras|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} set your ${D.monthLabel(f.month)} KRAs (copied from last month).` }, user);
   return formPayload(user, f);
 });
 
@@ -449,17 +517,22 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const month = q.month || config.currentMonth;
   // only people with a reporting manager have a review (same rule as ensureMonthForms); top-level directors are not reviewed
   L.visibleEmployees(user).filter(e => e.managerId && (e.id !== user.id || user.role === 'employee')).forEach(e => L.getForm(e.id, month));
-  const rows = L.reportRows(user, month, { team: q.team });
-  const teams = [...new Set(rows.map(r => r.team))];
+  // admins and directors see only the people who report to them directly (the reviews they schedule), not the whole company
+  const all = L.reportRows(user, month, { team: q.team }), directOnly = ['admin', 'director'].includes(user.role);
+  const rows = directOnly ? all.filter(r => r.managerId === user.id) : all;
+  // admins keep every team's window here, because they set the windows
+  const teams = [...new Set((user.role === 'admin' ? all : rows).map(r => r.team))];
   const windows = teams.map(t => {
-    const w = D.windowFor(t, month), tr = rows.filter(r => r.team === t);
+    const w = D.windowFor(t, month), tr = (user.role === 'admin' ? all : rows).filter(r => r.team === t);
     const [y, m, d] = w.start.split('-').map(Number); const c = new Date(y, m - 1, d - 3);
     const days = config.windows[t] || { start: 25, end: 31 };
     return { team: t, start: w.start, end: w.end, startDay: days.start, endDay: days.end, collectedOn: c.toISOString().slice(0, 10), collected: tr.filter(r => r.scheduled).length, total: tr.length };
   });
-  return { windows, canEditWindows: user.role === 'admin', calendar: calendarState(realUser), rows: rows.map(r => {
+  // admins (also while viewing as someone) only watch the schedule: the reporting managers book the reviews
+  const adminView = realUser.role === 'admin';
+  return { windows, canEditWindows: user.role === 'admin', adminView, directOnly, calendar: calendarState(realUser), rows: rows.map(r => {
     const f = L.peek(r.empId, month), e = L.emp(r.empId);
-    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: L.canManage(user, r.empId) };
+    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: !adminView && L.canManage(user, r.empId) };
   }) };
 });
 
@@ -502,19 +575,32 @@ async function sendInvite(sender, f, slot, body) {
     description: reviewNote(f, body, sender.name, slot.zoom) }));
   f.invite = { eventId: ev.id, ownerId: sender.id, owner: sender.name, link: ev.link, guests, date: slot.date, time: slot.time, duration: slot.duration, sentAt: new Date().toISOString() };
 }
-const manageForm = (user, body) => { const f = mustForm(user, body.empId, body.month); if (!L.canManage(user, f.empId)) throw forbid(); return f; };
+// tell the employee (and their reporting manager when someone else did it) about the review meeting
+function meetingNote(user, f, text) {
+  const e = L.emp(f.empId), m = mgrOf(f.empId), link = N.formLink(f.empId, f.month), key = `meetset|${f.empId}|${f.month}`;
+  N.drop(`meet|${f.empId}|`); // a "meeting tomorrow" reminder for the old date no longer applies
+  N.push(e.id, { type: 'date', key, link, text: text('Your') }, user);
+  if (m && m.id !== user.id) N.push(m.id, { type: 'date', key, link, text: text(`${e.name}'s`) }, user);
+}
+const meetOf = f => `${D.monthLabel(f.month).split(' ')[0]} review meeting`;
+const slotText = f => `${f.scheduledDate}${f.scheduledTime ? ' at ' + f.scheduledTime : ''}`;
+const manageForm = (user, realUser, body) => {
+  if (realUser.role === 'admin') throw bad('Admins do not schedule reviews. The reporting manager schedules them.');
+  const f = mustForm(user, body.empId, body.month); if (!L.canManage(user, f.empId)) throw forbid(); return f;
+};
 
 route('POST', '/api/scheduling/schedule', async ({ user, realUser, body }) => {
-  const f = manageForm(user, body);
+  const f = manageForm(user, realUser, body);
   if (f.scheduledDate) throw bad('This review is already scheduled. Use Reschedule to change the date.');
   const slot = slotOf(body, f);
   if (body.invite) await sendInvite(realUser, f, slot, body);
   f.scheduledDate = slot.date; f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
   audit(user.name, 'schedule', `${L.emp(f.empId).name} ${slot.date} ${slot.time}${f.invite ? ' (calendar invite sent)' : ''}`);
+  meetingNote(user, f, who => `${who} ${meetOf(f)} is set for ${slotText(f)} by ${user.name}${f.invite ? ' (Google Calendar invite sent)' : ''}.`);
   return { ok: true, invite: inviteView(f) };
 });
 route('POST', '/api/scheduling/reschedule', async ({ user, realUser, body }) => {
-  const f = manageForm(user, body);
+  const f = manageForm(user, realUser, body);
   const slot = slotOf(body, f);
   if (slot.date === f.scheduledDate && slot.time === f.scheduledTime && (!f.invite || slot.duration === f.invite.duration) && slot.zoom === (f.zoomLink || '')) throw bad('Pick a different date or time, or change the Zoom link.');
   // an existing invite moves with the review; Google tells every guest. It lives on the calendar of whoever sent it.
@@ -526,11 +612,12 @@ route('POST', '/api/scheduling/reschedule', async ({ user, realUser, body }) => 
   if (slot.date !== f.scheduledDate) f.reschedules.push({ from: f.scheduledDate, to: slot.date, by: user.name, at: config.today });
   f.scheduledDate = slot.date; f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
   audit(user.name, 'reschedule', `${L.emp(f.empId).name} to ${slot.date} ${slot.time}${f.invite ? ' (calendar invite updated)' : ''}`);
+  meetingNote(user, f, who => `${who} ${meetOf(f)} was moved to ${slotText(f)} by ${user.name}.`);
   return { ok: true, invite: inviteView(f) };
 });
 // send an invite for a review that already has a date
 route('POST', '/api/scheduling/invite', async ({ user, realUser, body }) => {
-  const f = manageForm(user, body);
+  const f = manageForm(user, realUser, body);
   if (!f.scheduledDate) throw bad('Schedule the review first.');
   if (f.invite) throw bad('An invite was already sent. Use Reschedule to change it.');
   const slot = slotOf({ ...body, date: f.scheduledDate }, f);
@@ -539,13 +626,14 @@ route('POST', '/api/scheduling/invite', async ({ user, realUser, body }) => {
   audit(user.name, 'calendar invite sent', `${L.emp(f.empId).name} ${slot.date} ${slot.time}`);
   return { ok: true, invite: inviteView(f) };
 });
-route('POST', '/api/scheduling/cancel-invite', async ({ user, body }) => {
-  const f = manageForm(user, body);
+route('POST', '/api/scheduling/cancel-invite', async ({ user, realUser, body }) => {
+  const f = manageForm(user, realUser, body);
   if (!f.invite) throw bad('There is no invite to cancel.');
   if (!C.linked(f.invite.ownerId)) throw bad(`The invite is on ${f.invite.owner}'s Google Calendar, which is no longer connected. ${f.invite.owner} can delete it in Google Calendar.`);
   await viaGoogle(() => C.cancel(f.invite.ownerId, f.invite.eventId));
   delete f.invite;
   audit(user.name, 'calendar invite cancelled', `${L.emp(f.empId).name} ${f.month}`);
+  meetingNote(user, f, who => `The Google Calendar invite for ${who === 'Your' ? 'your' : who} ${meetOf(f)} was cancelled by ${user.name}. The date (${slotText(f)}) stays in PMS.`);
   return { ok: true };
 });
 route('POST', '/api/calendar/disconnect', async ({ realUser }) => {
@@ -671,12 +759,16 @@ const adminOnly = u => { if (u.role !== 'admin') throw forbid(); };
 route('GET', '/api/employees', ({ user, q }) => {
   adminOnly(user);
   const month = config.currentMonth;
-  const rows = employees.filter(e => e.role !== 'admin').map(e => { const f = L.peek(e.id, month); return { ...e, manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a' }; });
+  const rows = employees.filter(e => e.role !== 'admin').map(e => { const f = L.peek(e.id, month); const { notices, ...rest } = e;
+    return { ...rest, manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a',
+      pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null }; });
   const active = rows.filter(e => e.active);
   return { active, inactive: rows.filter(e => !e.active), stats: orgStats(),
     teams: [...new Set([...Object.keys(config.windows), ...rows.map(e => e.team)])].filter(Boolean).sort(),
     designations: [...new Set(rows.map(e => e.designation))].filter(Boolean).sort(),
-    managers: employees.filter(e => e.active && (e.role === 'manager' || e.role === 'director' || e.role === 'teamlead')).map(e => ({ id: e.id, name: e.name })) };
+    // anyone active can become a reporting manager (their role then changes to Manager by itself); people who already lead come first
+    managers: employees.filter(e => e.active && e.role !== 'admin').sort((a, b) => (a.role === 'employee') - (b.role === 'employee') || a.name.localeCompare(b.name))
+      .map(e => ({ id: e.id, name: e.name, lead: e.role !== 'employee', team: e.team, top: !e.managerId })) };
 });
 route('GET', '/api/employee-forms', ({ user, q }) => {
   adminOnly(user);
@@ -688,15 +780,20 @@ route('GET', '/api/employee-forms', ({ user, q }) => {
 });
 route('POST', '/api/employees', ({ user, body }) => {
   adminOnly(user);
-  const need = ['name', 'code', 'email', 'designation', 'team', 'managerId', 'joined', 'role', 'window'];
+  const need = ['name', 'code', 'email', 'designation', 'team', 'managerId', 'joined', 'window'];
   const miss = need.filter(k => !body[k]);
   if (miss.length) throw bad('Mandatory fields missing: ' + miss.join(', '), { errors: ['Mandatory fields missing: ' + miss.join(', ')] });
   if (employees.some(e => e.code === body.code)) throw bad('Employee code already exists.');
   const email = checkEmail(body.email, null, true);
-  mustEmp(body.managerId);
+  const m = checkManager(null, body.managerId);
   const id = Math.max(...employees.map(e => e.id)) + 1;
-  employees.push({ id, code: body.code, name: body.name, email, designation: body.designation, team: body.team, managerId: +body.managerId, role: body.role, level: null, joined: body.joined, active: true, newJoiner: true });
-  audit(user.name, 'add member', `${body.name} (${body.code})`);
+  // the role follows the reporting line (a new member has no reports yet, so employee or team lead)
+  const e = { id, code: body.code, name: body.name, email, designation: body.designation, team: body.team, managerId: m.id, role: 'employee', level: null, joined: body.joined, active: true, newJoiner: true, codeSet: true, joinedSet: true };
+  e.role = L.deriveRole(e);
+  employees.push(e);
+  audit(user.name, 'add member', `${body.name} (${body.code}), reports to ${m.name}`);
+  notify(m.id, `${body.name} joined and reports to you. Set their KRAs once they are ready (new joiners start with the questionnaire only).`);
+  syncRoles(user.name);
   return { id };
 });
 // work emails are how people sign in, so they must be on the org domain and belong to one person only
@@ -709,36 +806,174 @@ function checkEmail(raw, selfId, required) {
   return email;
 }
 const ROLES = ['employee', 'teamlead', 'manager', 'director', 'admin'];
-route('PUT', '/api/employees', ({ user, body }) => {
+
+// ---------- reporting changes ----------
+// Every change of reporting manager goes through here (Employees table and Edit, Add member, Move to inactive):
+// check the new manager, decide who finishes this month's review, clean up what belonged to the old manager,
+// re-derive roles and leave a note on the dashboards of the people involved.
+const nextMonthOf = m => { let [y, mo] = m.split('-').map(Number); mo++; if (mo > 12) { mo = 1; y++; } return `${y}-${D.pad(mo)}`; };
+const nameOf = id => (L.emp(id) || {}).name || 'no one';
+// a dashboard note for one person (newest first, the last 20 kept)
+const notify = (id, text, link) => N.push(id, { type: 'change', text, ...(link && { link }) });
+// the dashboard notes of an earlier version become notifications (once, on boot)
+function moveOldNotices() {
+  for (const e of employees) if (e.notices) { e.notices.slice().reverse().forEach(n => N.push(e.id, { type: 'change', text: n.text })); delete e.notices; }
+}
+// the new reporting manager must be a real, active person outside the employee's own team
+function checkManager(e, managerId) {
+  if (!managerId) return null;
+  const m = L.emp(+managerId);
+  const fail = msg => bad(msg, { errors: [msg] });
+  if (!m) throw fail('Unknown reporting manager.');
+  if (e && (m.id === e.id || L.subordinates(e.id).some(x => x.id === m.id))) throw fail('That reporting manager would create a loop.');
+  if (!m.active) throw fail(`${m.name} is inactive. Choose an active person as the reporting manager.`);
+  if (m.role === 'admin') throw fail('The admin account cannot be a reporting manager. Choose a person from the list.');
+  return m;
+}
+// what has already happened in this month's (unsubmitted) review; empty = nothing started
+function reviewProgress(f) {
+  if (!f || f.submitted) return [];
+  return [f.scheduledDate && `review meeting set for ${f.scheduledDate}`, f.selfSubmitted && 'employee has sent their part',
+    L.managerActivity(f) && 'manager ratings entered', f.kraRequest && f.kraRequest.status === 'pending' && 'KRA change request waiting'].filter(Boolean);
+}
+// Plan a change without touching anything. Returns { ask } when the admin has to decide first:
+//   top:    no manager means a top-level director, who is not reviewed (body.makeTop confirms)
+//   choice: this month's review has started (body.thisMonth = 'keep' | 'move')
+function planMove(e, newId, body = {}) {
+  newId = newId ? +newId : null;
+  if (newId === (e.managerId || null)) return { same: true };
+  const m = checkManager(e, newId);
+  if (!m && !body.makeTop) return { ask: { needsTop: true, name: e.name } };
+  const f = L.peek(e.id, config.currentMonth), started = reviewProgress(f);
+  const choice = started.length ? body.thisMonth : 'move';
+  if (!['keep', 'move'].includes(choice)) return { ask: { needsChoice: true, name: e.name, from: nameOf(e.managerId), to: m ? m.name : 'no manager', month: D.monthLabel(config.currentMonth), next: D.monthLabel(nextMonthOf(config.currentMonth)), started } };
+  return { newId, choice, f };
+}
+// The team follows the reporting manager: someone who gets a new manager joins that manager's team. A top-level director
+// leads several departments, so reporting to one keeps the person's own team; no manager at all = the Directors team.
+function teamOfManager(e, managerId) {
+  const m = managerId ? L.emp(managerId) : null;
+  if (!m) return 'Directors';
+  return m.managerId ? m.team : e.team;
+}
+// move a person to another team; the people under them who were in their old team come along. Returns one line per move.
+function moveTeam(who, e, team, why) {
+  const from = e.team; if (!team || team === from) return [];
+  const moved = [e, ...L.subordinates(e.id).filter(x => x.active && x.team === from)];
+  for (const x of moved) x.team = team;
+  audit(who, 'team changed', `${moved.map(x => x.name).join(', ')}: ${from} → ${team} (${why})`);
+  return [`${e.name} is now in the ${team} team (was ${from})${moved.length > 1 ? `, with ${moved.length - 1} ${moved.length === 2 ? 'person' : 'people'} under them: ${moved.slice(1).map(x => x.name).join(', ')}` : ''}.`];
+}
+// Carry out a plan. "keep" = the current manager finishes this month's review; the change applies from next month.
+async function applyMove(user, e, plan) {
+  const warnings = [];
+  if (plan.same) { if (e.pendingManager) { delete e.pendingManager; audit(user.name, 'reporting change cancelled', e.name); } return warnings; }
+  const oldId = e.managerId || null, to = nameOf(plan.newId), from = nameOf(oldId);
+  if (plan.choice === 'keep') {
+    const next = nextMonthOf(config.currentMonth), when = D.monthLabel(next);
+    e.pendingManager = { id: plan.newId, from: next, by: user.name, at: config.today, ...(plan.keepTeam ? { keepTeam: true } : {}) };
+    audit(user.name, 'reporting manager change planned', `${e.name}: ${from} → ${to} from ${when} (${from} finishes ${D.monthLabel(config.currentMonth)})`);
+    notify(e.id, `From ${when} you report to ${to}. ${from} finishes your ${D.monthLabel(config.currentMonth)} review.`);
+    if (oldId) notify(oldId, `${e.name} moves to ${to} from ${when}. Please finish their ${D.monthLabel(config.currentMonth)} review.`);
+    if (plan.newId) notify(plan.newId, `${e.name} will report to you from ${when}.`);
+    return warnings;
+  }
+  // move now: the new manager takes over this month's open review
+  const f = plan.f && !plan.f.submitted ? plan.f : null;
+  if (f && f.invite) {
+    const inv = f.invite;
+    if (C.linked(inv.ownerId)) { try { await C.cancel(inv.ownerId, inv.eventId); } catch (er) { warnings.push(`The calendar invite from ${inv.owner} could not be cancelled (${er.message}). ${inv.owner} can delete it in Google Calendar.`); } }
+    else { warnings.push(`The calendar invite is on ${inv.owner}'s Google Calendar, which is not connected. ${inv.owner} can delete it in Google Calendar.`); N.push(inv.ownerId, { type: 'admin', text: `${e.name} moved to another manager, but the review invite you sent could not be cancelled because your Google Calendar is not connected. Please delete it in Google Calendar.` }); }
+    delete f.invite;
+  }
+  if (f && f.scheduledDate) {
+    warnings.push(`The review meeting ${from} had set (${f.scheduledDate}) was cleared; ${to} schedules it again.`);
+    f.scheduledDate = null; f.scheduledTime = null; f.zoomLink = '';
+  }
+  if (f && f.kraRequest && f.kraRequest.status === 'pending') f.kraRequest.movedFrom = from; // shown to the new manager
+  e.managerId = plan.newId; e.managerSetInApp = true; delete e.pendingManager;
+  audit(user.name, 'reporting manager changed', `${e.name}: ${from} → ${to}${plan.newId ? '' : ' (top-level director, not reviewed)'}`);
+  if (!plan.keepTeam) (plan.notes ||= []).push(...moveTeam(user.name, e, teamOfManager(e, plan.newId), `new reporting manager ${to}`));
+  const month = D.monthLabel(config.currentMonth);
+  notify(e.id, plan.newId ? `You now report to ${to} (was ${from}). ${to} does your ${month} review.` : `You are now a top-level director (no reporting manager), so you have no monthly review.`);
+  if (oldId) notify(oldId, `${e.name} no longer reports to you. ${plan.newId ? `${to} does their ${month} review.` : ''}`.trim());
+  if (plan.newId) notify(plan.newId, `${e.name} now reports to you. Their ${month} review is yours${f && f.selfSubmitted ? ': they have already sent you their part' : ''}.`);
+  return warnings;
+}
+// roles follow the reporting line; log who changed (e.g. an employee who got their first report becomes a manager)
+function syncRoles(who) {
+  for (const c of L.refreshRoles()) {
+    audit(who, 'role updated', `${c.e.name}: ${ROLE_NAME[c.from] || c.from} → ${ROLE_NAME[c.to]} (from the reporting line)`);
+    if (c.to === 'manager' && c.from === 'employee') notify(c.e.id, 'You now have people reporting to you. My team, Scheduling and the team reports are in your menu.');
+  }
+}
+const ROLE_NAME = { employee: 'Employee', teamlead: 'Team lead', manager: 'Manager', director: 'Director', admin: 'Admin' };
+// changes planned with "keep" take effect once their month is the review month
+function applyPendingMoves() {
+  for (const e of employees) {
+    const p = e.pendingManager; if (!p || p.from > config.currentMonth) continue;
+    delete e.pendingManager;
+    const m = p.id ? L.emp(p.id) : null;
+    if (p.id && (!m || !m.active || m.role === 'admin' || L.subordinates(e.id).some(x => x.id === m.id))) { audit('System', 'planned reporting change dropped', `${e.name}: ${nameOf(p.id)} is no longer a valid manager`); continue; }
+    const from = nameOf(e.managerId); e.managerId = p.id; e.managerSetInApp = true;
+    audit('System', 'reporting manager changed', `${e.name}: ${from} → ${nameOf(p.id)} (planned by ${p.by})`);
+    if (!p.keepTeam) moveTeam('System', e, teamOfManager(e, p.id), `new reporting manager ${nameOf(p.id)}`);
+  }
+  syncRoles('System');
+}
+route('PUT', '/api/employees', async ({ user, body }) => {
   adminOnly(user);
   const e = mustEmp(body.id);
   const email = checkEmail(body.email, e.id, false);
   if (!String(body.name || '').trim() || !String(body.designation || '').trim()) throw bad('Name and designation are required.', { errors: ['Name and designation are required.'] });
   if (body.role && !ROLES.includes(body.role)) throw bad('Unknown access role.');
   if (e.id === user.id && body.role && body.role !== 'admin') throw bad('You cannot remove your own admin access.', { errors: ['You cannot remove your own admin access.'] });
-  let managerId = e.managerId;
-  if (body.managerId !== undefined) {
-    managerId = body.managerId ? mustEmp(body.managerId).id : null;
-    // a manager cannot report to themselves or to someone in their own team
-    if (managerId === e.id || L.subordinates(e.id).some(x => x.id === managerId)) throw bad('That reporting manager would create a loop.', { errors: ['That reporting manager would create a loop.'] });
+  // the reporting manager goes through planMove: it may need the admin's answer first (nothing is saved until then)
+  const plan = body.managerId !== undefined ? planMove(e, body.managerId || null, body) : null;
+  if (plan && plan.ask) return plan.ask;
+  // roles follow the reporting line; only Admin is chosen by hand
+  const role = body.role === 'admin' ? 'admin' : e.role === 'admin' && body.role ? L.deriveRole(e) : e.role;
+  const next = { name: String(body.name).trim(), email, designation: String(body.designation).trim(), team: body.team || e.team, role };
+  // employee code and date of joining (optional here: the quick edits in the table do not send them)
+  const code = String(body.code ?? '').trim();
+  if (code) {
+    if (employees.some(x => x.id !== e.id && x.code === code)) throw bad('Employee code already exists.', { errors: ['Employee code already exists.'] });
+    next.code = code; e.codeSet = true;
   }
-  const next = { name: String(body.name).trim(), email, designation: String(body.designation).trim(), team: body.team || e.team, role: body.role || e.role, managerId };
+  if (body.joined !== undefined && body.joined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.joined)) throw bad('Date of joining is not a valid date.', { errors: ['Date of joining is not a valid date.'] });
+    if (body.joined !== e.joined || !e.joinedSet) { next.joined = body.joined; e.joinedSet = true; }
+  }
   // the audit line says what changed, e.g. "team Finance → Operations"
   const show = (k, v) => k === 'managerId' ? (v ? (L.emp(v) || {}).name || v : 'none') : (v || 'none');
-  const LBL = { name: 'name', email: 'email', designation: 'designation', team: 'team', role: 'role', managerId: 'manager' };
+  const LBL = { name: 'name', email: 'email', designation: 'designation', team: 'team', role: 'role', managerId: 'manager', code: 'code', joined: 'joining date' };
   const changes = Object.keys(next).filter(k => (next[k] ?? '') !== (e[k] ?? '')).map(k => `${LBL[k]} ${show(k, e[k])} → ${show(k, next[k])}`);
+  const teamBefore = e.team;
+  // the admin picked a team by hand in this save: that choice wins over the new manager's team
+  if (plan && !plan.same && next.team !== teamBefore) plan.keepTeam = true;
+  const notes = [];
+  if (next.team !== teamBefore) { notes.push(...moveTeam(user.name, e, next.team, 'changed by hand')); const i = changes.findIndex(c => c.startsWith('team ')); if (i >= 0) changes.splice(i, 1); }
   Object.assign(e, next);
-  audit(user.name, 'edit member', `${e.name} (${e.code})${changes.length ? ': ' + changes.join(', ') : ''}`);
-  return { ok: true };
+  if (changes.length) audit(user.name, 'edit member', `${e.name} (${e.code}): ${changes.join(', ')}`);
+  const warnings = plan ? await applyMove(user, e, plan) : [];
+  if (plan && plan.notes) notes.push(...plan.notes);
+  syncRoles(user.name);
+  // a new department can have another review window: say so when the meeting already set falls outside it
+  const f = L.peek(e.id, config.currentMonth);
+  if (e.team !== teamBefore && f && !f.submitted && f.scheduledDate) {
+    const w = D.windowFor(e.team, config.currentMonth);
+    if (f.scheduledDate < w.start || f.scheduledDate > w.end) warnings.push(`The review meeting (${f.scheduledDate}) is outside the ${e.team} review window (${w.start} to ${w.end}). Reschedule it if needed.`);
+  }
+  return { ok: true, warnings, notes, team: e.team, pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null };
 });
-route('POST', '/api/employees/inactive', ({ user, body }) => {
+route('POST', '/api/employees/inactive', async ({ user, body }) => {
   adminOnly(user);
   const e = mustEmp(body.id);
   body.date = body.date || config.today; body.reason = body.reason || 'Moved to inactive'; // the screen only asks for a confirmation
   // people who report to this person must be moved under someone else first
   const reports = employees.filter(x => x.active && x.managerId === e.id);
   const team = new Set(L.subordinates(e.id).map(x => x.id));
-  const candidates = employees.filter(c => c.active && c.id !== e.id && c.role !== 'admin' && !team.has(c.id))
+  const candidates = employees.filter(c => c.active && c.id !== e.id && c.role !== 'admin' && !team.has(c.id) && !(c.pendingManager && c.pendingManager.id === e.id))
     .sort((a, b) => (a.role === 'employee') - (b.role === 'employee') || a.name.localeCompare(b.name))
     .map(c => ({ id: c.id, name: c.name, designation: c.designation }));
   if (body.check) return { reports: reports.map(r => ({ id: r.id, name: r.name, designation: r.designation })), candidates, suggested: candidates.some(c => c.id === e.managerId) ? e.managerId : null };
@@ -752,16 +987,28 @@ route('POST', '/api/employees/inactive', ({ user, body }) => {
   const warning = f && !['Completed and Submitted', 'Completed but Not Submitted'].includes(L.reviewStatus(f)) && body.date.slice(0, 7) === config.currentMonth
     ? 'Their review this month is not completed. It is counted until the inactive date.' : null;
   if (!body.confirm && warning) return { needsConfirm: true, warning };
-  if (newManager) { reports.forEach(r => { r.managerId = newManager.id; }); audit(user.name, 'reporting manager changed', `${reports.map(r => r.name).join(', ')} now report to ${newManager.name} (was ${e.name})`); }
+  // the person is leaving, so their team's reviews move now (same clean-up as any reporting change: invites, notes, roles)
+  const warnings = [];
+  const notes = [];
+  for (const r of reports) { const plan = { newId: newManager.id, choice: 'move', f: L.peek(r.id, config.currentMonth) }; warnings.push(...await applyMove(user, r, plan)); notes.push(...(plan.notes || [])); }
+  // planned moves to or from this person no longer make sense
+  for (const x of employees) if (x.pendingManager && x.pendingManager.id === e.id) { delete x.pendingManager; audit(user.name, 'planned reporting change dropped', `${x.name}: ${e.name} is now inactive`); }
+  delete e.pendingManager;
   e.active = false; e.inactiveFrom = body.date; e.reason = body.reason; e.note = body.note;
   audit(user.name, 'move to inactive', `${e.name} from ${body.date} (${body.reason})`);
-  return { ok: true };
+  syncRoles(user.name);
+  return { ok: true, warnings, notes };
 });
 route('POST', '/api/employees/reactivate', ({ user, body }) => {
   adminOnly(user);
-  const e = mustEmp(body.id); e.active = true; delete e.inactiveFrom; delete e.reason;
-  audit(user.name, 'reactivate', `${e.name} from ${body.date || config.today}`);
-  return { ok: true };
+  const e = mustEmp(body.id);
+  // their old manager may have left meanwhile: then they come back without one and the admin picks a new manager
+  const m = e.managerId ? L.emp(e.managerId) : null, lost = m && !m.active;
+  if (lost) e.managerId = null;
+  e.active = true; delete e.inactiveFrom; delete e.reason;
+  audit(user.name, 'reactivate', `${e.name} from ${body.date || config.today}${lost ? ` (their manager ${m.name} is inactive: choose a new one)` : ''}`);
+  syncRoles(user.name);
+  return { ok: true, warnings: lost ? [`${m.name} is inactive, so ${e.name} has no reporting manager now. Choose one in the Reporting manager column.`] : [] };
 });
 
 // shared by the hierarchy pages: who reports to whom and how their reviews stand in a month
@@ -909,7 +1156,9 @@ route('GET', '/api/yearly', ({ user, q }) => {
       const sm = L.kraSummary(f), kra = {};
       sm.kras.forEach(x => { kra[x.key] = x.subKras ? x.scoreRaw : null; });
       const set = sm.kras.filter(x => x.subKras && x.scoreRaw != null), tw = set.reduce((a, x) => a + x.weight, 0);
-      return { operational: round2(kra.operational), process: round2(kra.process), people: round2(kra.people), total: tw ? round2(set.reduce((a, x) => a + x.weight * x.scoreRaw, 0) / tw) : null };
+      // months reviewed by an earlier manager are marked with that manager's name
+      const rb = f.reviewedBy && f.reviewedBy.managerId !== e.managerId ? f.reviewedBy.manager : null;
+      return { operational: round2(kra.operational), process: round2(kra.process), people: round2(kra.people), total: tw ? round2(set.reduce((a, x) => a + x.weight * x.scoreRaw, 0) / tw) : null, reviewedBy: rb };
     });
     const totals = q4 => cells.map((c, i) => ({ c, i })).filter(x => x.c && x.c.total != null && q4(x.i)).map(x => x.c.total);
     const mgr = e.managerId ? L.emp(e.managerId) : null;
@@ -948,6 +1197,7 @@ route('PUT', '/api/params', ({ user, body }) => {
   const v = { from: body.from, data: body.data };
   idx >= 0 ? paramsVersions[idx] = v : paramsVersions.push(v);
   audit(user.name, 'parameters summary updated', `applies from ${body.from}`);
+  N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `params|${body.from}`, link: '#/params', text: `The Parameters summary was updated. It applies from ${D.monthLabel(body.from)}.` }, user));
   return { ok: true };
 });
 
@@ -961,6 +1211,7 @@ route('POST', '/api/questions', ({ user, body }) => {
   const q = { id: 'q' + Date.now(), text: body.text, type, mandatory: body.mandatory !== false, from: body.from, to: null, order: Math.max(...questions.map(x => x.order)) + 1 };
   questions.push(q); renumber();
   audit(user.name, 'question added', `${q.text} from ${q.from}`);
+  N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `questions|${q.from}`, ...(p.managerId && { link: N.formLink(p.id, config.currentMonth) }), text: `The review questionnaire changes from ${D.monthLabel(q.from)}.` }, user));
   return q;
 });
 route('PUT', '/api/questions', ({ user, body }) => {
@@ -978,6 +1229,7 @@ route('PUT', '/api/questions', ({ user, body }) => {
   }
   renumber();
   audit(user.name, 'question updated', `${body.text} from ${body.from}`);
+  N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `questions|${body.from}`, ...(p.managerId && { link: N.formLink(p.id, config.currentMonth) }), text: `The review questionnaire changes from ${D.monthLabel(body.from)}.` }, user));
   return { ok: true };
 });
 route('POST', '/api/questions/delete', ({ user, body }) => {
@@ -985,6 +1237,7 @@ route('POST', '/api/questions/delete', ({ user, body }) => {
   const q = questions.find(x => x.id === body.id); if (!q) throw bad('Not found');
   if (!body.from) throw bad('Choose the month from which the question is removed.');
   q.to = body.from; audit(user.name, 'question deleted', `${q.text} from ${body.from}`);
+  N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `questions|${body.from}`, ...(p.managerId && { link: N.formLink(p.id, config.currentMonth) }), text: `The review questionnaire changes from ${D.monthLabel(body.from)}.` }, user));
   return { ok: true };
 });
 // drag-and-drop on the Questionnaire page: the new order of one answer type's active questions, sent as a list of ids
@@ -1014,6 +1267,7 @@ route('PUT', '/api/config', ({ user, body }) => {
   for (const k of ['operationalRange', 'peopleMin', 'peopleMax', 'clickupMin', 'learningMin', 'ratingGapFlag', 'emailGapFlag', 'selfShare', 'mgrShare']) if (body[k] !== undefined) config[k] = body[k];
   if (body.windows) config.windows = body.windows;
   audit(user.name, 'config updated', 'thresholds / windows');
+  employees.filter(e => e.active && ['manager', 'teamlead', 'director'].includes(e.role)).forEach(e => N.push(e.id, { type: 'change', key: `rules|${config.currentMonth}`, link: '#/report', text: `The review rules (thresholds for flags such as ClickUp, learning and rating gaps) were updated by ${user.name}.` }, user));
   return config;
 });
 // one team's review window (day of month, same every month), edited from the Scheduling page
@@ -1025,6 +1279,9 @@ route('PUT', '/api/windows', ({ user, body }) => {
   if (start > end) throw bad('The window must start on or before the day it ends.');
   config.windows[team] = { start, end };
   audit(user.name, 'review window updated', `${team}: day ${start} to ${end}`);
+  { const w = D.windowFor(team, config.currentMonth), people = employees.filter(e => e.active && e.team === team && e.role !== 'admin');
+    const mgrs = new Set(people.map(e => e.managerId).filter(Boolean));
+    [...new Set([...people.map(e => e.id), ...mgrs])].forEach(id => N.push(id, { type: 'date', key: `win|${team}|${config.currentMonth}`, text: `The ${team} review window for ${D.monthLabel(config.currentMonth)} is now ${w.start} to ${w.end} (day ${start} to ${end} every month).` }, user)); }
   return config.windows[team];
 });
 
@@ -1052,6 +1309,8 @@ const server = http.createServer((req, res) => {
       const r = routes.find(x => x.method === req.method && x.re.test(url.pathname));
       // NO_ROUTE tells an out-of-date page that the server was updated (the page then reloads itself)
       if (!r) return send(404, { error: 'Not found', code: 'NO_ROUTE' });
+      applyPendingMoves(); // reporting changes planned for a month that has now started
+      N.checks();          // date reminders (window open, closing soon, overdue, meeting tomorrow): at most once a minute
       // changes must come from the app itself (JSON), which a form on another site cannot send with our cookie
       if (req.method !== 'GET' && !/application\/json/.test(req.headers['content-type'] || '')) return send(415, { error: 'Send JSON.' });
       const cookies = A.parseCookies(req.headers.cookie), s = A.session(cookies);
@@ -1078,6 +1337,6 @@ const server = http.createServer((req, res) => {
     }
   });
 });
-DB.init().then(() => { D.migrate(); ensureAccounts(); return DB.save(); }).then(
+DB.init().then(() => { D.migrate(); ensureAccounts(); moveOldNotices(); return DB.save(); }).then(
   () => server.listen(PORT, () => console.log(`Verve PMS running at http://localhost:${PORT} · sign-in: ${[A.google && `Google (@${A.ORG_DOMAIN})`, A.demo && 'demo users'].filter(Boolean).join(' + ') || 'none'}`)),
   e => { console.error('Could not connect to Postgres:', e.message); process.exit(1); });

@@ -25,6 +25,20 @@ function canView(viewer, targetId) {
 const canManage = (viewer, targetId) => viewer.role === 'admin' || isAncestor(viewer.id, targetId) ||
   (viewer.role === 'director' && viewer.id !== targetId);
 const canSelfEdit = (viewer, targetId) => viewer.id === targetId || viewer.role === 'admin';
+// The role follows the reporting line (same rule as the employee-list import): no manager = director, "Team lead" in the
+// designation = team lead, active people reporting to them = manager, otherwise employee. Admin accounts are left alone.
+const deriveRole = e => !e.managerId ? 'director' : /team ?lead/i.test(e.designation || '') ? 'teamlead'
+  : employees.some(x => x.active && x.managerId === e.id) ? 'manager' : 'employee';
+// run after every change to a reporting line; returns who changed (for the audit log)
+function refreshRoles() {
+  const changed = [];
+  for (const e of employees) {
+    if (e.role === 'admin') continue;
+    const r = deriveRole(e);
+    if (r !== e.role) { changed.push({ e, from: e.role, to: r }); e.role = r; }
+  }
+  return changed;
+}
 function visibleEmployees(viewer, includeInactive = false) {
   const base = employees.filter(e => e.role !== 'admin' && canView(viewer, e.id));
   return includeInactive ? base : base.filter(e => e.active);
@@ -296,4 +310,4 @@ function buildEmail(managerId, month) {
   return { to: m.name, subject: `PMS review summary, ${m.team}, ${D.monthLabel(month)}`, team: m.team, managerId, month, counts: counts(rows.map(r => ({ status: r.st }))), sections: sec, attachment: `PMS_${m.team}_${D.monthLabel(month).replace(' ', '')}.csv` };
 }
 
-module.exports = { emp, KRAS, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
+module.exports = { emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };

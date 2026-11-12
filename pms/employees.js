@@ -92,10 +92,22 @@ function importList(S, text, { who = 'System', today } = {}) {
       code: r.code || e.code || 'V' + String(e.id).padStart(3, '0'),
       email: r.email || e.email || '', designation: r.designation || e.designation || '',
       team: r.team || e.team || (r.top ? 'Directors' : 'Unassigned'), joined: normDate(r.joined) || e.joined || fyStart,
+      // real values (from the list or set by the admin) vs the placeholders above; the profile hides placeholders
+      codeSet: !!r.code || !!e.codeSet, joinedSet: !!normDate(r.joined) || !!e.joinedSet,
     });
     delete e.inactiveFrom; delete e.reason;
   }
-  for (const r of p.people) byName.get(key(r.name)).managerId = r.manager ? byName.get(key(r.manager)).id : null;
+  // the list is the master copy: a reporting change made in the app (or planned for next month) is replaced by the list's
+  // manager, and the import says so, so HR can put the change into the sheet if it should stay
+  const overwritten = [];
+  for (const r of p.people) {
+    const e = byName.get(key(r.name)), id = r.manager ? byName.get(key(r.manager)).id : null;
+    const was = e.managerId, nameOf = x => (employees.find(y => y.id === x) || {}).name || 'no manager';
+    if (e.managerSetInApp && was !== id) overwritten.push(`${e.name}: reported to ${nameOf(was)} (changed in the app), the list says ${r.manager || 'no manager'}`);
+    if (e.pendingManager && e.pendingManager.id !== id) overwritten.push(`${e.name}: planned move to ${nameOf(e.pendingManager.id)} dropped, the list says ${r.manager || 'no manager'}`);
+    e.managerId = id; delete e.managerSetInApp; delete e.pendingManager;
+  }
+  overwritten.forEach(x => S.audit(who, 'reporting change replaced by the list', x));
   // review windows: drop teams nobody is in any more (the demo teams), give new departments the default window
   const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
   for (const t of Object.keys(config.windows)) if (!teams.has(t)) delete config.windows[t];
@@ -104,7 +116,7 @@ function importList(S, text, { who = 'System', today } = {}) {
   const gone = employees.filter(e => e.src === 'list' && e.active && !listed.has(key(e.name)));
   gone.forEach(e => Object.assign(e, { active: false, inactiveFrom: today || config.today, reason: 'Not on the employee list' }));
   S.audit(who, 'employee list imported', `${p.people.length} people (${added.length} added, ${first ? 0 : updated.length} updated, ${gone.length} made inactive)${first ? '; demo data removed' : ''}`);
-  return { ...p, first, added, updated: first ? [] : updated, inactive: gone.map(e => e.name) };
+  return { ...p, first, added, updated: first ? [] : updated, inactive: gone.map(e => e.name), overwritten };
 }
 // 2024-06-03, 03/06/2024 or 03-06-2024 (day first) -> 2024-06-03
 function normDate(s) {
@@ -131,7 +143,11 @@ if (require.main === module) (async () => {
   if (!process.env.DATABASE_URL) { console.log('DATABASE_URL is not set: nothing to write to.'); process.exit(1); }
   await db.init(); D.migrate();
   const r = importList(D, text, { who: 'Employee list import' });
+  // admins see what the import did under the bell
+  const N = require('./notify');
+  N.admins().forEach(a => N.push(a.id, { type: 'admin', link: '#/employees/active', text: `Employee list imported: ${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.overwritten.length ? `, ${r.overwritten.length} reporting change${r.overwritten.length === 1 ? '' : 's'} made in the app replaced by the list (see the audit log)` : ''}.` }));
   await db.save();
   console.log(`\nSaved to the database. ${r.first ? 'Demo data removed. ' : ''}${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.inactive.length ? ': ' + r.inactive.join(', ') : ''}.`);
+  if (r.overwritten.length) console.log(`\nReporting changes made in the app were replaced by the list (put them in the sheet if they should stay):\n- ${r.overwritten.join('\n- ')}`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });

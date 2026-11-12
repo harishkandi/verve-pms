@@ -20,7 +20,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules).
 - Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name, Reporting Manager, Designation,
-  Department (= team), Director; 76 rows + 4 top-level directors).
+  Department (= team), Director; 76 rows + 4 top-level directors). Teams and reporting managers were replaced on
+  2026-11-12 by Harish's team sheet ("Sheet4", the master for teams): 72 rows + 4 directors, 9 teams grouped by director
+  (designations kept from the earlier list; the old file is `pms/private/employees.before-2026-11-12.tsv`). Some team
+  names are people's names, so team names never go into code: `teamLook()` in `app.js` matches keywords and gives the
+  other teams distinct spare icons by their place in `S.me.teams` (sent by `/api/me`).
   It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
   names in code. Shared with the team ONLY in the private org repo, on the separate branch `pms/employee-list`
   (one file, `employees.tsv`, no code; never merge it into a code branch, never push it to `personal`). Get it with
@@ -37,15 +41,45 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
-  and the chart "submitted" colour (Harish asked for green switches, 2026-11-12). User name, theme and log out
-  live in the top bar. The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
+  and the chart "submitted" colour (Harish asked for green switches, 2026-11-12). Theme button and the user menu
+  live in the top bar: clicking the name/avatar opens a small menu (same look as the other dropdowns) with Profile
+  information and Sign out. Profile information is a page, not a popup (`#/profile`, `pages.profile`, `GET /api/profile`):
+  hero + Work details card (code, email, designation, department, role, joining date, review window, reports) +
+  Reporting line card (director down to the person), read-only, the admin keeps the details. Code and joining date from the list are placeholders (shown "Not set yet") until the
+  admin sets them in Employees › Edit (`codeSet` / `joinedSet` flags). The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
   removed it, 2026-11-12). Admins get a grouped menu (Reporting
   manager / Reporting / Questions open as sub-menus); its Reporting manager lists come from `designation`
   (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
+  Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
+  captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
   There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
   admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
   incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
   "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
+- Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit, Add member,
+  Move to inactive). Checks: new manager active, not the admin account, no loops; "No manager" asks first (top-level
+  director, not reviewed). If this month's review has started (`reviewProgress`: meeting set, sent to manager, manager
+  ratings, KRA request) the admin picks "keep" (old manager finishes; `e.pendingManager` applies from next month via
+  `applyPendingMoves()` on each request) or "move now" (old manager's invite cancelled, meeting date cleared, pending KRA
+  request marked `movedFrom`). Roles are derived, never picked (`L.deriveRole` / `refreshRoles`, same rule as the import;
+  only Admin is a choice in Edit); anyone active can be picked as a manager. People involved get notifications (see below). Submitted forms keep `f.reviewedBy` (manager at the time):
+  the form header and Team report ("by <name>") use it. The employee sheet stays master: an import replaces app-made
+  reporting changes (`managerSetInApp`) and lists them. Admins never schedule reviews (`manageForm` refuses when the
+  real user is admin, also in View as); their Scheduling page is windows + rules + read-only status.
+- Team follows the reporting manager (Harish, 2026-11-12): a new manager (Employees table/Edit, moving a manager to
+  inactive, or a planned "keep" move when it takes effect) puts the person in that manager's team, and the people under
+  them who were in their old team come along (`teamOfManager` / `moveTeam` in `server.js`). Exceptions: reporting to a
+  top-level director keeps the person's own team (directors lead several departments); no manager = "Directors"; a team
+  the admin picks by hand in the same save wins. The Edit dialog fills the Team field as soon as a manager is picked.
+- Notifications (2026-11-12): bell in the top bar (`#tbbell`, panel `#tbnotes` with "Needs action" / "All", polled every
+  minute via `apiCall` so no spinner). Server side is `notify.js`: `push(to, {type, text, link, action, key}, by)` (no
+  note for your own action; same `key` updates the earlier item), `resolve(key)` closes action items for everyone,
+  `checks()` adds date reminders once a minute from the REAL date in India (`realToday()`, `PMS_TODAY` overrides it
+  for tests): window open, closes in 2 days, overdue, meeting tomorrow, admin "no work email". State container
+  `notifications` (empId -> list, last 100 / 60 days), in `KEYS`. Routes call `N.push` after their `audit(...)`:
+  KRA request/decision/changes, send to manager / send back / submit, schedule / reschedule / invite cancelled,
+  reporting changes, window / rules / questionnaire / parameters changes, list import (admins). In View as the admin
+  sees the person's list but never marks it read. No email yet (no sender; Google Calendar already emails invites).
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
@@ -66,7 +100,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Monthly form is two steps: the employee clicks "Submit to manager" (`POST /api/form/self-submit`, blocked until
   `employeeTodo` is empty; sets `form.selfSubmitted`, their part is then read-only), the manager can "Send back to
   employee" (`POST /api/form/return`) or "Submit review" (`POST /api/form/submit`, final). Everyone who can edit gets
-  Save draft; employees' entries also autosave. A manager remark is needed only when self and manager ratings differ; a submitted
+  Save draft; employees' entries also autosave. Autosave sends only the fields that person changed (`formDirty` in
+  `app.js`) and `PUT /api/form` changes only the fields it is sent, so the employee and the manager can have the form
+  open together without wiping each other's entries (found in testing, 2026-11-12; never send the whole form back).
+  Top-level directors (no manager) get no new form (`mustForm`) and no My review / My report menu items. A manager remark is needed only when self and manager ratings differ; a submitted
   monthly form is locked for good (no reopen, no edit request, admins included). KRA changes by an employee need
   their manager's approval (Vidya, 2026-11-12: `POST /api/kra-request`, `/api/kra-request/decide`; an approval allows
   one KRA save, pending requests show on the manager's dashboard); copying last month's KRAs needs no approval; none

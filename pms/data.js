@@ -100,7 +100,9 @@ const annualForms = {};     // `${empId}|${fy}` -> form
 const auditLog = [];
 const emailsOutbox = [];
 const appraisals = {};      // empId -> annual appraisal form (6 steps)
+const notifications = {};   // empId -> [notification] newest first (notify.js, the bell in the top bar)
 const calendarLinks = {};   // empId -> { email, token (encrypted Google refresh token), connectedAt }
+const photos = {};          // empId -> profile photo (small JPEG data URL, set by the person on Profile information)
 const audit = (who, action, detail) => auditLog.unshift({ at: new Date().toISOString(), who, action, detail });
 
 const defaultRows = () => ({
@@ -159,4 +161,4 @@ if (fs.existsSync(LIST_FILE)) {
   catch (e) { console.error(`Employee list not loaded (${LIST_FILE}): ${e.message}`); }
 }
 
-module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, pad };
+module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, photos, notifications, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, pad };
