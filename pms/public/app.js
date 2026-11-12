@@ -1542,7 +1542,6 @@ function allStats(st) {
     ['team', 'Total organisation members', st.members, 'Active people in PMS', ['active', '']],
     ['sitemap', 'Total directors', st.directors, 'Top level, not reviewed', ['active', 'director']],
     ['idcard', 'Total managers', st.managers, 'Managers and team leads', ['active', 'manager']],
-    ['question', 'Total questions', st.questions, 'Questionnaire, this month', '#/params/questions'],
     ['review', 'Total executives / interns', st.executives, 'Everyone else who is reviewed', ['active', 'employee']],
     ['eyeoff', 'Total inactive members', st.inactive, 'Moved out of PMS', ['inactive', '']],
   ];
@@ -1554,7 +1553,7 @@ function allStats(st) {
 // ---------- employees (admin) ----------
 pages.employees = async (v, arg) => {
   if (arg === 'active' || arg === 'inactive') S.etab = arg;
-  const d = await api('/employees'), st = d.stats;
+  const d = await api('/employees');
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
   const ROLEF = { director: ['director'], manager: ['manager', 'teamlead'], employee: ['employee'] };
   const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '', rf = tab === 'active' && ROLEF[S.erole] ? S.erole : '';
@@ -1564,7 +1563,6 @@ pages.employees = async (v, arg) => {
   const inScope = (tab === 'active' ? d.active : d.inactive).filter(e => !rf || ROLEF[rf].includes(e.role));
   const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
   const teamChips = `<div class="chips"><div class="seg" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}">${teamIco(t)}${esc(t)} <span class="cnt">${teamN[t]}</span></button>`).join('')}</div></div>`;
-  const tile = (key, cls, n, label, on, hint) => `<button class="tile ${cls} ${on ? 'on' : ''}" data-stat="${key}" title="${hint}"><small>${label}</small><b>${n}</b><span>${on ? 'Showing below' : hint}</span></button>`;
   const shown = tab === 'inactive' ? 'Inactive members' : { director: 'Directors', manager: 'Managers and team leads', employee: 'Executives and interns' }[rf] || 'All active members';
   const opts = (list, cur) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
   const mgrOpts = e => {
@@ -1573,13 +1571,7 @@ pages.employees = async (v, arg) => {
     return '<option value="">No manager</option>' + list.map(x => `<option value="${x.id}" ${x.id === e.managerId ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
-  v.innerHTML = head('Employees', 'Change team, designation or manager right in the table') + `${tab === 'inactive' ? '' : `<div class="tiles">
-    ${tile('all', '', st.members, 'Active members', tab === 'active' && !rf, 'Show all active members')}
-    ${tile('director', 'b', st.directors, 'Directors', rf === 'director', 'Directors only')}
-    ${tile('manager', 'g', st.managers, 'Managers', rf === 'manager', 'Managers and team leads')}
-    ${tile('employee', 'a', st.executives, 'Executives', rf === 'employee', 'Executives and interns')}
-    ${tile('inactive', 'r', st.inactive, 'Inactive', tab === 'inactive', 'Moved out of PMS')}
-    ${tile('questions', '', st.questions, 'Review questions', false, 'Open the questionnaire')}</div>`}
+  v.innerHTML = head('Employees', 'Change team, designation or manager right in the table') + `
   <div class="row"><b style="font-size:16px;color:var(--vr-n-900)">${shown} (${rows.length})</b>${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
