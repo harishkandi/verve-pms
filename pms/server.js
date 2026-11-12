@@ -85,7 +85,7 @@ const testAccounts = () => [
 ].filter(([, , e]) => e && e.active).map(([login, label, emp]) => ({ email: login.includes('@') ? login : `${login}@${A.ORG_DOMAIN}`, label, emp }));
 route('GET', '/api/auth/status', ({ user }) => ({
   google: A.google, demo: A.demo, domain: A.ORG_DOMAIN, signedIn: !!user,
-  ...(A.demo && { accounts: testAccounts().map(a => ({ email: a.email, label: a.label, name: a.emp.name })), password: A.DEMO_PASSWORD }),
+  ...(A.demo && A.DEMO_PASSWORD && { accounts: testAccounts().map(a => ({ email: a.email, label: a.label, name: a.emp.name })), ...(A.showPassword && { password: A.DEMO_PASSWORD }) }),
 }), true);
 route('POST', '/api/auth/password', ({ body, setCookie, secure }) => {
   if (!A.demo) throw forbidMsg('Password sign-in is not switched on. Please use Sign in with Google.');
@@ -104,7 +104,7 @@ route('GET', '/api/users', () => {
   return employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation }));
 }, true);
 route('POST', '/api/auth/demo', ({ body, setCookie, secure }) => {
-  if (!A.demo) throw forbid();
+  if (!A.demo || !A.pickById) throw forbid();
   const e = L.emp(+body.id); if (!e || !e.active) throw notFound('User not found.');
   setCookie(A.sessionCookie(e.id, null, secure));
   return { ok: true };

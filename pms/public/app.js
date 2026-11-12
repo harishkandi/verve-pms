@@ -239,7 +239,7 @@ function loginPage(st, err) {
       <div class="ac-or"><span>or</span></div>
       <button class="gbtn" id="gsign" type="button" ${st.google ? '' : 'disabled title="Google sign-in is not set up on this server yet"'}>${GOOGLE_G}<span>Sign in with Google</span></button>
       <p class="ac-note">${ico('shield')}<span>Only <b>${esc(dom)}</b> accounts can sign in</span></p>
-      ${st.demo && st.accounts && st.accounts.length ? `<div class="auth-demo"><div class="adm-h">${ico('key')}<b>Test accounts</b><span>Password <code>${esc(st.password)}</code></span></div>
+      ${st.demo && st.accounts && st.accounts.length ? `<div class="auth-demo"><div class="adm-h">${ico('key')}<b>Test accounts</b>${st.password ? `<span>Password <code>${esc(st.password)}</code></span>` : "<span>Ask the PMS admin for the password</span>"}</div>
         ${st.accounts.map(a => `<button type="button" class="adm-row" data-em="${esc(a.email)}" title="Sign in as ${esc(a.name)}"><span class="adm-l">${esc(a.label)}<small>${esc(a.name)}</small></span><span class="adm-e">${esc(a.email)}</span>${ico('right')}</button>`).join('')}
         <p>Dummy data for testing. Click an account to sign in.</p></div>` : ''}
       <div class="auth-legal">Need access or help signing in? Contact HR.</div>
@@ -272,12 +272,13 @@ function loginPage(st, err) {
     try { await api('/auth/password', { method: 'POST', body: { email: email.value.trim(), password: pass.value, remember: $('#lrem').checked } }); await start(); }
     catch (er) { err$.innerHTML = alert(er.message); submit.disabled = false; submit.textContent = 'Sign in'; pass.select(); }
   };
-  $('#lforgot').onclick = e => { e.preventDefault(); err$.innerHTML = alert(st.demo ? `Test accounts all use the password ${st.password}. For your Google account, use Sign in with Google.` : 'Your password is managed by your Verve Google account. To reset it, contact HR or IT.', 'info'); };
+  $('#lforgot').onclick = e => { e.preventDefault(); err$.innerHTML = alert(st.demo && st.password ? `Test accounts all use the password ${st.password}. For your Google account, use Sign in with Google.` : 'Your password is managed by your Verve Google account. To reset it, contact HR or IT.', 'info'); };
   $('#gsign').onclick = () => { if (st.google) location.href = `/api/auth/google/start?origin=${encodeURIComponent(location.origin)}`; };
   // a test account fills in its email and password and signs straight in
   document.querySelectorAll('.adm-row').forEach(b => b.onclick = () => {
-    email.value = b.dataset.em; pass.value = st.password; fieldErr(email, '#lemailh', ''); fieldErr(pass, '#lpassh', '');
-    $('#lform').requestSubmit();
+    email.value = b.dataset.em; fieldErr(email, '#lemailh', ''); fieldErr(pass, '#lpassh', '');
+    if (!st.password) return pass.focus(); // deployed: the password is not shown, so the person types it
+    pass.value = st.password; $('#lform').requestSubmit();
   });
   if (!err) email.focus({ preventScroll: true });
 }

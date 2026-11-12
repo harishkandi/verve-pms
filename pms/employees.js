@@ -66,21 +66,24 @@ function importList(S, text, { who = 'System', today } = {}) {
   const { employees, config } = S;
   const first = !employees.some(e => e.src === 'list');
   const fyStart = `${config.fyStartMonth}-01`;
-  const kept = employees.filter(e => e.role === 'admin');
+  // system accounts survive the first import: the test admin (A900) and ADMIN_EMAILS admins (they have an email);
+  // demo admins (no email) go with the rest of the demo data
+  const kept = employees.filter(e => e.role === 'admin' && (e.code === 'A900' || !!e.email));
   if (first) {
     employees.splice(0, employees.length, ...kept);
     for (const k of ['forms', 'annualForms', 'appraisals']) for (const x of Object.keys(S[k])) delete S[k][x];
     for (const x of Object.keys(S.calendarLinks)) if (!kept.some(e => String(e.id) === x)) delete S.calendarLinks[x]; // admins keep their calendar
     S.emailsOutbox.splice(0); S.auditLog.splice(0);
   }
-  const byName = new Map(employees.filter(e => e.src === 'list').map(e => [key(e.name), e]));
+  // people added by hand on the Employees page are matched too, so a later list does not duplicate them
+  const byName = new Map(employees.filter(e => e.role !== 'admin').map(e => [key(e.name), e]));
   let nextId = Math.max(0, ...employees.map(e => e.id)) + 1;
   const added = [], updated = [];
   for (const r of p.people) {
     let e = byName.get(key(r.name));
     if (!e) { e = { id: nextId++, src: 'list', level: null, active: true }; employees.push(e); byName.set(key(r.name), e); added.push(r.name); }
     else updated.push(r.name);
-    Object.assign(e, {
+    Object.assign(e, { src: 'list' }, {
       name: r.name, role: r.role, active: true,
       code: r.code || e.code || 'V' + String(e.id).padStart(3, '0'),
       email: r.email || e.email || '', designation: r.designation || e.designation || '',

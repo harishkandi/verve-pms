@@ -13,6 +13,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   matches an active employee record; `ADMIN_EMAILS` become admin on first sign-in. Session = HMAC-signed HttpOnly cookie
   `pms_session` (`SESSION_SECRET`). Without `GOOGLE_CLIENT_ID`/`SECRET` the old dummy-user picker is used (`POST /api/auth/demo`).
   Admins can "View as" anyone (real user stays in the session). All `/api/auth/*` routes live under `/api` so Vercel forwards them.
+  On Render (`RENDER` env, set by Render) the app holds real data, so: no sign-in by id (`/api/auth/demo` = 403), the
+  test-account password is never shown, and it must come from a `DEMO_PASSWORD` env var (no default; unset = password
+  sign-in off). Local runs keep the default `Verve@123` and the id picker.
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules).

@@ -52,9 +52,15 @@ const SESSION = 'pms_session', OAUTH = 'pms_oauth';
 const sessionCookie = (uid, as, secure, keep = true) => cookie(SESSION, sign({ t: 'session', uid, as: as || null, keep, exp: Date.now() + (keep ? SESSION_DAYS * 864e5 : 12 * 36e5) }), keep ? SESSION_DAYS * 86400 : null, secure);
 
 // ---------- test accounts (email + shared password), only while DEMO_LOGIN is on ----------
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'Verve@123';
+// The app now holds the real employee list, so a deployed server (Render sets RENDER) never uses the default password
+// written in this public repo, never shows the password on the sign-in page, and has no sign-in-by-id. Without a
+// DEMO_PASSWORD env var there, password sign-in is off. Local runs keep the default and the id picker for testing.
+const deployed = !!process.env.RENDER;
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || (deployed ? '' : 'Verve@123');
+const showPassword = !deployed && !process.env.DEMO_PASSWORD;
+const pickById = !deployed;
 const sha = s => crypto.createHash('sha256').update(String(s)).digest();
-const checkPassword = p => crypto.timingSafeEqual(sha(p), sha(DEMO_PASSWORD));
+const checkPassword = p => !!DEMO_PASSWORD && crypto.timingSafeEqual(sha(p), sha(DEMO_PASSWORD));
 const clearSession = secure => cookie(SESSION, '', 0, secure);
 const session = cookies => { const s = unsign(cookies[SESSION]); return s && s.t === 'session' ? s : null; };
 const isSecure = req => /https/.test(req.headers['x-forwarded-proto'] || '') || !!req.socket.encrypted;
@@ -111,5 +117,5 @@ function unseal(s) {
   } catch { return null; }
 }
 
-module.exports = { ORG_DOMAIN, google, demo, ORIGINS, ADMIN_EMAILS, DEMO_PASSWORD, checkPassword, isOrgEmail, okOrigin, parseCookies, sessionCookie, clearSession, session, isSecure,
+module.exports = { ORG_DOMAIN, google, demo, ORIGINS, ADMIN_EMAILS, DEMO_PASSWORD, showPassword, pickById, checkPassword, isOrgEmail, okOrigin, parseCookies, sessionCookie, clearSession, session, isSecure,
   authStart, clearOauth, oauthState, exchange, refresh, revoke, identity, orgAccount, seal, unseal };
