@@ -410,6 +410,9 @@ td table tr:hover>td{background:transparent}
 .chip,.seg a,.tabs button{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:8px;background:none;font-size:12px;line-height:16px;font-weight:500;color:var(--vr-n-600);cursor:pointer;text-decoration:none!important;transition:background-color .15s,color .15s}
 .chip:hover,.seg a:hover,.tabs button:hover{background:var(--vr-n-100)}
 .chip.on,.seg a.on,.tabs button.on{background:var(--vr-navy-800);font-weight:600;color:#fff}
+/* department icon (teamIco): its own colour; white on the selected (dark) chip */
+.tico{display:inline-flex;flex:none}.tico svg{width:14px;height:14px}
+.chip.on .tico{color:#fff!important}
 .seg .cnt{background:var(--vr-n-200);color:var(--vr-n-700)}
 .seg a.on .cnt,.seg .chip.on .cnt{background:rgba(255,255,255,.2);color:#fff}
 .chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px}

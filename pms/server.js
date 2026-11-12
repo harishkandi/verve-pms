@@ -577,8 +577,10 @@ route('GET', '/api/report.csv', ({ user, q }) => {
 });
 
 // Emails (not sent automatically: generate drafts, then send)
-route('GET', '/api/emails', ({ user, q }) => emailStates(user, q.month || config.currentMonth));
+// manager emails, the MIS report and the KPI report are for admins only
+route('GET', '/api/emails', ({ user, q }) => { adminOnly(user); return emailStates(user, q.month || config.currentMonth); });
 route('GET', '/api/email', ({ user, q }) => {
+  adminOnly(user);
   const id = mustEmp(q.manager).id;
   if (user.role !== 'admin' && user.role !== 'director' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
   const month = q.month || config.currentMonth;
@@ -586,7 +588,7 @@ route('GET', '/api/email', ({ user, q }) => {
   return { ...L.buildEmail(id, month), state: e ? e.state : 'not generated', sentAt: e && e.sentAt };
 });
 route('POST', '/api/emails/generate', ({ user, body }) => {
-  if (user.role === 'employee') throw forbid();
+  adminOnly(user);
   const month = body.month || config.currentMonth; let n = 0;
   employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && e.role !== 'admin').forEach(m => {
     if (user.role !== 'admin' && user.role !== 'director' && m.id !== user.id && !L.isAncestor(user.id, m.id)) return;
@@ -596,7 +598,7 @@ route('POST', '/api/emails/generate', ({ user, body }) => {
   return { created: n };
 });
 route('POST', '/api/emails/send', ({ user, body }) => {
-  if (user.role === 'employee') throw forbid();
+  adminOnly(user);
   const mgr = mustEmp(body.managerId);
   if (user.role !== 'admin' && user.role !== 'director' && mgr.id !== user.id && !L.isAncestor(user.id, mgr.id)) throw forbid();
   const month = body.month || config.currentMonth;
@@ -818,14 +820,6 @@ route('GET', '/api/myteam', ({ user, q }) => {
     counts: H.countsOf(under), members: H.direct(root.id).sort(leadsFirst).map(H.rowFor), managers: under.filter(e => H.direct(e.id).length).sort(byName).map(H.rowFor) };
 });
 
-// Team report: every review under the root for one month, with the flags
-route('GET', '/api/teamreport', ({ user, q }) => {
-  const month = q.month || config.currentMonth, root = scopeRoot(user, q.id);
-  const ids = new Set(L.subordinates(root.id).map(e => e.id));
-  const rows = L.reportRows(user, month).filter(r => ids.has(r.empId));
-  return { month, me: root.id === user.id, person: personView(root), rows, counts: L.counts(rows) };
-});
-
 // MIS report: month by month for the root's whole team, and each person's monthly rating
 // whose reviews the MIS report covers: everyone under the root; admins and directors without an id get the whole organisation
 const misScope = (user, q) => {
@@ -835,6 +829,7 @@ const misScope = (user, q) => {
   return { org, root, people };
 };
 route('GET', '/api/mis', ({ user, q }) => {
+  adminOnly(user);
   const { org, root, people } = misScope(user, q), months = reportMonths();
   const byMonth = months.map(m => {
     const fs = people.map(e => L.peek(e.id, m)).filter(Boolean);
@@ -853,6 +848,7 @@ route('GET', '/api/mis', ({ user, q }) => {
 // MIS Reporting graph: the average KRA score per month (submitted reviews), for a financial year,
 // optionally only the people under one director. kra = total | operational | process | people
 route('GET', '/api/mis/graph', ({ user, q }) => {
+  adminOnly(user);
   const { org, people: all } = misScope(user, q);
   const curFy = +fyLabel(config.currentMonth).slice(3, 7), firstFy = +config.fyStartMonth.slice(0, 4);
   const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy);
@@ -882,10 +878,16 @@ route('GET', '/api/yearly', ({ user, q }) => {
   const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy), months = D.fyMonths(fy);
   const org = !q.id && !q.self && (user.role === 'admin' || user.role === 'director');
   const root = org ? null : scopeRoot(user, q.id);
-  let people = org ? L.visibleEmployees(user) : q.self ? [root] : [root, ...(root.role === 'admin' ? [] : L.subordinates(root.id))];
+  // Team report: only the people under the root (their own table is My report, so it is not shown twice);
+  // someone with nobody under them gets their own table
+  const under = org || q.self || root.role === 'admin' ? [] : L.subordinates(root.id), teamView = under.length > 0;
+  let people = org ? L.visibleEmployees(user) : teamView ? under : [root];
   people = people.filter(e => e.role !== 'admin' && e.managerId);
   const teams = [...new Set(people.map(e => e.team))].sort();
   if (q.team) people = people.filter(e => e.team === q.team);
+  // status cards at the top of the Team report (this used to be the separate My team report): one month of reviews
+  const cardMonth = q.month || config.currentMonth;
+  const counts = L.counts(people.map(e => L.peek(e.id, cardMonth)).filter(Boolean).map(f => ({ status: L.reviewStatus(f) })));
   const blocks = people.map(e => {
     const cells = months.map(m => {
       const f = L.peek(e.id, m);
@@ -900,12 +902,13 @@ route('GET', '/api/yearly', ({ user, q }) => {
     return { ...personView(e), manager: mgr ? mgr.name : '', hasTeam: L.subordinates(e.id).length > 0, cells,
       quarters: [0, 1, 2, 3].map(qi => avg2(totals(i => Math.floor(i / 3) === qi))), year: avg2(totals(() => true)) };
   });
-  return { me: !!root && root.id === user.id, person: root ? personView(root) : null, org, fy, fyLabel: `FY ${fy}-${fy + 1}`,
+  return { teamView, counts, cardMonth, me: !!root && root.id === user.id, person: root ? personView(root) : null, org, fy, fyLabel: `FY ${fy}-${fy + 1}`,
     fys: Array.from({ length: curFy - firstFy + 1 }, (_, i) => firstFy + i), teams, team: q.team || '',
     months: months.map(m => ({ key: m, label: D.monthLabel(m), open: m <= config.currentMonth })), people: blocks };
 });
 
 route('GET', '/api/kpi', ({ user, q }) => {
+  adminOnly(user);
   const root = scopeRoot(user, q.id);
   const months = reportMonths().filter(m => m >= (root.joined || '').slice(0, 7));
   const rows = months.map(m => {

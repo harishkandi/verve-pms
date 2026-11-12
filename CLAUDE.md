@@ -24,7 +24,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
   names in code. Shared with the team ONLY in the private org repo, on the separate branch `pms/employee-list`
   (one file, `employees.tsv`, no code; never merge it into a code branch, never push it to `personal`). Get it with
-  `git fetch origin && git show origin/pms/employee-list:employees.tsv > pms/private/employees.tsv`. `employees.js` parses/checks it (`npm run employees -- private/employees.tsv`, add `--apply` to write
+  `git fetch origin && mkdir -p pms/private && git show origin/pms/employee-list:employees.tsv > pms/private/employees.tsv`
+  (a fresh clone has no `pms/private` folder). `employees.js` parses/checks it (`npm run employees -- private/employees.tsv`, add `--apply` to write
   into `DATABASE_URL` = staging); `data.js` also loads it on boot when the file exists. First import removed all demo
   people and demo records; later imports update by name, add new people, mark missing ones inactive, keep forms.
   Managers not on the list become top-level directors (not reviewed). Role is derived: no manager = director, has
@@ -72,6 +73,12 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   of this is possible after "Submit to manager" (`selfSubmitted`). The One Pager Document is hidden from
   employees; monthly rating = per sub-KRA 30% self + 70% manager, weighted by
   sub-KRA then KRA weight; demo "today" is `config.today` in `data.js`.
+- Admin-only (menu, pages and API, Harish 2026-11-12): Manager emails, MIS report, KPI report. Managers' "Reports" group =
+  Team report (`#/yearly`: only the people under them, with the month's status cards on top; the old "My team report"
+  page is merged into it and `#/teamreport` redirects there) + My report (`#/yearly/me`: their own table), so nobody is
+  shown twice. Harish: no duplicate pages or components anywhere; merge instead of adding a second one. The annual
+  review lives only in My review › Annual review (`#/form/<id>/annual`); the One pager document page is the summary
+  table only and links there.
 
 ## Commands (run in `pms/`)
     npm install

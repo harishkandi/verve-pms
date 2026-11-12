@@ -111,6 +111,12 @@ function confirmBox(title, text, { ok = 'OK', danger = false } = {}) {
 
 // ---------- icons (inline SVG, stroke style) ----------
 const ICON = {
+  // department icons (teamLook)
+  wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+  megaphone: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+  trend: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+  briefcase: '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
   review: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9z"/><path d="m9 13 2 2 4-4"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M17.5 14a6 6 0 0 1 4 5.5"/>',
@@ -160,6 +166,17 @@ const ICON = {
 // Parameters Summary: an icon that suits the section's title (admins can rename sections or add new ones)
 const paramIcon = title => { const t = title.toLowerCase(); return /attend/.test(t) ? 'calcheck' : /skill|quality/.test(t) ? 'award' : /team/.test(t) ? 'team' : /conduct|ethic|value/.test(t) ? 'shield' : /initiative|motivat/.test(t) ? 'bolt' : /groom/.test(t) ? 'shirt' : /health|well/.test(t) ? 'heart' : 'list'; };
 const ico = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+// teams / departments: one coloured icon each, matched by keyword so a new or renamed department still gets one
+const TEAM_LOOK = [[/financ|account/i, 'wallet', '--vr-purple-600'], [/hr|admin|people/i, 'team', '--vr-success-600'], [/sales/i, 'trend', '--vr-warn-600'],
+  [/cloud|data|tech/i, 'cloud', '--vr-navy-600'], [/social|media|market/i, 'megaphone', '--vr-danger-500'], [/director/i, 'sitemap', '--vr-accent-navy']];
+const TEAM_SPARE = ['--vr-purple-500', '--vr-warn-500', '--vr-navy-700', '--vr-danger-600'];
+function teamLook(t) {
+  const m = TEAM_LOOK.find(([re]) => re.test(t || '')); if (m) return { icon: m[1], color: m[2] };
+  let h = 0; for (const ch of String(t || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { icon: 'briefcase', color: TEAM_SPARE[h % TEAM_SPARE.length] };
+}
+const teamOpt = t => { const l = teamLook(t); return [t, t, l.color, l.icon]; }; // for ddSelect lists
+const teamIco = t => { const l = teamLook(t); return `<span class="tico" style="color:var(${l.color})">${ico(l.icon)}</span>`; };
 const spinner = text => `<div class="loading"><span class="spin" style="display:inline-flex">${ico('loader')}</span>${text ? esc(text) : '<span class="ld-msg">Loading…</span>'}</div>`;
 // the scrolling area: the main column inside the app shell (the window itself does not scroll)
 const SC = () => document.getElementById('main') || document.scrollingElement;
@@ -318,12 +335,8 @@ async function start() {
     ['My review', `#/form/${S.me.id}/${S.month}`, 'review'],
     mgr ? { key: 'myrep', label: 'Reports', icon: 'chart', kids: [['Team report', '#/yearly'], ['My report', '#/yearly/me']] } : ['My report', '#/yearly', 'chart'],
     mgr && ['My team', '#/team', 'team'],
-    mgr && ['My team report', '#/teamreport', 'check'],
-    mgr && ['My MIS report', '#/mis', 'grid'],
-    mgr && ['My KPI report', '#/kpi', 'award'],
     mgr && ['Scheduling', '#/scheduling', 'calendar'],
     mgr && ['Review status report', '#/report', 'chart'],
-    mgr && ['Manager emails', '#/emails', 'mail'],
     r !== 'employee' && ['One pager document', `#/annual/${S.me.id}`, 'file'],
     ['Parameters summary', '#/params', 'list'],
   ].filter(Boolean);
@@ -683,7 +696,7 @@ pages.home = async (v, opts = {}) => {
     const quick = [
       ['calendar', '', 'Scheduling', '#/scheduling', `${q.datesCollected} of ${q.datesTotal} dates collected`],
       ['chart', 'y', 'Status report', '#/report', 'Org and team views'],
-      ['mail', 'g', 'Manager emails', '#/emails', q.emails.sent ? `${q.emails.sent} sent · ${q.emails.drafts} draft${q.emails.drafts === 1 ? '' : 's'}` : q.emails.drafts ? `${q.emails.drafts} draft${q.emails.drafts === 1 ? '' : 's'} ready` : 'No drafts yet'],
+      S.me.role !== 'admin' ? ['chart', 'g', 'Team report', '#/yearly', 'KRA scores month by month'] : ['mail', 'g', 'Manager emails', '#/emails', q.emails.sent ? `${q.emails.sent} sent · ${q.emails.drafts} draft${q.emails.drafts === 1 ? '' : 's'}` : q.emails.drafts ? `${q.emails.drafts} draft${q.emails.drafts === 1 ? '' : 's'} ready` : 'No drafts yet'],
       S.me.role === 'admin' ? ['idcard', 'r', 'Employees', '#/employees', `${q.employees.active} active · ${q.employees.inactive} inactive`] : ['team', 'r', 'My team', '#/team', `${q.teamReviews} review${q.teamReviews === 1 ? '' : 's'} in your scope`],
     ];
     const nw = d.nextWindow, windowFact = nw.state === 'open' ? `${esc(nw.team)} · closes ${fmtD(nw.date)}` : nw.state === 'upcoming' ? `${esc(nw.team)} · opens ${fmtD(nw.date)}` : 'All windows closed';
@@ -693,7 +706,7 @@ pages.home = async (v, opts = {}) => {
         <div><small>Dates collected</small><b>${q.datesCollected} / ${q.datesTotal}</b></div>
         <div><small>Past due</small><b>${c.pending}</b></div>
         <div><small>Manager emails</small><b>${q.emails.sent} of ${q.emails.total} sent</b></div></div></div></div>`;
-    const chips = `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${esc(t.team)}</button>`).join('')}</div></div>`;
+    const chips = `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(t.team)}</button>`).join('')}</div></div>`;
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
     const share = n => `${pctOf(n, c.scheduled)}% of scheduled`;
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
@@ -1064,12 +1077,12 @@ function wireForm(v) {
 }
 
 // ---------- manager pages: My Team, My Team Report, My MIS Report, My KPI Report ----------
-// Each opens for the signed-in person, or for a manager under them (#/team/<id>, #/teamreport/<id>, #/mis/<id>, #/kpi/<id>).
+// Each opens for the signed-in person, or for a manager under them (#/team/<id>, #/yearly/<id>; admins also #/mis/<id>, #/kpi/<id>).
 const monShort = () => esc(monthLabel(S.month).split(' ')[0]);
 const rateCls = x => x == null ? '' : x >= 80 ? 'g' : x >= 60 ? 'a' : 'r'; // percentage ratings
 // where a person's name leads back to: admins use the Reporting Manager page, everyone else My Team
 const personHref = id => S.me.role === 'admin' ? `#/reporting/${id}` : `#/team/${id}`;
-const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/teamreport/${r.id}" title="Every review under ${esc(r.name)} this month">${ico('check')}Team report</a><a class="btn sm" href="#/mis/${r.id}" title="Month-by-month figures for ${esc(r.name)}'s team">${ico('grid')}MIS report</a>` : ''}${opts.kpi === false ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
+const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Team report</a>${S.me.role === 'admin' ? `<a class="btn sm" href="#/mis/${r.id}" title="Month-by-month figures for ${esc(r.name)}'s team">${ico('grid')}MIS report</a>` : ''}` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
 const reportHead = (d, title, crumbLabel) => head(d.me ? `My ${title}` : `${title[0].toUpperCase() + title.slice(1)}: ${esc(d.person.name)}`,
   d.me ? `PMS › My ${title}` : `PMS › <a href="${personHref(d.person.id)}">${esc(d.person.name)}</a> › ${crumbLabel || title}`);
 
@@ -1086,10 +1099,10 @@ pages.team = async (v, arg) => {
   const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${r.direct ? `<a class="nm" href="#/team/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`}<div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
   const rows = list ? d.managers : d.members;
   const table = list
-    ? `<tr><th>Sr. no</th><th>Name</th><th>Email</th><th>Designation</th><th>Reports to</th><th>Employees</th><th>Team report</th><th>MIS report</th><th>KPI report</th></tr>
+    ? `<tr><th>Sr. no</th><th>Name</th><th>Email</th><th>Designation</th><th>Reports to</th><th>Employees</th><th>Team report</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td class="small">${esc(r.email) || 'N/A'}</td><td>${esc(r.designation)}</td><td>${r.manager ? esc(r.manager.name) : 'N/A'}</td><td>${count(r)}</td>
-        <td><a class="btn sm" href="#/teamreport/${r.id}" title="Every review under ${esc(r.name)} this month">${ico('check')}Open</a></td><td><a class="btn sm" href="#/mis/${r.id}" title="Month-by-month figures for ${esc(r.name)}'s team">${ico('grid')}Open</a></td><td><a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores">${ico('award')}Open</a></td></tr>`).join('')
-        || '<tr><td colspan="9" class="small">No managers under you. Everyone in your team reports to you directly.</td></tr>'}`
+        <td><a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Open</a></td></tr>`).join('')
+        || '<tr><td colspan="7" class="small">No managers under you. Everyone in your team reports to you directly.</td></tr>'}`
     : `<tr><th>Sr. no</th><th>Name</th><th>Employees</th><th>${mon} review</th><th>Rating</th><th>Reports</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td>${count(r)}</td><td>${review(r)}</td><td>${r.review && r.review.rating != null ? `<b class="rt ${rateCls(r.review.rating)}">${pc(r.review.rating)}</b>` : 'N/A'}</td><td>${reportLinks(r)}</td></tr>`).join('')
         || `<tr><td colspan="6" class="small">Nobody reports to ${d.me ? 'you' : esc(p.name)}.</td></tr>`}`;
@@ -1112,16 +1125,11 @@ pages.team = async (v, arg) => {
 };
 
 // My Team Report: every review under the person this month, with the flags
-pages.teamreport = async (v, id) => {
-  const d = await api(`/teamreport?month=${S.month}${id ? '&id=' + id : ''}`), c = d.counts;
-  v.innerHTML = reportHead(d, 'team report', 'Team report') + `<div class="row">${monthSel()}<span class="sp"></span><a class="btn" href="#/mis${id ? '/' + id : ''}">${ico('grid')}MIS report</a></div>
-  <div class="small" style="margin:0 0 12px">${monShort()} reviews of everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)</div>
-  ${countTiles(c)}` + reportTable(d.rows);
-  onMonth(() => pages.teamreport(v, id));
-};
+pages.teamreport = (v, id) => location.replace('#/yearly' + (id ? '/' + id : '')); // merged into the Team report (status cards on top)
 
 // My MIS Report: month-by-month figures for the whole team, and each person's monthly rating
 pages.mis = async (v, id) => {
+  if (S.me.role !== 'admin') return pages.home(v); // MIS, KPI and manager emails are admin-only
   const d = await api(`/mis${id ? '?id=' + id : ''}`), short = m => esc(m.label.split(' ')[0].slice(0, 3));
   const cell = x => !x ? '<span class="small" title="No form">–</span>' : x.rating != null ? `<b class="rt ${rateCls(x.rating)}" title="${esc(x.status)}">${pc(x.rating)}</b>` : `<span class="small" title="${esc(x.status)}">${{ 'Completed but Not Submitted': 'Not sub.', 'Review Not Completed': 'Open', Pending: 'Overdue' }[x.status] || '–'}</span>`;
   v.innerHTML = (d.org ? head('MIS report', 'PMS › MIS report · whole organisation') : reportHead(d, 'MIS report', 'MIS report')) + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for ${d.org ? 'everyone in the organisation' : `everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)`}</span><span class="sp"></span>${d.org ? '' : `<a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team report</a>`}<button class="btn pri" id="misx">Download CSV</button></div>
@@ -1191,6 +1199,7 @@ async function misGraph(box, id) {
 
 // My KPI Report: one person's KRA scores month by month
 pages.kpi = async (v, id) => {
+  if (S.me.role !== 'admin') return pages.home(v);
   const d = await api(`/kpi${id ? '?id=' + id : ''}`), done = d.rows.filter(r => r.submitted).length;
   const kra = x => !x.subKras ? '<span class="small">Not set</span>' : `${x.score != null ? `<b class="rt ${rateCls(x.score)}">${pc(x.score)}</b>` : '<b>N/A</b>'}<div class="small">self ${x.self != null ? pc(x.self) : '–'} · mgr ${x.mgr != null ? pc(x.mgr) : '–'} · weight ${x.weight}</div>`;
   v.innerHTML = reportHead(d, 'KPI report', 'KPI report') + `<div class="tiles"><div class="tile ${rateCls(d.avg)}"><small>Average monthly rating</small><b>${pc(d.avg)}</b><span>Submitted months only</span></div><div class="tile g"><small>Months submitted</small><b>${done}</b><span>of ${d.rows.length} so far</span></div><div class="tile"><small>Months so far</small><b>${d.rows.length}</b><span>This financial year</span></div></div>
@@ -1213,7 +1222,7 @@ const flagCell = flags => !flags.length ? '<td class="small">None</td>'
 const YF = { key: null, person: '', team: '', q: '' }; // q: '' = whole year, '0'..'3' = Quarter I..IV
 pages.yearly = async (v, id) => {
   const self = id === 'me';
-  const d = await api(`/yearly?fy=${S.yfy || ''}${self ? '&self=1' : id ? '&id=' + id : ''}`);
+  const d = await api(`/yearly?fy=${S.yfy || ''}&month=${S.month}${self ? '&self=1' : id ? '&id=' + id : ''}`);
   S.yfy = d.fy;
   const key = id || 'me';
   if (YF.key !== key) Object.assign(YF, { key, person: '', team: '' });
@@ -1226,22 +1235,23 @@ pages.yearly = async (v, id) => {
   const qi = YF.q === '' ? null : +YF.q, cols = qi == null ? d.months.map((_, i) => i) : [qi * 3, qi * 3 + 1, qi * 3 + 2];
   const pick = arr => cols.map(i => arr[i]);
   const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, p.team)}${p.manager ? ` · reports to ${esc(p.manager)}` : ''}</span></div>
-      <a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a><span class="sp"></span>
+      ${S.me.role === 'admin' ? `<a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a>` : ''}<span class="sp"></span>
       ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}">${ico('team')}Their team</a>` : ''}</div>
     <div class="tablewrap"><table class="ytab"><tr><th>KRA name</th>${pick(d.months).map(m => `<th class="nr ${m.open ? '' : 'off'}">${mh(m)}</th>`).join('')}</tr>
     ${[['operational', 'Operational'], ['process', 'Process'], ['people', 'People']].map(([k, l]) => `<tr><td>${l}</td>${pick(p.cells).map(c => `<td class="nr">${c && c[k] != null ? n2(c[k]) : ''}</td>`).join('')}</tr>`).join('')}
     <tr class="ytot"><td>Total</td>${pick(p.cells).map(c => `<td class="nr">${c && c.total != null ? `<b class="rt ${rateCls(c.total)}">${n2(c.total)}</b>` : ''}</td>`).join('')}</tr>
     <tr class="yavg"><td>Quarterly average</td>${(qi == null ? p.quarters.map((a, i) => [a, i]) : [[p.quarters[qi], qi]]).map(([a, i]) => `<td colspan="3" class="c"><small>Q${i + 1}</small> <b class="rt ${rateCls(a)}">${a != null ? n2(a) : '–'}</b></td>`).join('')}</tr>
     ${qi != null ? '' : `<tr class="yavg"><td>Year average</td><td colspan="12" class="c"><b class="rt ${rateCls(p.year)}">${p.year != null ? n2(p.year) : '–'}</b></td></tr>`}</table></div></div>`;
-  const root = d.person, mgrView = root && d.people.length > 1;
+  const root = d.person, mgrView = root && d.teamView;
   v.innerHTML = head(d.me ? (mgrView ? 'Team report' : 'My report') : root ? (mgrView ? `Team report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team report',
       root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
-    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(t => [t, t])], { icon: 'sitemap' }) : ''}
+    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(teamOpt)], { icon: 'sitemap' }) : ''}
     ${d.people.length > 1 ? ddSelect('yper', YF.person, [['', 'All people'], ...pool.map(p => [String(p.id), p.name])], { icon: 'team' }) : ''}
     ${ddSelect('yq', YF.q, [['', 'All'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']], { icon: 'filter' })}
     ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
     <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
-    ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length - 1} ${d.people.length === 2 ? 'person' : 'people'} under them</span></div>` : ''}
+    ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
+    ${mgrView || d.org ? `<div class="small" style="margin:0 0 12px">${esc(monthLabel(d.cardMonth))} reviews of ${d.org ? 'everyone in the organisation' : 'the people in this report'} (pick another month in the calendar at the top)</div>${countTiles(d.counts)}` : ''}
     ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
   $('#yfy').onchange = e => { S.yfy = +e.target.value; pages.yearly(v, id); };
@@ -1286,7 +1296,7 @@ pages.report = async v => {
   v.innerHTML = head('Review status report', 'One report, two views · ' + d.scope) +
     `<div class="row">${monthSel()}
     ${full ? `<button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}Organisation-wise</button>` : ''}
-    ${ddSelect('fteam', RF.view === 'team' ? RF.team : null, [['', 'All teams'], ...d.teams.map(t => [t, t])], { icon: 'team', ph: 'Team-wise', btn: RF.view === 'team' ? `Team-wise · ${RF.team || 'All teams'}` : 'Team-wise', on: RF.view === 'team' })}
+    ${ddSelect('fteam', RF.view === 'team' ? RF.team : null, [['', 'All teams'], ...d.teams.map(teamOpt)], { icon: 'team', ph: 'Team-wise', btn: RF.view === 'team' ? `Team-wise · ${RF.team || 'All teams'}` : 'Team-wise', on: RF.view === 'team' })}
     ${ddSelect('fmgr', RF.manager, [['', 'All managers'], ...d.managers.map(m => [String(m.id), m.name])], { icon: 'idcard' })}
     ${ddSelect('fst', RF.status, REPORT_STATUSES)}
     <span class="sp"></span>${exportMenu()}</div>
@@ -1399,6 +1409,7 @@ pages.scheduling = async v => {
 
 // ---------- emails ----------
 pages.emails = async v => {
+  if (S.me.role !== 'admin') return pages.home(v);
   const list = await api('/emails?month=' + S.month);
   v.innerHTML = head('Manager emails', 'Preview and send the monthly summary to each manager') + `<div class="row">${monthSel()}<button class="btn pri" id="gen">Generate emails</button><span class="small">Local demo: "Send now" records the email in the audit log; no real mail is sent. Emails are never sent automatically.</span></div>
   <div class="row" style="align-items:flex-start;gap:16px"><div class="card" style="min-width:240px;margin:0">${list.map(m => `<div class="row" style="margin:0 0 6px"><a href="#/emails" data-m="${m.managerId}" style="color:var(--navy);font-weight:600;cursor:pointer">${esc(m.name)}</a><span class="small">${esc(m.team)}</span><span class="sp"></span><span class="badge ${m.state === 'sent' ? 'b-green' : m.state === 'draft' ? 'b-amber' : 'b-grey'}">${m.state}</span></div>`).join('') || 'No teams in your access.'}</div><div class="sp" id="prev" style="min-width:300px"></div></div>`;
@@ -1423,7 +1434,6 @@ pages.emails = async v => {
 // ---------- annual ----------
 pages.annual = async (v, emp) => {
   const d = await api('/annual?emp=' + (emp || S.me.id));
-  const a = { ...d.annual }, p = d.perms;
   const list = ['manager', 'teamlead', 'director', 'admin'].includes(S.me.role) ? (await api('/report?month=' + S.me.currentMonth)).rows : [];
   v.innerHTML = head('One pager document', `${esc(d.employee.name)} · ${d.fy}`) +
     `${list.length ? `<div class="row"><select id="who"><option value="${S.me.id}">Myself</option>${list.map(r => `<option value="${r.empId}" ${r.empId === d.employee.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div>` : ''}
@@ -1431,22 +1441,8 @@ pages.annual = async (v, emp) => {
   <div class="row"><b>${esc(d.employee.name)}</b> (${esc(d.employee.designation)}) · ${d.fy} (April 2026 to March 2027)<span class="sp"></span><button class="btn pri" onclick="window.print()">Download PDF (print)</button></div>
   <div class="tablewrap"><table><tr><th>Month</th><th>KRA weightage (Op / Pro / Peo)</th><th>Work summary</th><th>Self</th><th>Manager</th><th>Monthly rating</th><th>Learnings, SOPs</th><th>Highlights and gaps</th></tr>
   ${d.months.map(m => m.filled ? `<tr><td>${esc(m.label.split(' ')[0])}</td><td title="${esc(m.subKras.join(' | '))}">${m.weightage}</td><td>${esc(m.work)}<div class="small">${esc(m.selfRemarks[0] || '')}</div></td><td>${pc(m.self)}</td><td>${pc(m.mgr)}<div class="small">${esc(m.mgrRemarks[0] || '')}</div></td><td>${pc(m.rating)}</td><td class="small">${m.learn.length ? 'Learning: ' + esc(m.learn.join(', ')) + '<br>' : ''}${m.sop.length ? 'SOP: ' + esc(m.sop.join(', ')) : ''}</td><td class="flag">${m.highlights.map(esc).join('<br>') || 'N/A'}</td></tr>` : `<tr><td>${esc(m.label.split(' ')[0])}</td><td colspan="7" class="small">Fills in automatically as each monthly review finishes.</td></tr>`).join('')}</table></div>
-  <p class="small">The summary is a reference; it does not replace the annual review form below.</p>
-  <h2>Annual review form</h2><div class="card" id="af">
-  <div class="formhead">Annual review · ${d.fy} (April 2026 to March 2027)</div><div class="small" style="margin-top:6px">Fields are placeholders until the annual form format is supplied.</div>
-  <div id="aerr"></div>
-  <label class="f">Review date <i>*</i></label><input type="date" id="ard" value="${esc(a.reviewDate)}" ${p.editSelf || p.editMgr ? '' : 'disabled'}>
-  <label class="f">Key accomplishments this year</label><textarea id="aacc" ${p.editSelf ? '' : 'disabled'}>${esc(a.accomplishments)}</textarea>
-  <label class="f">KRA-wise reflection (Operational, Process, People)</label><textarea id="akra" ${p.editSelf ? '' : 'disabled'}>${esc(a.kraReflection)}</textarea>
-  <label class="f">Learnings and SOPs prepared</label><textarea id="alrn" ${p.editSelf ? '' : 'disabled'}>${esc(a.learnings)}</textarea>
-  <div class="row"><div><label class="f">Self rating</label><input class="num" type="number" id="asr" value="${a.selfRating ?? ''}" ${p.editSelf ? '' : 'disabled'}></div><div><label class="f">Manager rating</label><input class="num" type="number" id="amr" value="${a.mgrRating ?? ''}" ${p.editMgr ? '' : 'disabled'}></div></div>
-  <label class="f">Manager remark</label><textarea id="arm" ${p.editMgr ? '' : 'disabled'}>${esc(a.mgrRemark)}</textarea>
-  ${a.submitted ? '<div class="ok">Annual review submitted.</div>' : `<div class="row" style="justify-content:flex-end;margin-top:10px">${p.editSelf || p.editMgr ? '<button class="btn" id="asave">Save draft</button>' : ''}<button class="btn pri" id="asub" ${p.submit ? '' : 'disabled title="Only managers and admins submit the form"'}>Submit annual review</button></div>`}</div>`;
+  <p class="small">This page is the one-page summary only. The annual review itself is under My review › Annual review: <a href="#/form/${d.employee.id}/annual">open ${d.employee.id === S.me.id ? 'my' : esc(d.employee.name.split(' ')[0]) + "'s"} annual review</a>.</p>`;
   if ($('#who')) $('#who').onchange = e => { location.hash = '#/annual/' + e.target.value; };
-  const body = sub => ({ empId: d.employee.id, reviewDate: $('#ard').value, accomplishments: $('#aacc').value, kraReflection: $('#akra').value, learnings: $('#alrn').value, selfRating: $('#asr').value, mgrRating: $('#amr').value, mgrRemark: $('#arm').value, submit: sub });
-  const go = async sub => { try { await api('/annual', { method: 'PUT', body: body(sub) }); toast(sub ? 'Annual review submitted' : 'Draft saved'); pages.annual(v, d.employee.id); } catch (e) { $('#aerr').innerHTML = errBox(e); } };
-  if ($('#asave')) $('#asave').onclick = () => go(false);
-  if ($('#asub')) $('#asub').onclick = () => go(true);
 };
 
 // ---------- parameters summary ----------
@@ -1578,7 +1574,7 @@ pages.employees = async (v, arg) => {
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
   const inScope = (tab === 'active' ? d.active : d.inactive).filter(e => !rf || ROLEF[rf].includes(e.role));
   const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
-  const teamChips = `<div class="chips"><div class="seg" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}">${esc(t)} <span class="cnt">${teamN[t]}</span></button>`).join('')}</div></div>`;
+  const teamChips = `<div class="chips"><div class="seg" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}">${teamIco(t)}${esc(t)} <span class="cnt">${teamN[t]}</span></button>`).join('')}</div></div>`;
   const tile = (key, cls, n, label, on, hint) => `<button class="tile ${cls} ${on ? 'on' : ''}" data-stat="${key}" title="${hint}"><small>${label}</small><b>${n}</b><span>${on ? 'Showing below' : hint}</span></button>`;
   const shown = tab === 'inactive' ? 'Inactive members' : { director: 'Directors', manager: 'Managers and team leads', employee: 'Executives and interns' }[rf] || 'All active members';
   const opts = (list, cur) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
