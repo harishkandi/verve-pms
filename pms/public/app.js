@@ -92,6 +92,7 @@ const rateSel = (val, attrs, enabled, cls = '', scale = RATINGS, unit = '') => `
 // a percentage rating for display
 const pc = x => x == null ? 'N/A' : `${x}%`;
 const errBox = e => `<div class="warn">${(e.data?.errors || [e.message]).map(esc).join('<br>')}</div>`;
+function askNote(title, label, optional) { return new Promise(res => { const m = modal(`<h3>${title}</h3><label class="f">${label}</label><textarea id="nt" rows="4" style="width:100%"></textarea><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="nc">Cancel</button><button class="btn pri" id="no">Send</button></div>`); const done = v => { m.remove(); res(v); }; m.querySelector('#nc').onclick = () => done(null); m.querySelector('#no').onclick = () => { const v = m.querySelector('#nt').value.trim(); if (!v && !optional) return toast('Please write a short note', 'err'); done(v); }; m.querySelector('#nt').focus(); }); }
 function modal(html) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.addEventListener('mousedown', ev => { if (ev.target === m) m.remove(); }); const esc = ev => { if (ev.key === 'Escape') { m.remove(); document.removeEventListener('keydown', esc); } }; document.addEventListener('keydown', esc); document.body.appendChild(m); return m; }
 // the app's own yes/no popup, used instead of the browser's confirm box; resolves true when confirmed
 function confirmBox(title, text, { ok = 'OK', danger = false } = {}) {
@@ -663,6 +664,13 @@ function groupTodo(list) {
   list.forEach(t => { const i = G.findIndex(([, , re]) => re.test(t)); out[i].items.push({ full: t, text: i < 2 ? t.replace(/^[^:]*?question\s+(\d+):\s*/i, 'Q$1 · ') : t }); });
   return out.filter(x => x.items.length);
 }
+// employee dashboard: where their KRA change request stands, and which manager it is with
+function kraAccessCard(o) {
+  const a = o && o.kraAccess; if (!a) return '';
+  const txt = { pending: `KRA change request is waiting for approval from <b>${esc(a.manager)}</b>.`, approved: `<b>${esc(a.decidedBy)}</b> gave you access to change your KRAs. Open your review to make the change.`, rejected: `<b>${esc(a.decidedBy)}</b> rejected your KRA change request.` }[a.status];
+  return txt ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change</b><small>${a.status === 'pending' ? 'Pending' : a.status === 'approved' ? 'Access given' : 'Rejected'}</small></div><div class="kr"><span>${txt}</span><span class="sp"></span><a class="btn sm" href="#/form/${S.me.id}/${S.month}">Open my review</a></div></div>` : '';
+}
+
 pages.home = async (v, opts = {}) => {
   if (typeof opts !== 'object') opts = {};
   const mgr = S.me.role !== 'employee';
@@ -688,7 +696,8 @@ pages.home = async (v, opts = {}) => {
     const chips = `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${esc(t.team)}</button>`).join('')}</div></div>`;
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
     const share = n => `${pctOf(n, c.scheduled)}% of scheduled`;
-    const body = `<div class="stats">${kpi('n', '', 'calendar', 'Scheduled', c.scheduled, `Across ${S.hteam ? '1 team' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}`)}${kpi('g', 'Completed and Submitted', 'check', 'Submitted', c.submitted, share(c.submitted))}${kpi('a', 'Completed but Not Submitted', 'draft', 'Not submitted', c.notSubmitted, share(c.notSubmitted))}${kpi('r', 'Review Not Completed', 'alert', 'Form incomplete', c.notCompleted, `${share(c.notCompleted)} · window open`)}${kpi('b', 'Pending', 'hourglass', 'Overdue', c.pending, `${share(c.pending)} · window closed`)}</div>
+    const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
+    const body = kreq + `<div class="stats">${kpi('n', '', 'calendar', 'Scheduled', c.scheduled, `Across ${S.hteam ? '1 team' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}`)}${kpi('g', 'Completed and Submitted', 'check', 'Submitted', c.submitted, share(c.submitted))}${kpi('a', 'Completed but Not Submitted', 'draft', 'Not submitted', c.notSubmitted, share(c.notSubmitted))}${kpi('r', 'Review Not Completed', 'alert', 'Form incomplete', c.notCompleted, `${share(c.notCompleted)} · window open`)}${kpi('b', 'Pending', 'hourglass', 'Overdue', c.pending, `${share(c.pending)} · window closed`)}</div>
     <div class="wgrid">
       ${widget('award', 'Review quality', '<a class="more" href="#/report">Report</a>', qualityBody(d.health, c))}
       ${widget('chart', 'Team-wise progress', '<a class="more" href="#/report">Team view</a>', `<div class="mb">${teams.length ? teams.map(t => t.scheduled ? stackBar(t, t.team) : `<div class="tbar"><span class="n" title="${esc(t.team)}">${esc(t.team)}</span><div class="tr"></div><b>0/0</b></div>`).join('') + statusLegend() : '<div class="empty">No teams in your scope.</div>'}</div>`)}
@@ -764,6 +773,7 @@ pages.home = async (v, opts = {}) => {
       <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a></div>` : '<div class="mb"><div class="empty">No submitted reviews yet this year.</div></div>';
     html = `${head(`My ${monthSel('msel', { heading: true })} review`, `Welcome back, ${esc(S.me.name.split(' ')[0])} · ${esc(S.me.designation || ROLE_LABEL[S.me.role])}${S.me.team ? ` · ${esc(S.me.team)} team` : ''}`)}
     ${hero}${stats}
+    ${kraAccessCard(o)}
     <div class="wgrid">
       ${widget(o && o.submitted ? 'check' : 'review', o && o.submitted ? 'Review submitted' : o && o.selfSubmitted ? 'Sent to your manager' : 'What is left on my form', issues.length && !finished ? `<span class="cnt">${issues.length}</span><a class="more" href="#/form/${S.me.id}/${S.month}">Open review</a>` : '', todoBody, 'w8')}
       <div class="m bare">
@@ -774,7 +784,13 @@ pages.home = async (v, opts = {}) => {
   }
   if (html != null) v.innerHTML = html;
   onMonth(() => pages.home(v));
-  v.onclick = e => {
+  v.onclick = async e => {
+    const kd = e.target.closest('[data-kdash]');
+    if (kd) {
+      try { await api('/kra-request/decide', { method: 'POST', body: { empId: +kd.dataset.emp, month: kd.dataset.mon, approve: kd.dataset.kdash === '1' } }); toast(kd.dataset.kdash === '1' ? 'Access given' : 'Request rejected'); pages.home(v, { partial: true }); }
+      catch (er) { toast(er.message, 'err'); }
+      return;
+    }
     // All stats cards: the Employees page remembers its role filter in S.erole; set it so the list matches the card
     const sc = e.target.closest('a[data-role]'); if (sc) { S.erole = sc.dataset.role; S.eq = ''; S.eteam = ''; return; }
     const b = e.target.closest('[data-team]');
@@ -811,8 +827,7 @@ function drawForm(v, errors) {
     const sum = rows.reduce((a, r) => a + (+r.weight || 0), 0);
     const t = formSummary(f).kras.find(x => x.key === k), sr = t.self ?? 0, mr = t.mgr ?? 0, calc = t.score ?? Math.round((0.3 * sr + 0.7 * mr) * 10) / 10;
     const head = `<div class="kra" id="sec-${k}">${label} KRA<span>${desc}</span></div>
-      <div class="row" style="margin:0 0 12px"><span class="small" style="font-weight:600;letter-spacing:.1em;text-transform:uppercase">KRA weightage</span> ${ed ? `<input class="num" type="number" data-kw="${k}" value="${kr.weight}"> <span class="small">editable</span>` : kr.weight}
-      ${ed && rows.length ? `<span class="badge ${sum === +kr.weight ? 'b-green' : 'b-red'}">Sub-KRA total ${sum} / ${kr.weight}</span>` : ''}</div>`;
+      <div class="row" style="margin:0 0 12px"><span class="small" style="font-weight:600;letter-spacing:.1em;text-transform:uppercase">KRA weightage</span> ${ed ? `<input class="num" type="number" data-kw="${k}" value="${kr.weight}">` : kr.weight}</div>`;
     const btns = ed ? `<div class="row" style="margin-top:10px"><button class="btn sm" data-add="${k}" title="Add sub-KRA">${ico('plus')}Add sub-KRA</button><button class="btn pri sm" data-savek="${k}">Save ${label} KRA</button></div>` : '';
     if (!rows.length) return head + `<div class="${FP.newJoiner ? 'info' : 'warn'}">${FP.newJoiner ? 'New joiner: no KRAs set yet. Only the questionnaire is checked.' : `${label} KRA is not set.`}</div>` + btns;
     return head + `<div class="tablewrap"><table class="krat"><colgroup><col style="width:56px"><col><col style="width:110px"><col style="width:96px"><col style="width:100px"><col style="width:112px"><col style="width:21%"><col style="width:21%"></colgroup><tr><th>Sr. no</th><th>Key performance indicator</th><th>Target</th><th>Weightage</th><th>Self rating (30%)</th><th>Manager rating (70%)</th><th>Remark</th><th>Manager remark</th></tr>
@@ -839,6 +854,7 @@ function drawForm(v, errors) {
   const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b>${sumLink}` : `Monthly rating: shows once every self and manager rating is in${sumLink}`;
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(monthLabel(S.month))}`) +
     `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+    ${kraBanner(p)}
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your ratings (and a remark where they differ), then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="formhead">KRA · ${FP.fy} · ${esc(monthLabel(S.month))}</div>
@@ -853,7 +869,7 @@ function drawForm(v, errors) {
     ${sec('process', 'Process', '(SOP and ClickUp)')}
     ${sec('people', 'People', '(Learning)')}
     <div class="kra qa" id="sec-questionnaire">Questionnaire<span>Text answers and rated questions</span></div>
-    <div class="tablewrap"><table style="table-layout:fixed"><colgroup><col style="width:90px"><col style="width:38%"><col></colgroup><tr><th>Sr. no</th><th>Question</th><th>Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="small">Saves automatically when you click away.</div>`
+    <div class="tablewrap"><table style="table-layout:fixed"><colgroup><col style="width:90px"><col style="width:38%"><col></colgroup><tr><th>Sr. no</th><th>Question</th><th>Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="row" style="margin:8px 0 0"><button class="btn pri sm" data-qsave="${q.id}">Save</button><button class="btn sm" data-qcancel="${q.id}">Cancel</button></div>`
       : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? `<button class="ibtn" data-qedit="${q.id}" title="Edit answer" aria-label="Edit answer" style="vertical-align:middle">${ico('pencil')}</button>` : ''}`}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)} (Rate out of 5)</td><td><table style="table-layout:fixed"><tr><th style="width:104px">Self rating</th><th style="width:118px">Manager rating</th><th>Remark</th></tr><tr>
@@ -923,6 +939,17 @@ function summaryModal(title) {
   m.querySelector('.box').classList.add('wide');
   m.querySelector('#ok').onclick = () => m.remove();
 }
+// KRA change requests: employees ask, the manager approves, then the employee can edit once
+function kraBanner(p) {
+  const r = FP.kraRequest; let h = '';
+  if (r && r.status === 'pending') h = p.decideKra
+    ? `<div class="warn"><b>${esc(r.by)} asked to change their KRAs.</b><div class="row" style="margin:10px 0 0"><button class="btn pri sm" data-kdec="1">Approve</button><button class="btn sm" data-kdec="0">Reject</button></div></div>`
+    : `<div class="info">KRA change request sent to <b>${esc(FP.manager ? FP.manager.name : 'your manager')}</b>. You can edit the KRAs once it is approved.</div>`;
+  else if (r && r.status === 'approved') h = p.editKras && S.me.id === FP.employee.id ? `<div class="info"><b>${esc(r.decidedBy)}</b> gave you access to change the KRAs. Edit the KRAs below and save. After you save, a new request is needed for further changes.</div>` : `<div class="info">KRA change approved by <b>${esc(r.decidedBy)}</b>. ${esc(FP.employee.name)} can now edit the KRAs.</div>`;
+  else if (r && r.status === 'rejected') h = `<div class="warn">KRA change request was rejected by ${esc(r.decidedBy)}.${r.reply ? '<br>' + esc(r.reply) : ''}</div>`;
+  if (p.requestKra) h += `<div class="row" style="margin:0 0 12px"><button class="btn" data-kreq="1">Request KRA change</button><span class="small">KRAs can only be changed with approval from ${esc(FP.manager ? FP.manager.name : 'your manager')}.</span></div>`;
+  return h;
+}
 
 let changeSeq = 0; // only the latest form change redraws, so an older autosave cannot undo the jump to a remark
 function wireForm(v) {
@@ -971,20 +998,7 @@ function wireForm(v) {
   };
   const save = async () => { FP = await api('/form', { method: 'PUT', body: { empId: f.empId, month: f.month, reviewDate: f.reviewDate, kras: f.kras, qa: f.qa } }); };
   const redraw = () => { const y = SC().scrollTop; drawForm(v); SC().scrollTop = y; };
-  // question answers: the pencil opens a box; clicking away saves it and closes the box
-  v.querySelectorAll('textarea[data-qt]').forEach(ta => {
-    ta.onblur = async () => {
-      await Promise.resolve();
-      if (!ta.isConnected) return; // the box was replaced by a redraw, not left by the user
-      const id = ta.dataset.qt;
-      if (focusQ === id) focusQ = null;
-      editingQ.delete(id);
-      f.qa[id] = ta.value;
-      if (ta.value === qOriginal[id]) return redraw();
-      try { await save(); toast('Answer saved'); } catch (er) { editingQ.add(id); toast(er.message, 'err'); }
-      redraw();
-    };
-  });
+  // question answers: the pencil opens a box; the Save button stores the answer (ratings and remarks still save automatically)
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   if ($('#save')) $('#save').onclick = async () => { try { await save(); toast('Draft saved'); drawForm(v); summaryModal('Draft saved'); } catch (e) { toast(e.message, 'err'); } };
   $('#expk').onclick = () => exportKpi();
@@ -1014,8 +1028,25 @@ function wireForm(v) {
   v.onclick = async e => {
     const t = e.target, post = (u, b) => api(u, { method: 'POST', body: { empId: f.empId, month: f.month, ...b } });
     try {
+      const qs = t.closest('[data-qsave]'), qc = t.closest('[data-qcancel]');
+      if (qs) {
+        const id = qs.dataset.qsave, ta = v.querySelector(`textarea[data-qt="${id}"]`);
+        f.qa[id] = ta.value;
+        try { await save(); editingQ.delete(id); toast('Answer saved'); } catch (er) { toast(er.message, 'err'); }
+        return redraw();
+      }
+      if (qc) { const id = qc.dataset.qcancel; f.qa[id] = qOriginal[id] || ''; editingQ.delete(id); focusQ = null; return redraw(); }
       const qe = t.closest('[data-qedit]'); // the click usually lands on the pencil's svg, not the button
       if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; qOriginal[id] = f.qa[id] || ''; redraw(); }
+      else if (t.dataset.kreq) {
+        FP = await post('/kra-request', {}); toast('Request sent to your manager'); drawForm(v);
+      }
+      else if (t.dataset.kdec) {
+        const approve = t.dataset.kdec === '1';
+        const reply = approve ? '' : await askNote('Reject KRA change', 'Reason (optional)', true);
+        if (reply === null) return;
+        FP = await post('/kra-request/decide', { approve, reply }); toast(approve ? 'Approved' : 'Rejected'); drawForm(v);
+      }
       else if (t.dataset.add) { const k = t.dataset.add; f.kras[k].rows.push({ id: k[0] + Date.now(), kpi: '', target: '', weight: 0, self: null, selfRemark: '', mgr: null, mgrRemark: '' }); drawForm(v); }
       else if (t.dataset.del) { const [k, i] = t.dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); drawForm(v); }
       else if (t.dataset.savek) {

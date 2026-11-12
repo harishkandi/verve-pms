@@ -23,8 +23,8 @@ class Redirect { constructor(url) { this.url = url; } }
 
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
-// anyone who can edit the KRAs may choose to copy last month's KRAs
-const canCopyKras = (viewer, f) => canEditKras(viewer, f);
+// managers, and the employee themself, may copy last month's KRAs (copying does not need approval)
+const canCopyKras = (viewer, f) => canEditKras(viewer, f) || (!f.locked && viewer.id === f.empId); // employees may always copy last month's KRAs
 function formPayload(viewer, f) {
   const e = L.emp(f.empId);
   const month = f.month;
@@ -42,12 +42,18 @@ function formPayload(viewer, f) {
       editSelf: selfEdit && selfOpen, editManager: (manage || selfEdit) && selfOpen, canSubmit: manage && open,
       canSelfSubmit: viewer.id === f.empId && open && !f.selfSubmitted, canReturn: manage && open && !!f.selfSubmitted,
       editKras: canEditKras(viewer, f), copyKras: canCopyKras(viewer, f),
+      requestKra: canRequestKra(viewer, f), decideKra: canDecideKra(viewer, f),
     },
+    kraRequest: f.kraRequest || null,
     fy: fyLabel(month),
   };
 }
 // the employee and their reviewers (managers, directors, admin) edit KRAs directly until the review is submitted
-const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || (viewer.id === f.empId && !f.selfSubmitted));
+// employees cannot change their own KRAs; they send a request, and once their manager approves it they can make the change (one save)
+const kraGrant = (viewer, f) => viewer.id === f.empId && !!f.kraRequest && f.kraRequest.status === 'approved';
+const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || kraGrant(viewer, f));
+const canRequestKra = (viewer, f) => !f.locked && viewer.id === f.empId && !L.canManage(viewer, f.empId) && !(f.kraRequest && ['pending', 'approved'].includes(f.kraRequest.status));
+const canDecideKra = (viewer, f) => !f.locked && viewer.id !== f.empId && L.canManage(viewer, f.empId) && !!f.kraRequest && f.kraRequest.status === 'pending';
 const fyLabel = m => { const [y, mo] = m.split('-').map(Number); const s = mo >= 4 ? y : y - 1; return `FY ${s}-${s + 1}`; };
 
 function mustForm(viewer, empId, month) {
@@ -251,6 +257,10 @@ route('GET', '/api/home', ({ user, q }) => {
     };
     out.tips = homeTips(scoped, counts, emails);
     if (user.role === 'admin') out.orgStats = orgStats(); // All stats cards at the top of the admin dashboard
+    // KRA change requests waiting for this person's approval (shown highlighted on their dashboard)
+    out.kraRequests = Object.values(D.forms).filter(f => f.kraRequest && f.kraRequest.status === 'pending' && canDecideKra(user, f))
+      .sort((a, b) => a.kraRequest.at.localeCompare(b.kraRequest.at))
+      .map(f => ({ empId: f.empId, name: L.emp(f.empId).name, designation: L.emp(f.empId).designation, team: L.emp(f.empId).team, month: f.month, label: D.monthLabel(f.month), at: f.kraRequest.at }));
   }
   const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
   if (ownForm) {
@@ -258,7 +268,8 @@ route('GET', '/api/home', ({ user, q }) => {
     out.own = { status: L.reviewStatus(ownForm), scheduled: ownForm.scheduledDate, time: ownForm.scheduledTime || null, invite: inviteView(ownForm), zoom: ownForm.zoomLink || null, reviewDate: ownForm.reviewDate, due: di.due, submitted: ownForm.submitted, selfSubmitted: !!ownForm.selfSubmitted, selfSubmittedAt: ownForm.selfSubmittedAt || null, reschedules: L.rescheduleCount(ownForm),
       rating: ownForm.submitted ? L.monthlyRating(ownForm) : null, preview: !ownForm.submitted && L.ratingsComplete(ownForm) ? L.monthlyRating(ownForm) : null,
       manager: (L.emp(user.managerId) || {}).name || '',
-      issues: L.employeeTodo(ownForm) }; // only what the person fills in; KRA set-up alerts go to their manager
+      issues: L.employeeTodo(ownForm), // only what the person fills in; KRA set-up alerts go to their manager
+      kraAccess: ownForm.kraRequest ? { status: ownForm.kraRequest.status, manager: (L.emp(user.managerId) || {}).name || '', decidedBy: ownForm.kraRequest.decidedBy || '' } : null };
   }
   return out;
 });
@@ -362,11 +373,32 @@ route('PUT', '/api/kras', ({ user, body }) => {
       });
     }
   };
+  const usedGrant = kraGrant(user, f);
   apply(f);
+  if (usedGrant) { audit(user.name, 'KRA change made after approval', `${L.emp(f.empId).name} ${f.month}`); delete f.kraRequest; }
   // later unsubmitted months follow the new structure
   D.fyMonths().filter(m => m > f.month && m <= config.currentMonth).forEach(m => { const g = D.forms[`${f.empId}|${m}`]; if (g && !g.locked) apply(g); });
   L.emp(f.empId).newJoiner = L.emp(f.empId).newJoiner && L.KRAS.every(([k]) => f.kras[k].rows.length === 0);
   audit(user.name, 'KRA settings', `${L.emp(f.empId).name} from ${f.month}`);
+  return formPayload(user, f);
+});
+
+// an employee asks their manager for permission to change KRAs; the manager approves or rejects
+route('POST', '/api/kra-request', ({ user, body }) => {
+  const f = mustForm(user, body.empId, body.month);
+  if (f.locked) throw bad(LOCKED_MSG);
+  if (!canRequestKra(user, f)) throw new HttpError(403, 'You cannot request a KRA change right now.');
+  const note = String(body.note || '').trim().slice(0, 500);
+  f.kraRequest = { status: 'pending', note, by: user.name, at: new Date().toISOString() };
+  audit(user.name, 'KRA change requested', `${L.emp(f.empId).name} ${f.month}`);
+  return formPayload(user, f);
+});
+route('POST', '/api/kra-request/decide', ({ user, body }) => {
+  const f = mustForm(user, body.empId, body.month);
+  if (!canDecideKra(user, f)) throw new HttpError(403, 'There is no pending KRA change request you can decide.');
+  const approve = !!body.approve;
+  Object.assign(f.kraRequest, { status: approve ? 'approved' : 'rejected', decidedBy: user.name, decidedAt: new Date().toISOString(), reply: String(body.reply || '').trim().slice(0, 500) });
+  audit(user.name, approve ? 'KRA change approved' : 'KRA change rejected', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
 });
 
