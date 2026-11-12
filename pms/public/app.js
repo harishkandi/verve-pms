@@ -1664,9 +1664,24 @@ pages.employees = async (v, arg) => {
       };
     }
     if (a === 'off') {
-      // just a confirmation: the inactive-from date is today and the person moves to All inactive employees
-      if (!await confirmBox(`Move ${t.dataset.n} to inactive?`, 'They are left out of review schedules, status counts, reports and manager emails from today. Past forms stay available.', { ok: 'Move to inactive', danger: true })) return;
-      try { await api('/employees/inactive', { method: 'POST', body: { id: t.dataset.id, confirm: true } }); toast(`${t.dataset.n} moved to inactive`); pages.employees(v); } catch (er) { toast(er.message, 'err'); }
+      // the inactive-from date is today and the person moves to All inactive employees; anyone reporting to them is moved to someone else first
+      const id = t.dataset.id, name = t.dataset.n, done = () => { toast(`${name} moved to inactive`); pages.employees(v); };
+      try {
+        const chk = await api('/employees/inactive', { method: 'POST', body: { id, check: true } });
+        if (!chk.reports.length) {
+          if (!await confirmBox(`Move ${name} to inactive?`, 'They are left out of review schedules, status counts, reports and manager emails from today. Past forms stay available.', { ok: 'Move to inactive', danger: true })) return;
+          await api('/employees/inactive', { method: 'POST', body: { id, confirm: true } }); return done();
+        }
+        const m = modal(`<h2>Move ${esc(name)} to inactive?</h2><div id="er"></div>
+          <p class="small"><b>${chk.reports.length} ${chk.reports.length === 1 ? 'person reports' : 'people report'} to ${esc(name)}:</b> ${chk.reports.map(r => esc(r.name)).join(', ')}. Choose who they should report to from now on. Then ${esc(name)} is moved to inactive.</p>
+          <label class="f">New reporting manager <i>*</i></label><select id="nm">${chk.candidates.map(c => `<option value="${c.id}" ${c.id === chk.suggested ? 'selected' : ''}>${esc(c.name)} (${esc(c.designation)})</option>`).join('')}</select>
+          <div class="row"><button class="btn dng solid" id="ok">Shift and move to inactive</button><button class="btn" id="no">Cancel</button></div>`);
+        m.querySelector('#no').onclick = () => m.remove();
+        m.querySelector('#ok').onclick = async () => {
+          try { await api('/employees/inactive', { method: 'POST', body: { id, confirm: true, newManagerId: +m.querySelector('#nm').value } }); m.remove(); done(); }
+          catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
+        };
+      } catch (er) { toast(er.message, 'err'); }
     }
     if (a === 'on' && await confirmBox(`Reactivate ${t.dataset.n}?`, 'They can sign in again and are counted in schedules, reports and emails from today.', { ok: 'Reactivate' })) { await api('/employees/reactivate', { method: 'POST', body: { id: t.dataset.id } }); toast('Reactivated'); pages.employees(v); }
   };

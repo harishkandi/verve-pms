@@ -735,10 +735,24 @@ route('POST', '/api/employees/inactive', ({ user, body }) => {
   adminOnly(user);
   const e = mustEmp(body.id);
   body.date = body.date || config.today; body.reason = body.reason || 'Moved to inactive'; // the screen only asks for a confirmation
+  // people who report to this person must be moved under someone else first
+  const reports = employees.filter(x => x.active && x.managerId === e.id);
+  const team = new Set(L.subordinates(e.id).map(x => x.id));
+  const candidates = employees.filter(c => c.active && c.id !== e.id && c.role !== 'admin' && !team.has(c.id))
+    .sort((a, b) => (a.role === 'employee') - (b.role === 'employee') || a.name.localeCompare(b.name))
+    .map(c => ({ id: c.id, name: c.name, designation: c.designation }));
+  if (body.check) return { reports: reports.map(r => ({ id: r.id, name: r.name, designation: r.designation })), candidates, suggested: candidates.some(c => c.id === e.managerId) ? e.managerId : null };
+  let newManager = null;
+  if (reports.length) {
+    if (!body.newManagerId) throw bad(`${e.name} has ${reports.length} ${reports.length === 1 ? 'person' : 'people'} reporting to them. Choose who they should report to.`);
+    newManager = candidates.find(c => c.id === +body.newManagerId);
+    if (!newManager) throw bad('Choose an active person outside this team as the new reporting manager.');
+  }
   const f = L.peek(e.id, config.currentMonth);
   const warning = f && !['Completed and Submitted', 'Completed but Not Submitted'].includes(L.reviewStatus(f)) && body.date.slice(0, 7) === config.currentMonth
     ? 'Their review this month is not completed. It is counted until the inactive date.' : null;
   if (!body.confirm && warning) return { needsConfirm: true, warning };
+  if (newManager) { reports.forEach(r => { r.managerId = newManager.id; }); audit(user.name, 'reporting manager changed', `${reports.map(r => r.name).join(', ')} now report to ${newManager.name} (was ${e.name})`); }
   e.active = false; e.inactiveFrom = body.date; e.reason = body.reason; e.note = body.note;
   audit(user.name, 'move to inactive', `${e.name} from ${body.date} (${body.reason})`);
   return { ok: true };
