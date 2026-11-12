@@ -16,7 +16,7 @@ const clean = s => String(s ?? '').replace(/\s+/g, ' ').trim();
 const key = s => clean(s).toLowerCase();
 
 const COLS = { name: /^(employee )?name$/, manager: /^(reporting )?manager$/, email: /e-?mail/, designation: /designation|title/,
-  team: /^(team|department)$/, joined: /join|doj/, code: /code|emp(loyee)? ?id/ };
+  team: /^(team|department)$/, joined: /join|doj/, code: /code|emp(loyee)? ?id/, director: /^director$/ };
 
 function splitLine(line, sep) {
   if (sep === '\t') return line.split('\t');
@@ -33,7 +33,7 @@ function parse(text) {
   if (idx.name < 0 || idx.manager < 0) throw new Error('The first row must have the headers "Name" and "Reporting Manager".');
   return lines.slice(1).map(l => {
     const c = splitLine(l, sep), get = k => idx[k] < 0 ? '' : clean(c[idx[k]]);
-    return { name: get('name'), manager: get('manager'), email: get('email').toLowerCase(), designation: get('designation'), team: get('team'), joined: get('joined'), code: get('code') };
+    return { name: get('name'), manager: get('manager'), email: get('email').toLowerCase(), designation: get('designation'), team: get('team'), joined: get('joined'), code: get('code'), director: get('director') };
   }).filter(r => r.name);
 }
 
@@ -45,13 +45,17 @@ function plan(rows) {
   // managers who are not on the list themselves: added as top-level people (not reviewed, no manager)
   const tops = [...new Set(rows.map(r => r.manager).filter(m => m && !byName.has(key(m))))];
   tops.forEach(m => notes.push(`"${m}" is a reporting manager but not on the list: added as a top-level person (director, not reviewed). Reports: ${rows.filter(r => r.manager === m).map(r => r.name).join(', ')}.`));
-  const all = [...rows, ...tops.map(name => ({ name, manager: '', email: '', designation: '', team: '', joined: '', code: '', top: true }))];
+  const all = [...rows, ...tops.map(name => ({ name, manager: '', email: '', designation: rows.some(r => key(r.director) === key(name)) ? 'Director' : '', team: '', joined: '', code: '', top: true }))];
   const mgrOf = r => r.manager ? key(r.manager) : null;
   for (const r of rows) { // loops (A reports to B reports to A)
     const seen = [key(r.name)]; let m = mgrOf(r);
     while (m && byName.has(m)) { if (seen.includes(m)) { problems.push(`Reporting loop: ${seen.concat(m).join(' -> ')}.`); break; } seen.push(m); m = mgrOf(byName.get(m)); }
   }
   rows.filter(r => !r.manager).forEach(r => notes.push(`"${r.name}" has no reporting manager: top-level person (not reviewed).`));
+  // the Director column is only a cross-check: the app works the director out from the reporting chain
+  const topOf = r => { let m = r.manager, n = 0; while (m && byName.has(key(m)) && n++ < 50) m = byName.get(key(m)).manager; return m; };
+  rows.filter(r => r.director && r.manager && key(topOf(r)) !== key(r.director))
+    .forEach(r => notes.push(`WARNING "${r.name}": Director column says "${r.director}" but the reporting chain leads to "${topOf(r)}".`));
   const emails = all.map(r => r.email).filter(Boolean);
   emails.filter((e, i) => emails.indexOf(e) !== i).forEach(e => problems.push(`Email ${e} is used by more than one person.`));
   const hasReports = new Set(rows.map(mgrOf).filter(Boolean));
@@ -92,6 +96,10 @@ function importList(S, text, { who = 'System', today } = {}) {
     delete e.inactiveFrom; delete e.reason;
   }
   for (const r of p.people) byName.get(key(r.name)).managerId = r.manager ? byName.get(key(r.manager)).id : null;
+  // review windows: drop teams nobody is in any more (the demo teams), give new departments the default window
+  const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
+  for (const t of Object.keys(config.windows)) if (!teams.has(t)) delete config.windows[t];
+  for (const t of teams) config.windows[t] ||= { start: 25, end: 31 };
   const listed = new Set(p.people.map(r => key(r.name)));
   const gone = employees.filter(e => e.src === 'list' && e.active && !listed.has(key(e.name)));
   gone.forEach(e => Object.assign(e, { active: false, inactiveFrom: today || config.today, reason: 'Not on the employee list' }));

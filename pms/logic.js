@@ -276,12 +276,17 @@ function buildEmail(managerId, month) {
   sec.completion.push(`Scheduled ${rows.length}, within due date ${within.length}, after due date ${after.length}${after.length ? ' (' + after.join(', ') + ')' : ''}, pending ${pending.length}${pending.length ? ' (' + pending.join(', ') + ')' : ''}.`);
   for (const r of rows) {
     const n = r.e.name;
+    // the same issue on several questions (e.g. 5 unanswered questions) is one line with a count, not 5 lines
+    const seen = new Map();
     for (const x of r.v) {
-      if (x.code === 'RATING_GAP' || x.code === 'OP_WEIGHT' || x.code === 'OP_MIN' || x.code === 'MGR_REMARK' || x.code === 'Q_TEXT' || x.code === 'Q_INCOMPLETE' || x.code === 'Q_REMARK' || x.code === 'REVIEW_DATE' || x.code === 'SELF_MISSING')
-        sec.form.push({ text: `${x.short}: ${n}`, hot: x.code === 'RATING_GAP' });
-      else if (['SOP_MISSING', 'SOP_LINK', 'CLICKUP', 'PR_MIN', 'PR_WEIGHT'].includes(x.code)) sec.process.push({ text: `${x.short}: ${n}` });
-      else if (['LEARNING_MISSING', 'LEARN_LINK', 'LEARN_LOW', 'LEARN_GOOD', 'NJ_MONTHS', 'NJ_SET', 'PE_WEIGHT', 'PE_MIN'].includes(x.code)) sec.people.push({ text: `${x.short}: ${n}` });
+      const s = ['RATING_GAP', 'OP_WEIGHT', 'OP_MIN', 'MGR_REMARK', 'Q_TEXT', 'Q_INCOMPLETE', 'Q_REMARK', 'REVIEW_DATE', 'SELF_MISSING'].includes(x.code) ? 'form'
+        : ['SOP_MISSING', 'SOP_LINK', 'CLICKUP', 'PR_MIN', 'PR_WEIGHT'].includes(x.code) ? 'process'
+        : ['LEARNING_MISSING', 'LEARN_LINK', 'LEARN_LOW', 'LEARN_GOOD', 'NJ_MONTHS', 'NJ_SET', 'PE_WEIGHT', 'PE_MIN'].includes(x.code) ? 'people' : null;
+      if (!s) continue;
+      const k = s + '|' + x.short, o = seen.get(k);
+      if (o) o.count++; else seen.set(k, { s, short: x.short, count: 1, hot: x.code === 'RATING_GAP' });
     }
+    for (const o of seen.values()) sec[o.s].push({ text: `${o.short}${o.count > 1 ? ` (${o.count})` : ''}: ${n}`, ...(o.s === 'form' && { hot: o.hot }) });
     const gapE = ['operational', 'process', 'people'].map(k => { const a = kraAvg(r.f.kras[k].rows, 'self'), b = kraAvg(r.f.kras[k].rows, 'mgr'); return a !== null && b !== null ? Math.abs(a - b) : 0; });
     if (Math.max(...gapE) >= config.emailGapFlag && !r.v.some(x => x.code === 'RATING_GAP')) sec.rating.push({ text: `Rating gap of ${config.emailGapFlag} points or more: ${n}`, hot: true });
     const w = r.f.kras;

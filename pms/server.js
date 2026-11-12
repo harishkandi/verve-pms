@@ -250,6 +250,7 @@ route('GET', '/api/home', ({ user, q }) => {
       employees: user.role === 'admin' ? { active: employees.filter(e => e.role !== 'admin' && e.active).length, inactive: employees.filter(e => e.role !== 'admin' && !e.active).length } : null,
     };
     out.tips = homeTips(scoped, counts, emails);
+    if (user.role === 'admin') out.orgStats = orgStats(); // All stats cards at the top of the admin dashboard
   }
   const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
   if (ownForm) {
@@ -623,17 +624,21 @@ route('PUT', '/api/annual', ({ user, body }) => {
   return { ok: true };
 });
 
+// organisation counts (admin): All stats cards on the dashboard and the tiles on the Employees page
+function orgStats() {
+  const rows = employees.filter(e => e.role !== 'admin'), active = rows.filter(e => e.active), role = r => active.filter(e => e.role === r).length;
+  return { members: active.length, directors: role('director'), managers: role('manager') + role('teamlead'), executives: role('employee'),
+    inactive: rows.length - active.length, questions: L.activeQuestions(config.currentMonth).length };
+}
+
 // Employees (admin)
 const adminOnly = u => { if (u.role !== 'admin') throw forbid(); };
 route('GET', '/api/employees', ({ user, q }) => {
   adminOnly(user);
   const month = config.currentMonth;
   const rows = employees.filter(e => e.role !== 'admin').map(e => { const f = L.peek(e.id, month); return { ...e, manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a' }; });
-  const active = rows.filter(e => e.active), role = r => active.filter(e => e.role === r).length;
-  // organisation counts shown as tiles on top of the Employees page
-  const stats = { members: active.length, directors: role('director'), managers: role('manager') + role('teamlead'), executives: role('employee'),
-    inactive: rows.length - active.length, questions: L.activeQuestions(month).length };
-  return { active, inactive: rows.filter(e => !e.active), stats,
+  const active = rows.filter(e => e.active);
+  return { active, inactive: rows.filter(e => !e.active), stats: orgStats(),
     teams: [...new Set([...Object.keys(config.windows), ...rows.map(e => e.team)])].filter(Boolean).sort(),
     designations: [...new Set(rows.map(e => e.designation))].filter(Boolean).sort(),
     managers: employees.filter(e => e.active && (e.role === 'manager' || e.role === 'director' || e.role === 'teamlead')).map(e => ({ id: e.id, name: e.name })) };

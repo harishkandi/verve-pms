@@ -19,15 +19,19 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules).
-- Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name + Reporting Manager only).
+- Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name, Reporting Manager, Designation,
+  Department (= team), Director; 76 rows + 4 top-level directors).
   It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
   names in code. `employees.js` parses/checks it (`npm run employees -- private/employees.tsv`, add `--apply` to write
   into `DATABASE_URL` = staging); `data.js` also loads it on boot when the file exists. First import removed all demo
   people and demo records; later imports update by name, add new people, mark missing ones inactive, keep forms.
   Managers not on the list become top-level directors (not reviewed). Role is derived: no manager = director, has
-  reports = manager, else employee. Email, designation, team, joining date and code are not in the sheet yet:
-  placeholders are blank / team "Unassigned" / joined = FY start / code `V###`. Without emails nobody but
-  `ADMIN_EMAILS` can use Google sign-in (admins use "View as").
+  reports = manager, else employee (designation is shown, not used for permissions). The Director column is only
+  cross-checked against the reporting chain (warning on mismatch); the app takes the director from the chain.
+  Review windows follow the departments (import drops windows of teams nobody is in, new ones get 25th to month end).
+  Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Without emails nobody but
+  `ADMIN_EMAILS` can use Google sign-in (admins use "View as"). Admin dashboard starts with the "All stats" cards
+  (`orgStats()` in `server.js`, `allStats()` in `app.js`).
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12). User name, theme and log out
@@ -37,8 +41,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
   There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
   admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
-  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams include "Directors" (was "Leadership") and
-  "HR"; `migrate()` in `data.js` updates older saved state on boot.
+  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
+  "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
@@ -54,7 +58,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   converts old saved data x20 and marks `config.ratingScale = 100`); questionnaire ratings stay 0-5; thresholds
   `clickupMin`/`learningMin` are % and the gap flags are percentage points. Employees' "What is left on my form" lists
   only what they fill in (`employeeTodo` in `logic.js`); KRA set-up and review-date alerts are for managers only. The
-  form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit.
+  form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit; hidden from
+  employees (`showSummary()` in `app.js`, Harish's call 2026-11-12), reviewers and admins see it.
   Monthly form is two steps: the employee clicks "Submit to manager" (`POST /api/form/self-submit`, blocked until
   `employeeTodo` is empty; sets `form.selfSubmitted`, their part is then read-only), the manager can "Send back to
   employee" (`POST /api/form/return`) or "Submit review" (`POST /api/form/submit`, final). Everyone who can edit gets

@@ -143,7 +143,7 @@ function migrate() {
   // the "Leadership" team is now "Directors"
   for (const e of employees) if (e.team === 'Leadership') e.team = 'Directors';
   if (config.windows.Leadership) { config.windows.Directors ||= config.windows.Leadership; delete config.windows.Leadership; }
-  config.windows.HR ||= { start: 25, end: 30 };
+  // the Directors team always has a window (top-level people); other teams come from the employee list (employees.js)
   config.windows.Directors ||= { start: 25, end: 30 };
 }
 
