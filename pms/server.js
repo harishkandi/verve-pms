@@ -599,7 +599,9 @@ route('GET', '/api/employees', ({ user, q }) => {
 route('GET', '/api/employee-forms', ({ user, q }) => {
   adminOnly(user);
   const e = mustEmp(q.emp), id = e.id;
-  const rows = D.fyMonths().map(m => { const f = L.peek(id, m); return { month: m, label: D.monthLabel(m), reviewDate: f ? f.reviewDate : '', status: f ? L.reviewStatus(f) : (m > config.currentMonth ? 'Not started' : 'Not started'), rating: f && f.submitted ? L.monthlyRating(f) : null, open: !!f }; });
+  // admin can open any month of the year; the form is created on first open. Only months before joining have none.
+  const joined = (e.joined || '').slice(0, 7);
+  const rows = D.fyMonths().map(m => { const f = L.peek(id, m); return { month: m, label: D.monthLabel(m), reviewDate: f ? f.reviewDate : '', status: f ? L.reviewStatus(f) : 'Not started', rating: f && f.submitted ? L.monthlyRating(f) : null, open: !!f || m >= joined, beforeJoining: !f && m < joined }; });
   return { employee: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '' }, rows, annual: annualForms[`${id}|FY2026`] ? 'Submitted' : 'Opens in March' };
 });
 route('POST', '/api/employees', ({ user, body }) => {
@@ -666,14 +668,8 @@ route('POST', '/api/employees/reactivate', ({ user, body }) => {
   return { ok: true };
 });
 
-// Reporting hierarchy (admin). Three lists, the same as the role tiles on Employees:
-//   level=director | manager (managers and team leads) | employee
-// and a drill-down: id=<person> lists the people who report to that person, so the admin follows
-// director -> their managers -> a manager's employees, with the path back up.
-const ORG_LEVELS = { director: ['director'], manager: ['manager', 'teamlead'], employee: ['employee'] };
-route('GET', '/api/org', ({ user, q }) => {
-  adminOnly(user);
-  const month = q.month || config.currentMonth;
+// shared by the hierarchy pages: who reports to whom and how their reviews stand in a month
+function orgHelpers(month) {
   const people = employees.filter(e => e.active && e.role !== 'admin');
   const direct = id => people.filter(e => e.managerId === id);
   const reviewOf = e => { const f = L.peek(e.id, month); return f ? { status: L.reviewStatus(f), rating: f.submitted ? L.monthlyRating(f) : null, reviewDate: f.reviewDate || null } : null; };
@@ -686,17 +682,104 @@ route('GET', '/api/org', ({ user, q }) => {
       manager: mgr ? { id: mgr.id, name: mgr.name } : null, director: dir ? { id: dir.id, name: dir.name } : null,
       direct: direct(e.id).length, total: under.length, review: reviewOf(e), teamCounts: countsOf(under) };
   };
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  const levelCounts = Object.fromEntries(Object.entries(ORG_LEVELS).map(([k, roles]) => [k, people.filter(e => roles.includes(e.role)).length]));
+  return { people, direct, reviewOf, countsOf, above, rowFor };
+}
+const byName = (a, b) => a.name.localeCompare(b.name);
+const leadsFirst = (a, b) => (b.role !== 'employee') - (a.role !== 'employee') || byName(a, b);
+
+// Reporting hierarchy (admin). Five lists by designation (the admin menu's Reporting manager group):
+//   level=director | srmanager | manager (and team leads) | srexec | other (everyone else: executives, analysts, ...)
+// Each person is in exactly one list (first match wins). And a drill-down: id=<person> lists the people who report
+// to that person, so the admin follows director -> their managers -> a manager's employees, with the path back up.
+const desigOf = e => String(e.designation || '').toLowerCase();
+const ORG_LEVELS = {
+  director: e => e.role === 'director' || /director/.test(desigOf(e)),
+  srmanager: e => /senior manager/.test(desigOf(e)),
+  manager: e => /manager/.test(desigOf(e)) || e.role === 'teamlead',
+  srexec: e => /senior executive/.test(desigOf(e)),
+  other: () => true,
+};
+const levelOf = e => Object.keys(ORG_LEVELS).find(k => ORG_LEVELS[k](e));
+const STAFF_LEVELS = ['srexec', 'other']; // their tiles count their own reviews; leader lists count the whole organisation
+route('GET', '/api/org', ({ user, q }) => {
+  adminOnly(user);
+  const month = q.month || config.currentMonth, H = orgHelpers(month);
+  const levelCounts = Object.fromEntries(Object.keys(ORG_LEVELS).map(k => [k, H.people.filter(e => levelOf(e) === k).length]));
   if (!q.id) {
     const level = ORG_LEVELS[q.level] ? q.level : 'director';
-    const list = people.filter(e => ORG_LEVELS[level].includes(e.role)).sort(byName);
-    return { month, level, levelCounts, person: null, path: [], counts: countsOf(level === 'employee' ? list : people), rows: list.map(rowFor) };
+    const list = H.people.filter(e => levelOf(e) === level).sort(byName);
+    return { month, level, levelCounts, person: null, path: [], counts: H.countsOf(STAFF_LEVELS.includes(level) ? list : H.people), rows: list.map(H.rowFor) };
   }
   const p = mustEmp(q.id);
   if (p.role === 'admin') throw notFound('Employee not found.');
-  return { month, level: null, levelCounts, person: { ...rowFor(p), active: p.active }, path: above(p).map(c => ({ id: c.id, name: c.name })),
-    counts: countsOf(L.subordinates(p.id)), rows: direct(p.id).sort((a, b) => (b.role !== 'employee') - (a.role !== 'employee') || byName(a, b)).map(rowFor) };
+  return { month, level: null, levelCounts, person: { ...H.rowFor(p), active: p.active }, path: H.above(p).map(c => ({ id: c.id, name: c.name })),
+    counts: H.countsOf(L.subordinates(p.id)), rows: H.direct(p.id).sort(leadsFirst).map(H.rowFor) };
+});
+
+// ---------- manager reports: My Team, My Team Report, My MIS Report, My KPI Report ----------
+// Each works for the signed-in person (no id) or for someone they can see (a manager under them; admin and
+// directors can see everyone).
+const scopeRoot = (user, id) => {
+  const root = id ? mustEmp(id) : user;
+  if (root.id !== user.id && !L.canView(user, root.id)) throw forbid();
+  return root;
+};
+const personView = p => ({ id: p.id, name: p.name, designation: p.designation, team: p.team, email: p.email || '' });
+const round1 = x => x == null ? null : Math.round(x * 10) / 10;
+const avgOf = list => list.length ? round1(list.reduce((a, b) => a + b, 0) / list.length) : null;
+const reportMonths = () => D.fyMonths().filter(m => m <= config.currentMonth);
+
+// My Team: the people who report to the root, and every manager anywhere under them
+route('GET', '/api/myteam', ({ user, q }) => {
+  const month = q.month || config.currentMonth, H = orgHelpers(month), root = scopeRoot(user, q.id);
+  const chain = [...H.above(root), root], from = chain.findIndex(c => c.id === user.id);
+  const under = L.subordinates(root.id);
+  return { month, me: root.id === user.id, person: H.rowFor(root), path: chain.slice(Math.max(from, 0), -1).map(c => ({ id: c.id, name: c.name })),
+    counts: H.countsOf(under), members: H.direct(root.id).sort(leadsFirst).map(H.rowFor), managers: under.filter(e => H.direct(e.id).length).sort(byName).map(H.rowFor) };
+});
+
+// Team report: every review under the root for one month, with the flags
+route('GET', '/api/teamreport', ({ user, q }) => {
+  const month = q.month || config.currentMonth, root = scopeRoot(user, q.id);
+  const ids = new Set(L.subordinates(root.id).map(e => e.id));
+  const rows = L.reportRows(user, month).filter(r => ids.has(r.empId));
+  return { month, me: root.id === user.id, person: personView(root), rows, counts: L.counts(rows) };
+});
+
+// MIS report: month by month for the root's whole team, and each person's monthly rating
+route('GET', '/api/mis', ({ user, q }) => {
+  const root = scopeRoot(user, q.id), people = L.subordinates(root.id).sort(byName), months = reportMonths();
+  const byMonth = months.map(m => {
+    const fs = people.map(e => L.peek(e.id, m)).filter(Boolean);
+    const due = fs.map(f => L.dueInfo(f).due);
+    return { month: m, label: D.monthLabel(m), ...L.counts(fs.map(f => ({ status: L.reviewStatus(f) }))),
+      onTime: due.filter(x => x === 'Within due date').length, late: due.filter(x => x === 'After due date').length,
+      avgRating: avgOf(fs.filter(f => f.submitted).map(f => L.monthlyRating(f)).filter(x => x != null)) };
+  });
+  const grid = people.map(e => {
+    const cells = months.map(m => { const f = L.peek(e.id, m); return f ? { status: L.reviewStatus(f), rating: f.submitted ? L.monthlyRating(f) : null } : null; });
+    const mgr = L.emp(e.managerId);
+    return { id: e.id, name: e.name, designation: e.designation, manager: mgr ? mgr.name : '', cells, avg: avgOf(cells.map(c => c && c.rating).filter(x => x != null)) };
+  });
+  return { me: root.id === user.id, person: personView(root), months: months.map(m => ({ key: m, label: D.monthLabel(m) })), byMonth, grid };
+});
+
+// KPI report: one person's KRA scores month by month (30% self + 70% manager, weighted by sub-KRA)
+route('GET', '/api/kpi', ({ user, q }) => {
+  const root = scopeRoot(user, q.id);
+  const months = reportMonths().filter(m => m >= (root.joined || '').slice(0, 7));
+  const rows = months.map(m => {
+    const f = L.peek(root.id, m);
+    if (!f) return { month: m, label: D.monthLabel(m), none: true };
+    const kra = Object.fromEntries(L.KRAS.map(([k]) => {
+      const rs = f.kras[k].rows;
+      const wavg = key => { const w = rs.filter(r => L.has(r[key])), tw = w.reduce((a, r) => a + (+r.weight || 0), 0); return tw ? w.reduce((a, r) => a + r.weight * r[key], 0) / tw : null; };
+      const s = wavg('self'), mg = wavg('mgr');
+      return [k, { weight: f.kras[k].weight, subKras: rs.length, self: round1(s), mgr: round1(mg), score: s != null && mg != null ? round1(config.selfShare * s + config.mgrShare * mg) : null }];
+    }));
+    return { month: m, label: D.monthLabel(m), status: L.reviewStatus(f), reviewDate: f.reviewDate || null, kra, rating: f.submitted ? L.monthlyRating(f) : null, submitted: f.submitted };
+  });
+  return { me: root.id === user.id, person: personView(root), rows, avg: avgOf(rows.map(r => r.rating).filter(x => x != null)) };
 });
 
 // Parameters summary

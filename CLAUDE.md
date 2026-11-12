@@ -16,6 +16,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules). Demo employees have no email on purpose.
+- UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
+  `html.dark`, stored as `pms.theme`); no raw hex, no green in the UI (success = azure). User name, theme and log out
+  live in the top bar. The page scrolls inside `#main`, not the window (`SC()`). Admins get a grouped menu (Reporting
+  manager / Reporting / Questions open as sub-menus); its Reporting manager lists come from `designation`
+  (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
 - Settings live in env vars, listed in `pms/.env.example`; `npm run dev` / `npm run local` read `pms/.env`.
 - Persistence: all state lives in the in-memory objects exported by `data.js`. With `DATABASE_URL` set, `db.js` loads
   them from one jsonb row (`pms_state`, id 1) on boot (seeding it when empty) and saves after any request that changed
