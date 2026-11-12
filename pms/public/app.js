@@ -697,7 +697,7 @@ pages.home = async (v, opts = {}) => {
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
     const share = n => `${pctOf(n, c.scheduled)}% of scheduled`;
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
-    const body = kreq + `<div class="stats">${kpi('n', '', 'calendar', 'Scheduled', c.scheduled, `Across ${S.hteam ? '1 team' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}`)}${kpi('g', 'Completed and Submitted', 'check', 'Submitted', c.submitted, share(c.submitted))}${kpi('a', 'Completed but Not Submitted', 'draft', 'Not submitted', c.notSubmitted, share(c.notSubmitted))}${kpi('r', 'Review Not Completed', 'alert', 'Form incomplete', c.notCompleted, `${share(c.notCompleted)} · window open`)}${kpi('b', 'Pending', 'hourglass', 'Overdue', c.pending, `${share(c.pending)} · window closed`)}</div>
+    const body = `<div class="stats">${kpi('n', '', 'calendar', 'Scheduled', c.scheduled, `Across ${S.hteam ? '1 team' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}`)}${kpi('g', 'Completed and Submitted', 'check', 'Submitted', c.submitted, share(c.submitted))}${kpi('a', 'Completed but Not Submitted', 'draft', 'Not submitted', c.notSubmitted, share(c.notSubmitted))}${kpi('r', 'Review Not Completed', 'alert', 'Not completed', c.notCompleted, share(c.notCompleted))}${kpi('b', 'Pending', 'hourglass', 'Pending', c.pending, share(c.pending))}</div>
     <div class="wgrid">
       ${widget('award', 'Review quality', '<a class="more" href="#/report">Report</a>', qualityBody(d.health, c))}
       ${widget('chart', 'Team-wise progress', '<a class="more" href="#/report">Team view</a>', `<div class="mb">${teams.length ? teams.map(t => t.scheduled ? stackBar(t, t.team) : `<div class="tbar"><span class="n" title="${esc(t.team)}">${esc(t.team)}</span><div class="tr"></div><b>0/0</b></div>`).join('') + statusLegend() : '<div class="empty">No teams in your scope.</div>'}</div>`)}
@@ -710,10 +710,11 @@ pages.home = async (v, opts = {}) => {
       </div>
     </div>`;
     if (v.querySelector('#hShell') && opts.partial) {
+      $('#hReq').innerHTML = kreq;
       $('#hHero').innerHTML = hero;
       $('#hBody').innerHTML = body;
     } else {
-      v.innerHTML = `<div id="hShell">${head(`${monthSel('msel', { heading: true })} reviews`)}${d.orgStats ? allStats(d.orgStats) : ''}<div id="hChips">${chips}</div><div id="hHero">${hero}</div><div id="hBody">${body}</div></div>`;
+      v.innerHTML = `<div id="hShell">${head(`${monthSel('msel', { heading: true })} reviews`)}<div id="hReq">${kreq}</div>${d.orgStats ? allStats(d.orgStats) : ''}<div id="hChips">${chips}</div><div id="hHero">${hero}</div><div id="hBody">${body}</div></div>`;
     }
   } else {
     // employee: navy progress banner, progress cards, what is left (grouped), review steps and recent ratings
@@ -853,7 +854,7 @@ function drawForm(v, errors) {
   const sumLink = showSummary() ? ' · <a href="#" id="tosum">See the review summary</a>' : '';
   const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b>${sumLink}` : `Monthly rating: shows once every self and manager rating is in${sumLink}`;
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(monthLabel(S.month))}`) +
-    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn kcopy" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your ratings (and a remark where they differ), then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
@@ -947,7 +948,7 @@ function kraBanner(p) {
     : `<div class="info">KRA change request sent to <b>${esc(FP.manager ? FP.manager.name : 'your manager')}</b>. You can edit the KRAs once it is approved.</div>`;
   else if (r && r.status === 'approved') h = p.editKras && S.me.id === FP.employee.id ? `<div class="info"><b>${esc(r.decidedBy)}</b> gave you access to change the KRAs. Edit the KRAs below and save. After you save, a new request is needed for further changes.</div>` : `<div class="info">KRA change approved by <b>${esc(r.decidedBy)}</b>. ${esc(FP.employee.name)} can now edit the KRAs.</div>`;
   else if (r && r.status === 'rejected') h = `<div class="warn">KRA change request was rejected by ${esc(r.decidedBy)}.${r.reply ? '<br>' + esc(r.reply) : ''}</div>`;
-  if (p.requestKra) h += `<div class="row" style="margin:0 0 12px"><button class="btn" data-kreq="1">Request KRA change</button><span class="small">KRAs can only be changed with approval from ${esc(FP.manager ? FP.manager.name : 'your manager')}.</span></div>`;
+  if (p.requestKra) h += `<div class="row" style="margin:0 0 12px"><button class="btn kask" data-kreq="1">Request KRA change</button><span class="small">KRAs can only be changed with approval from ${esc(FP.manager ? FP.manager.name : 'your manager')}.</span></div>`;
   return h;
 }
 
