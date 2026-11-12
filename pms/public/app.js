@@ -1573,13 +1573,13 @@ pages.employees = async (v, arg) => {
     return '<option value="">No manager</option>' + list.map(x => `<option value="${x.id}" ${x.id === e.managerId ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
-  v.innerHTML = head('Employees', 'Change team, designation or manager right in the table') + `<div class="tiles">
+  v.innerHTML = head('Employees', 'Change team, designation or manager right in the table') + `${tab === 'inactive' ? '' : `<div class="tiles">
     ${tile('all', '', st.members, 'Active members', tab === 'active' && !rf, 'Show all active members')}
     ${tile('director', 'b', st.directors, 'Directors', rf === 'director', 'Directors only')}
     ${tile('manager', 'g', st.managers, 'Managers', rf === 'manager', 'Managers and team leads')}
     ${tile('employee', 'a', st.executives, 'Executives', rf === 'employee', 'Executives and interns')}
     ${tile('inactive', 'r', st.inactive, 'Inactive', tab === 'inactive', 'Moved out of PMS')}
-    ${tile('questions', '', st.questions, 'Review questions', false, 'Open the questionnaire')}</div>
+    ${tile('questions', '', st.questions, 'Review questions', false, 'Open the questionnaire')}</div>`}
   <div class="row"><b style="font-size:16px;color:var(--vr-n-900)">${shown} (${rows.length})</b>${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
