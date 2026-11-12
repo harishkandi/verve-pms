@@ -201,7 +201,7 @@ function toggleTheme() {
 document.addEventListener('click', e => { if (e.target.closest('#themeBtn')) toggleTheme(); });
 
 // ---------- shell ----------
-const roleBadge = r => `<span class="badge ${r === 'admin' ? 'b-amber' : r === 'director' ? 'b-blue' : r === 'manager' || r === 'teamlead' ? 'b-green' : 'b-grey'}">${ROLE_LABEL[r]}</span>`;
+const roleBadge = r => `<span class="badge ${r === 'admin' ? 'b-amber' : r === 'director' ? 'b-blue' : r === 'manager' || r === 'teamlead' ? 'b-purple' : 'b-grey'}">${ROLE_LABEL[r]}</span>`; // green is kept for on/off switches (UI brief)
 const userBtn = u => `<button class="user" data-u="${u.id}"><span class="avatar">${initials(u.name)}</span><span class="nm"><b>${esc(u.name)}</b><small>${esc(u.designation)}</small></span>${roleBadge(u.role)}</button>`;
 let REDIRECT = null; // what the last Google redirect reported, shown once after boot
 async function boot() {
@@ -1543,6 +1543,10 @@ pages.employees = async (v, arg) => {
   const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '', rf = tab === 'active' && ROLEF[S.erole] ? S.erole : '';
   const rows = (tab === 'active' ? d.active : d.inactive).filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && (!rf || ROLEF[rf].includes(e.role)));
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
+  // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
+  const inScope = (tab === 'active' ? d.active : d.inactive).filter(e => !rf || ROLEF[rf].includes(e.role));
+  const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
+  const teamChips = `<div class="chips"><div class="seg" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}">${esc(t)} <span class="cnt">${teamN[t]}</span></button>`).join('')}</div></div>`;
   const tile = (key, cls, n, label, on, hint) => `<button class="tile ${cls} ${on ? 'on' : ''}" data-stat="${key}" title="${hint}"><small>${label}</small><b>${n}</b><span>${on ? 'Showing below' : hint}</span></button>`;
   const shown = tab === 'inactive' ? 'Inactive members' : { director: 'Directors', manager: 'Managers and team leads', employee: 'Executives and interns' }[rf] || 'All active members';
   const opts = (list, cur) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
@@ -1559,16 +1563,18 @@ pages.employees = async (v, arg) => {
     ${tile('employee', 'a', st.executives, 'Executives', rf === 'employee', 'Executives and interns')}
     ${tile('inactive', 'r', st.inactive, 'Inactive', tab === 'inactive', 'Moved out of PMS')}
     ${tile('questions', '', st.questions, 'Review questions', false, 'Open the questionnaire')}</div>
-  <div class="row"><b style="font-size:16px;color:var(--vr-n-900)">${shown} (${rows.length})</b>${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<select id="et"><option value="">All teams</option>${d.teams.map(t => `<option ${t === fl ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select><span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
+  <div class="row"><b style="font-size:16px;color:var(--vr-n-900)">${shown} (${rows.length})</b>${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
+  ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
-  <div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
+  <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
   ${rows.map(e => `<tr><td><a href="#/empforms/${e.id}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a><div class="small" style="max-width:220px;overflow-wrap:anywhere">${esc(e.code)} · ${e.email ? esc(e.email) : 'No work email'}</div></td>
+  <td title="${e.role === 'director' ? 'Top level, not reviewed' : e.role === 'employee' ? 'Is reviewed by their reporting manager' : 'Has people reporting to them: reviews their team'}">${roleBadge(e.role)}</td>
   <td>${cell(e, 'team', opts(d.teams, e.team), e.team)}</td>
   <td>${cell(e, 'designation', opts(d.designations, e.designation) + '<option value="__new">Other…</option>', e.designation)}</td>
   <td>${cell(e, 'managerId', mgrOpts(e), e.manager || 'No manager')}</td>
   ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
   <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
-  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a><button class="btn sm" data-a="edit" data-id="${e.id}">Edit</button></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 6 : 7}">No one matches.</td></tr>`}</table></div>
+  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a><button class="btn sm" data-a="edit" data-id="${e.id}">Edit</button></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
   <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
   v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); }); } };
   const emailOk = s => !s || s.toLowerCase().endsWith(dom.toLowerCase()) && /^[^@\s]+@[^@\s]+$/.test(s);
@@ -1596,6 +1602,7 @@ pages.employees = async (v, arg) => {
     pages.employees(v);
   };
   v.onclick = async e => {
+    const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
     const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
     if (t.dataset.stat) {
       const k = t.dataset.stat;
