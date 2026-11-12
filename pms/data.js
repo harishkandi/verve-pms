@@ -9,11 +9,12 @@ const config = {
   operationalRange: [40, 80],
   peopleMin: 10,
   peopleMax: 20,
-  // ratings are on a 0-5 scale
-  clickupMin: 3,
-  learningMin: 2,
-  ratingGapFlag: 1,            // section 8.4 O3
-  emailGapFlag: 0.75,          // section 11
+  // KRA ratings are percentages (10-100); these thresholds are percentages / percentage points
+  ratingScale: 100,
+  clickupMin: 60,
+  learningMin: 40,
+  ratingGapFlag: 20,           // section 8.4 O3
+  emailGapFlag: 15,            // section 11
   selfShare: 0.3,
   mgrShare: 0.7,
   lookbackMonths: 5,
@@ -23,13 +24,15 @@ const config = {
     Marketing: { start: 10, end: 15 },
     Finance: { start: 25, end: 30 },
     Sales: { start: 25, end: 31 },
+    HR: { start: 25, end: 30 },
+    Directors: { start: 25, end: 30 },
   },
 };
 
 // role: admin | director | manager | teamlead | employee ; level is for the Reporting Manager menu
 const employees = [
   { id: 1, code: 'E001', name: 'Priya Menon', designation: 'HR Admin', team: 'HR', managerId: null, role: 'admin', level: null, joined: '2020-01-06', active: true },
-  { id: 2, code: 'E002', name: 'Anita Verma', designation: 'Director', team: 'Leadership', managerId: null, role: 'director', level: 'Directors', joined: '2018-04-01', active: true },
+  { id: 2, code: 'E002', name: 'Anita Verma', designation: 'Director', team: 'Directors', managerId: null, role: 'director', level: 'Directors', joined: '2018-04-01', active: true },
   { id: 3, code: 'E003', name: 'Anjali Kapoor', designation: 'Senior Manager', team: 'Sales', managerId: 2, role: 'manager', level: 'Senior Manager', joined: '2019-02-11', active: true },
   { id: 4, code: 'E004', name: 'Fiza Khan', designation: 'Manager', team: 'Sales', managerId: 3, role: 'manager', level: 'Manager', joined: '2021-06-01', active: true },
   { id: 5, code: 'E005', name: 'Debarima Das', designation: 'Executive', team: 'Sales', managerId: 4, role: 'employee', level: null, joined: '2023-03-15', active: true },
@@ -46,6 +49,7 @@ const employees = [
   { id: 16, code: 'E122', name: 'Zoya Ali', designation: 'Executive', team: 'Marketing', managerId: 15, role: 'employee', level: null, joined: '2025-01-13', active: true },
   { id: 17, code: 'E008', name: 'Vikram Rao', designation: 'Manager', team: 'Finance', managerId: 2, role: 'manager', level: 'Manager', joined: '2019-10-07', active: true },
   { id: 18, code: 'E140', name: 'Kabir Nair', designation: 'Analyst', team: 'Finance', managerId: 17, role: 'employee', level: null, joined: '2026-02-08', active: true },
+  { id: 22, code: 'E160', name: 'Kavya Reddy', designation: 'HR Executive', team: 'HR', managerId: 2, role: 'employee', level: null, joined: '2025-07-01', active: true },
   { id: 19, code: 'E087', name: 'Rohit Sen', designation: 'Executive', team: 'Marketing', managerId: 13, role: 'employee', level: null, joined: '2022-03-01', active: false, inactiveFrom: '2026-09-30', reason: 'Resigned' },
   { id: 20, code: 'E093', name: 'Pooja Bhat', designation: 'Analyst', team: 'Finance', managerId: 17, role: 'employee', level: null, joined: '2023-01-09', active: false, inactiveFrom: '2026-08-15', reason: 'Resigned' },
   { id: 21, code: 'E064', name: 'Karan Shah', designation: 'Senior Executive', team: 'Operations', managerId: 6, role: 'employee', level: 'Senior Executives', joined: '2021-02-15', active: false, inactiveFrom: '2026-06-30', reason: 'Transferred out' },
@@ -207,8 +211,35 @@ function seedForms() {
   // Operational weight deviation for Tanvi (sub-KRAs also adjusted to match)
   const t = F(10); t.kras.operational.weight = 90; t.kras.operational.rows[0].weight = 45; t.kras.operational.rows[1].weight = 45;
   // months of questionnaire for Rahul prior month
+  KRA_TO_PERCENT(); // the demo values above are written on the old 0-5 scale
   audit('System', 'seed', 'Demo data created');
+}
+// KRA ratings moved from 0-5 to percentages: 1 point = 20%, never below 10%
+const toPct = v => v === null || v === undefined || v === '' ? v : Math.min(100, Math.max(10, Math.round(+v * 2) * 10));
+function KRA_TO_PERCENT() {
+  for (const f of Object.values(forms)) for (const k of ['operational', 'process', 'people']) for (const r of (f.kras[k] || { rows: [] }).rows) { r.self = toPct(r.self); r.mgr = toPct(r.mgr); }
 }
 seedForms();
 
-module.exports = { config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, buildForm, pad };
+// one-off fixes for state saved by an older version (db.js loads it over the seed): run after loading, safe to run again
+function migrate() {
+  // KRA ratings: 0-5 -> 10%-100% (forms and thresholds saved before the change)
+  if (config.ratingScale !== 100) {
+    KRA_TO_PERCENT();
+    for (const k of ['clickupMin', 'learningMin', 'ratingGapFlag', 'emailGapFlag']) if (typeof config[k] === 'number' && config[k] <= 5) config[k] = Math.round(config[k] * 20);
+    config.ratingScale = 100;
+    audit('System', 'migration', 'KRA ratings converted from 0-5 to percentages (x20)');
+  }
+  // the "Leadership" team is now "Directors"
+  for (const e of employees) if (e.team === 'Leadership') e.team = 'Directors';
+  if (config.windows.Leadership) { config.windows.Directors ||= config.windows.Leadership; delete config.windows.Leadership; }
+  // HR is a review team with its own window and a demo member
+  config.windows.HR ||= { start: 25, end: 30 };
+  config.windows.Directors ||= { start: 25, end: 30 };
+  if (!employees.some(e => e.code === 'E160') && employees.some(e => e.id === 2 && e.active)) {
+    employees.push({ id: Math.max(...employees.map(e => e.id)) + 1, code: 'E160', name: 'Kavya Reddy', designation: 'HR Executive', team: 'HR', managerId: 2, role: 'employee', level: null, joined: '2025-07-01', active: true });
+    audit('System', 'migration', 'HR team added (demo member Kavya Reddy)');
+  }
+}
+
+module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, buildForm, pad };

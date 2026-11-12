@@ -17,16 +17,27 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules). Demo employees have no email on purpose.
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
-  `html.dark`, stored as `pms.theme`); no raw hex, no green in the UI (success = azure). User name, theme and log out
-  live in the top bar. The page scrolls inside `#main`, not the window (`SC()`). Admins get a grouped menu (Reporting
+  `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
+  and the chart "submitted" colour (Harish asked for green switches, 2026-11-12). User name, theme and log out
+  live in the top bar. The page scrolls inside `#main`, not the window (`SC()`); the footer sits outside `#main` so it
+  never moves. Admins get a grouped menu (Reporting
   manager / Reporting / Questions open as sub-menus); its Reporting manager lists come from `designation`
   (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
+  There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
+  admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
+  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams include "Directors" (was "Leadership") and
+  "HR"; `migrate()` in `data.js` updates older saved state on boot.
+- Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
 - Settings live in env vars, listed in `pms/.env.example`; `npm run dev` / `npm run local` read `pms/.env`.
 - Persistence: all state lives in the in-memory objects exported by `data.js`. With `DATABASE_URL` set, `db.js` loads
   them from one jsonb row (`pms_state`, id 1) on boot (seeding it when empty) and saves after any request that changed
   state; the server answers only after the save. No `DATABASE_URL` → in memory, resets on restart.
   New state containers must be added to `KEYS` in `db.js` and mutated in place (never reassigned).
-- Domain rules: ratings are 0-5; a manager remark is needed only when self and manager ratings differ; a submitted
+- Domain rules: KRA ratings are percentages, 10-100 in steps of 10 (`KRA_SCALE`; were 0-5 until 2026-11-12, `migrate()`
+  converts old saved data x20 and marks `config.ratingScale = 100`); questionnaire ratings stay 0-5; thresholds
+  `clickupMin`/`learningMin` are % and the gap flags are percentage points. Employees' "What is left on my form" lists
+  only what they fill in (`employeeTodo` in `logic.js`); KRA set-up and review-date alerts are for managers only. The
+  form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit. A manager remark is needed only when self and manager ratings differ; a submitted
   monthly form is locked for good (no reopen, no edit request, admins included); until then the employee edits their
   own KRAs directly (there is no request/approve step); the One Pager Document is hidden from
   employees; monthly rating = per sub-KRA 30% self + 70% manager, weighted by

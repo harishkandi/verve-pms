@@ -34,7 +34,7 @@ function formPayload(viewer, f) {
   return {
     form: f, employee: view(e), manager: e.managerId ? view(L.emp(e.managerId)) : null,
     questions: L.activeQuestions(month, f), status: L.reviewStatus(f), due: L.dueInfo(f),
-    rating: f.submitted ? L.monthlyRating(f) : null, previewRating: L.monthlyRating(f),
+    rating: f.submitted ? L.monthlyRating(f) : null, previewRating: L.monthlyRating(f), summary: L.kraSummary(f),
     newJoiner: L.isNewJoiner(f), validation: valid,
     perms: {
       editSelf: selfEdit && open, editManager: (manage || selfEdit) && open, canSubmit: manage && open,
@@ -201,7 +201,7 @@ function homeSummary(teams, counts) {
 function homeTips(teams, counts, emails) {
   const tips = [];
   const up = teams.filter(t => t.state === 'upcoming' && t.collected < t.total);
-  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; const [y, m, d] = first.split('-').map(Number); const by = new Date(y, m - 1, d - 3); tips.push(`Collect ${joinNames(up.map(t => t.team))} review dates before ${fmtDay(by.toISOString().slice(0, 10))} to avoid pending reviews.`); }
+  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; const [y, m, d] = first.split('-').map(Number); const by = new Date(y, m - 1, d - 3); tips.push(`Collect ${joinNames(up.map(t => t.team))} review dates before ${fmtDay(by.toISOString().slice(0, 10))} to avoid overdue reviews.`); }
   teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.team} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
   teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.team} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
   if (emails && counts.scheduled && counts.submitted === counts.scheduled && !emails.drafts && !emails.sent) tips.push('All reviews are submitted. Generate the manager emails from Manager Emails.');
@@ -220,14 +220,22 @@ route('GET', '/api/home', ({ user, q }) => {
   const rows = q.team ? all.filter(r => r.team === q.team) : all;
   const teams = [...new Set(all.map(r => r.team))].map(t => {
     const tr = all.filter(r => r.team === t), w = D.windowFor(t, month);
-    return { team: t, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: w, ...windowState(w) };
+    const days = config.windows[t] || { start: 25, end: 31 };
+    return { team: t, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: w, startDay: days.start, endDay: days.end, ...windowState(w) };
   });
   const counts = L.counts(rows);
+  // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
+  const rated = rows.filter(r => r.rating != null);
+  const health = {
+    held: rows.filter(r => r.actual).length, onTime: rows.filter(r => r.dueStatus === 'Within due date').length, late: rows.filter(r => r.dueStatus === 'After due date').length,
+    rescheduled: rows.filter(r => r.reschedules).length, moves: rows.reduce((n, r) => n + r.reschedules, 0), flagged: rows.filter(r => r.flags.length).length,
+    avgRating: rated.length ? Math.round(rated.reduce((n, r) => n + r.rating, 0) / rated.length * 100) / 100 : null, rated: rated.length,
+  };
   const attention = rows.filter(r => r.status !== 'Completed and Submitted' || r.flags.length)
     .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.status === 'Pending' ? 'Review pending' : r.status), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
   const win = D.windowFor(user.team, month);
   const scoped = q.team ? teams.filter(t => t.team === q.team) : teams; // hero text and tips follow the team filter
-  const out = { month, label: D.monthLabel(month), today: config.today, counts, teams, attention, window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };
+  const out = { month, label: D.monthLabel(month), today: config.today, counts, health, teams, attention, canEditWindows: user.role === 'admin', window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };
   const openT = scoped.filter(t => t.state === 'open'), upT = scoped.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
   out.nextWindow = openT.length ? { state: 'open', team: openT.length === 1 ? openT[0].team : `${openT.length} teams`, date: openT.map(t => t.window.end).sort().pop() }
     : upT.length ? { state: 'upcoming', team: upT[0].team, date: upT[0].window.start, days: upT[0].days } : { state: 'closed' };
@@ -243,9 +251,9 @@ route('GET', '/api/home', ({ user, q }) => {
   const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
   if (ownForm) {
     const v = L.validate(ownForm), di = L.dueInfo(ownForm);
-    out.own = { status: L.reviewStatus(ownForm), scheduled: ownForm.scheduledDate, time: ownForm.scheduledTime || null, invite: inviteView(ownForm), zoom: ownForm.zoomLink || null, reviewDate: ownForm.reviewDate, due: di.due, submitted: ownForm.submitted, reschedules: ownForm.reschedules.length,
+    out.own = { status: L.reviewStatus(ownForm), scheduled: ownForm.scheduledDate, time: ownForm.scheduledTime || null, invite: inviteView(ownForm), zoom: ownForm.zoomLink || null, reviewDate: ownForm.reviewDate, due: di.due, submitted: ownForm.submitted, reschedules: L.rescheduleCount(ownForm),
       rating: ownForm.submitted ? L.monthlyRating(ownForm) : null, preview: !ownForm.submitted && L.ratingsComplete(ownForm) ? L.monthlyRating(ownForm) : null,
-      issues: [...new Set(v.filter(x => x.level !== 'info').map(x => x.short))] };
+      issues: L.employeeTodo(ownForm) }; // only what the person fills in; KRA set-up alerts go to their manager
   }
   return out;
 });
@@ -260,8 +268,10 @@ route('PUT', '/api/form', ({ user, body }) => {
   if (!manage && !selfEdit) throw forbid();
   // managers often give ratings and remarks verbally, so the team member may enter those too
   const mgrFields = manage || selfEdit;
-  const ratings = [...L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r.self, r.mgr])), ...Object.values(body.qa || {}).filter(a => a && typeof a === 'object').flatMap(a => [a.self, a.mgr])];
-  if (!ratings.every(okRating)) throw bad('Ratings must be a whole number from 0 to 5.');
+  const kraR = L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r.self, r.mgr]));
+  const qR = Object.values(body.qa || {}).filter(a => a && typeof a === 'object').flatMap(a => [a.self, a.mgr]);
+  if (!kraR.every(okIn(L.KRA_SCALE))) throw bad('KRA ratings must be a percentage from 10% to 100% in steps of 10.');
+  if (!qR.every(okIn(L.Q_SCALE))) throw bad('Questionnaire ratings must be a whole number from 0 to 5.');
   if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
   for (const [k] of L.KRAS) (body.kras?.[k]?.rows || []).forEach(br => {
     const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) return;
@@ -278,7 +288,7 @@ route('PUT', '/api/form', ({ user, body }) => {
 });
 const has = v => v;
 const num = v => (v === '' || v === null || v === undefined) ? null : Number(v);
-const okRating = v => num(v) === null || [0, 1, 2, 3, 4, 5].includes(num(v));
+const okIn = scale => v => num(v) === null || scale.includes(num(v));
 
 route('POST', '/api/form/submit', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
@@ -495,7 +505,7 @@ route('GET', '/api/report', ({ user, q }) => {
 });
 route('GET', '/api/report.csv', ({ user, q }) => {
   const rows = L.reportRows(user, q.month || config.currentMonth, { team: q.team, manager: q.manager, status: q.status });
-  const head = ['Manager', 'Team', 'Employee', 'Scheduled', 'Due', 'Actual', 'Due status', 'Reschedules', 'Status', 'Monthly rating', 'Flags'];
+  const head = ['Manager', 'Team', 'Employee', 'Scheduled', 'Due', 'Actual', 'Due status', 'Reschedules', 'Status', 'Monthly rating (%)', 'Flags'];
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return { csv: [head, ...rows.map(r => [r.manager, r.team, r.name, r.scheduled, r.due, r.actual, r.dueStatus, r.reschedules, r.status, r.rating, r.flags.join('; ')])].map(r => r.map(esc).join(',')).join('\n') };
 });
@@ -913,6 +923,6 @@ const server = http.createServer((req, res) => {
     }
   });
 });
-DB.init().then(() => { ensureAccounts(); return DB.save(); }).then(
+DB.init().then(() => { D.migrate(); ensureAccounts(); return DB.save(); }).then(
   () => server.listen(PORT, () => console.log(`Verve PMS running at http://localhost:${PORT} · sign-in: ${[A.google && `Google (@${A.ORG_DOMAIN})`, A.demo && 'demo users'].filter(Boolean).join(' + ') || 'none'}`)),
   e => { console.error('Could not connect to Postgres:', e.message); process.exit(1); });

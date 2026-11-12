@@ -54,6 +54,9 @@ const paramsFor = month => {
 };
 
 const isNewJoiner = f => KRAS.every(([k]) => f.kras[k].rows.length === 0) && !!emp(f.empId).newJoiner;
+// KRA ratings are percentages (10 to 100 in steps of 10); questionnaire ratings stay on the 1-5 parameter scale (0 allowed)
+const KRA_SCALE = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const Q_SCALE = [0, 1, 2, 3, 4, 5];
 const kraAvg = (rows, key) => { const v = rows.map(r => r[key]).filter(has); return v.length ? v.reduce((a, b) => a + +b, 0) / v.length : null; };
 
 // ---------- rating ----------
@@ -71,6 +74,19 @@ function monthlyRating(f) {
     total += weight * (s / w); wsum += weight;
   }
   return wsum ? Math.round(total / wsum * 10) / 10 : null;
+}
+// the calculation behind the monthly rating, KRA by KRA (shown as the form's Review summary)
+const r1 = x => x == null ? null : Math.round(x * 10) / 10;
+function kraSummary(f) {
+  const wavg = (rows, key) => { const w = rows.filter(r => has(r[key])), tw = w.reduce((a, r) => a + (+r.weight || 0), 0); return tw ? w.reduce((a, r) => a + r.weight * r[key], 0) / tw : null; };
+  const kras = KRAS.map(([k, label]) => {
+    const { rows, weight } = f.kras[k], s = wavg(rows, 'self'), m = wavg(rows, 'mgr');
+    const score = s != null && m != null && rows.every(r => has(r.self) && has(r.mgr)) ? config.selfShare * s + config.mgrShare * m : null;
+    return { key: k, label, weight: +weight, subKras: rows.length, self: r1(s), mgr: r1(m), score: r1(score), points: score == null ? null : r1(weight * score / 100) };
+  });
+  const qr = activeQuestions(f.month, f).filter(q => q.type === 'rating').map(q => f.qa[q.id] || {});
+  const qavg = key => { const v = qr.map(a => a[key]).filter(has); return v.length ? r1(v.reduce((a, b) => a + +b, 0) / v.length) : null; };
+  return { kras, rating: monthlyRating(f), final: !!f.submitted, questionnaire: { self: qavg('self'), mgr: qavg('mgr'), count: qr.length } };
 }
 
 // ---------- validation ----------
@@ -107,7 +123,7 @@ function validate(f) {
       if (rows.length && sum !== +weight) add('flag', label, 'SUBKRA_SUM', `The total weightage of Sub-KRAs under ${label} must be ${weight}%. The current total is ${sum}%.`);
       const a = kraAvg(rows, 'self'), b = kraAvg(rows, 'mgr');
       if (a !== null && b !== null && Math.abs(a - b) >= config.ratingGapFlag)
-        add('flag', label, 'RATING_GAP', `${label}: self avg ${a.toFixed(1)} vs manager avg ${b.toFixed(1)} (gap ${Math.abs(a - b).toFixed(1)})`, `Rating gap ${Math.abs(a - b).toFixed(1)} (${label})`);
+        add('flag', label, 'RATING_GAP', `${label}: self avg ${Math.round(a)}% vs manager avg ${Math.round(b)}% (gap ${Math.round(Math.abs(a - b))} points)`, `Rating gap ${Math.round(Math.abs(a - b))} points (${label})`);
     }
     const op = f.kras.operational;
     if (op.weight < config.operationalRange[0] || op.weight > config.operationalRange[1])
@@ -124,7 +140,7 @@ function validate(f) {
     }
     sopRows.forEach(r => { if (!hasLink(r.selfRemark)) add('flag', 'Process', 'SOP_LINK', `SOP link not added in self remark (${r.kpi}).`, 'SOP link not added'); });
     pr.rows.filter(r => /clickup/i.test(r.kpi)).forEach(r => {
-      if (has(r.mgr) && r.mgr < config.clickupMin) add('flag', 'Process', 'CLICKUP', `ClickUp rating ${r.mgr}: not managing ClickUp properly.`, `ClickUp below ${config.clickupMin}`);
+      if (has(r.mgr) && r.mgr < config.clickupMin) add('flag', 'Process', 'CLICKUP', `ClickUp rating ${r.mgr}%: not managing ClickUp properly.`, `ClickUp below ${config.clickupMin}%`);
     });
 
     const pe = f.kras.people;
@@ -137,9 +153,9 @@ function validate(f) {
     } else {
       if (pe.rows.length < 2) add('flag', 'People', 'PE_MIN', 'People KRA needs a minimum of 2 sub-KRAs.');
       pe.rows.filter(r => /learn/i.test(r.kpi)).forEach(r => { if (!hasLink(r.selfRemark)) add('flag', 'People', 'LEARN_LINK', 'Learning document link not added in self remark.', 'Learning link not added'); });
-      pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < config.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${config.learningMin} (${r.kpi}: ${r.mgr}).`, `Manager rating below ${config.learningMin}`); });
+      pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < config.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${config.learningMin}% (${r.kpi}: ${r.mgr}%).`, `Manager rating below ${config.learningMin}%`); });
       const lr = pe.rows.filter(r => /learn/i.test(r.kpi));
-      if (lr.length && lr.every(r => has(r.mgr) && r.mgr >= 4.5 && hasLink(r.selfRemark))) add('info', 'People', 'LEARN_GOOD', 'Effective learning with document link.', 'Recognition: effective learning');
+      if (lr.length && lr.every(r => has(r.mgr) && r.mgr >= 90 && hasLink(r.selfRemark))) add('info', 'People', 'LEARN_GOOD', 'Effective learning with document link.', 'Recognition: effective learning');
     }
   }
 
@@ -163,6 +179,24 @@ function validate(f) {
     if (months === 2) add('flag', 'New joiner', 'NJ_SET', 'Need to set KRA of the month.', 'Need to set KRA of the month');
     if (months >= 3) add('flag', 'New joiner', 'NJ_SET', 'KRA needs to be set from this month.', 'KRA needs to be set');
   }
+  return out;
+}
+
+// what the employee still has to fill in themselves: question answers, self ratings and self remarks.
+// KRA set-up (not assigned, too few sub-KRAs, weightage, SOP/learning) and review-date alerts are the manager's and are not listed here.
+function employeeTodo(f) {
+  if (f.submitted) return [];
+  const out = [], cut = t => t.length > 70 ? t.slice(0, 67).trimEnd() + '…' : t;
+  const qs = activeQuestions(f.month, f);
+  qs.forEach((q, i) => {
+    const a = f.qa[q.id];
+    if (q.type === 'text') { if (q.mandatory && (blank(a) || /^(n\/a|not added)$/i.test(String(a).trim()))) out.push(`Answer question ${i + 1}: ${cut(q.text)}`); }
+    else if (!a || !has(a.self)) out.push(`Self rating for question ${i + 1}: ${cut(q.text)}`);
+  });
+  if (!isNewJoiner(f)) for (const [k, label] of KRAS) f.kras[k].rows.forEach(r => {
+    const need = [!has(r.self) && 'self rating', blank(r.selfRemark) && 'self remark'].filter(Boolean);
+    if (need.length) out.push(`${label} KRA "${cut(r.kpi || 'Untitled')}": ${need.join(' and ')}`);
+  });
   return out;
 }
 
@@ -194,6 +228,9 @@ function dueInfo(f) {
   return { windowStart: w.start, dueDate: w.end, due };
 }
 
+// times a review was moved, counted by distinct new dates: moving it twice to the same day, or changing only the time, counts once
+const rescheduleCount = f => new Set((f.reschedules || []).map(r => r.to).filter(Boolean)).size;
+
 // ---------- reports ----------
 function reportRows(viewer, month, filters = {}) {
   const people = visibleEmployees(viewer).filter(e => e.id !== viewer.id || viewer.role === 'employee');
@@ -207,7 +244,7 @@ function reportRows(viewer, month, filters = {}) {
     rows.push({
       empId: e.id, name: e.name, team: e.team, designation: e.designation, managerId: e.managerId, manager: mgr ? mgr.name : '',
       scheduled: f.scheduledDate, due: di.dueDate, actual: actualDate(f), dueStatus: di.due,
-      reschedules: f.reschedules.length, status: reviewStatus(f), rating: f.submitted ? monthlyRating(f) : null,
+      reschedules: rescheduleCount(f), status: reviewStatus(f), rating: f.submitted ? monthlyRating(f) : null,
       flags: [...new Set(v.filter(x => x.level !== 'info').map(x => x.short))], allFlags: v,
     });
   }
@@ -241,7 +278,7 @@ function buildEmail(managerId, month) {
       else if (['LEARNING_MISSING', 'LEARN_LINK', 'LEARN_LOW', 'LEARN_GOOD', 'NJ_MONTHS', 'NJ_SET', 'PE_WEIGHT', 'PE_MIN'].includes(x.code)) sec.people.push({ text: `${x.short}: ${n}` });
     }
     const gapE = ['operational', 'process', 'people'].map(k => { const a = kraAvg(r.f.kras[k].rows, 'self'), b = kraAvg(r.f.kras[k].rows, 'mgr'); return a !== null && b !== null ? Math.abs(a - b) : 0; });
-    if (Math.max(...gapE) >= config.emailGapFlag && !r.v.some(x => x.code === 'RATING_GAP')) sec.rating.push({ text: `Rating gap of ${config.emailGapFlag} or more: ${n}`, hot: true });
+    if (Math.max(...gapE) >= config.emailGapFlag && !r.v.some(x => x.code === 'RATING_GAP')) sec.rating.push({ text: `Rating gap of ${config.emailGapFlag} points or more: ${n}`, hot: true });
     const w = r.f.kras;
     if (!isNewJoiner(r.f) && (w.operational.weight !== 60 || w.process.weight !== 20 || w.people.weight !== 20)) sec.rating.push({ text: `Weightage ${w.operational.weight} / ${w.process.weight} / ${w.people.weight}: ${n}`, hot: false });
   }
@@ -249,4 +286,4 @@ function buildEmail(managerId, month) {
   return { to: m.name, subject: `PMS review summary, ${m.team}, ${D.monthLabel(month)}`, team: m.team, managerId, month, counts: counts(rows.map(r => ({ status: r.st }))), sections: sec, attachment: `PMS_${m.team}_${D.monthLabel(month).replace(' ', '')}.csv` };
 }
 
-module.exports = { emp, KRAS, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, validate, reviewStatus, dueInfo, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
+module.exports = { emp, KRAS, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
