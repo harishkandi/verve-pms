@@ -7,6 +7,7 @@
     "start": "node server.js",
     "dev": "node --env-file-if-exists=../.env.local --env-file-if-exists=.env server.js",
     "db:reset": "node --env-file-if-exists=../.env.local db.js --reset",
+    "employees": "node --env-file-if-exists=../.env.local employees.js",
     "local": "node --env-file-if-exists=.env server.js"
   },
   "engines": {

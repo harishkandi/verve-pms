@@ -40,7 +40,7 @@ function getForm(empId, month) {
   // a new month starts with no KRAs; the person chooses whether to copy last month's (Copy KRAs from last month)
   const kras = D.emptyKras();
   const win = D.windowFor(e.team, month);
-  return forms[k] = { empId, month, reviewDate: '', scheduledDate: null, actualDate: null, reschedules: [], submitted: false, locked: false, kras, qa: {}, qSnapshot: null };
+  return forms[k] = { empId, month, reviewDate: '', scheduledDate: null, actualDate: null, reschedules: [], selfSubmitted: false, selfSubmittedAt: null, submitted: false, locked: false, kras, qa: {}, qSnapshot: null };
 }
 
 function activeQuestions(month, form) {
@@ -82,7 +82,7 @@ function kraSummary(f) {
   const kras = KRAS.map(([k, label]) => {
     const { rows, weight } = f.kras[k], s = wavg(rows, 'self'), m = wavg(rows, 'mgr');
     const score = s != null && m != null && rows.every(r => has(r.self) && has(r.mgr)) ? config.selfShare * s + config.mgrShare * m : null;
-    return { key: k, label, weight: +weight, subKras: rows.length, self: r1(s), mgr: r1(m), score: r1(score), points: score == null ? null : r1(weight * score / 100) };
+    return { key: k, label, weight: +weight, subKras: rows.length, self: r1(s), mgr: r1(m), score: r1(score), scoreRaw: score, points: score == null ? null : r1(weight * score / 100) };
   });
   const qr = activeQuestions(f.month, f).filter(q => q.type === 'rating').map(q => f.qa[q.id] || {});
   const qavg = key => { const v = qr.map(a => a[key]).filter(has); return v.length ? r1(v.reduce((a, b) => a + +b, 0) / v.length) : null; };
@@ -185,8 +185,9 @@ function validate(f) {
 // what the employee still has to fill in themselves: question answers, self ratings and self remarks.
 // KRA set-up (not assigned, too few sub-KRAs, weightage, SOP/learning) and review-date alerts are the manager's and are not listed here.
 function employeeTodo(f) {
-  if (f.submitted) return [];
+  if (f.submitted || f.selfSubmitted) return [];
   const out = [], cut = t => t.length > 70 ? t.slice(0, 67).trimEnd() + '…' : t;
+  if (employeeKrasMissing(f)) out.push('Add your KRAs for this month (or copy last month\'s)');
   const qs = activeQuestions(f.month, f);
   qs.forEach((q, i) => {
     const a = f.qa[q.id];
@@ -199,6 +200,9 @@ function employeeTodo(f) {
   });
   return out;
 }
+
+// no KRA at all this month (and not a new joiner): the employee must add or copy them before sending the form
+const employeeKrasMissing = f => !isNewJoiner(f) && KRAS.every(([k]) => !f.kras[k].rows.length);
 
 function questionnaireComplete(f) {
   return activeQuestions(f.month, f).filter(q => q.type === 'rating').every(q => { const a = f.qa[q.id]; return a && has(a.self) && has(a.mgr); });
@@ -233,7 +237,8 @@ const rescheduleCount = f => new Set((f.reschedules || []).map(r => r.to).filter
 
 // ---------- reports ----------
 function reportRows(viewer, month, filters = {}) {
-  const people = visibleEmployees(viewer).filter(e => e.id !== viewer.id || viewer.role === 'employee');
+  // people with no reporting manager (top-level directors) are not reviewed, even if an older version left a form for them
+  const people = visibleEmployees(viewer).filter(e => e.managerId && (e.id !== viewer.id || viewer.role === 'employee'));
   const rows = [];
   for (const e of people) {
     const f = peek(e.id, month);

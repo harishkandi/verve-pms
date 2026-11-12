@@ -31,20 +31,23 @@ function formPayload(viewer, f) {
   const manage = L.canManage(viewer, f.empId), selfEdit = L.canSelfEdit(viewer, f.empId);
   const open = !f.locked;
   const valid = L.validate(f);
+  // once the employee has sent their part to the manager, it is read-only for them until the manager sends it back
+  const selfOpen = open && (!f.selfSubmitted || manage);
   return {
     form: f, employee: view(e), manager: e.managerId ? view(L.emp(e.managerId)) : null,
     questions: L.activeQuestions(month, f), status: L.reviewStatus(f), due: L.dueInfo(f),
     rating: f.submitted ? L.monthlyRating(f) : null, previewRating: L.monthlyRating(f), summary: L.kraSummary(f),
     newJoiner: L.isNewJoiner(f), validation: valid,
     perms: {
-      editSelf: selfEdit && open, editManager: (manage || selfEdit) && open, canSubmit: manage && open,
+      editSelf: selfEdit && selfOpen, editManager: (manage || selfEdit) && selfOpen, canSubmit: manage && open,
+      canSelfSubmit: viewer.id === f.empId && open && !f.selfSubmitted, canReturn: manage && open && !!f.selfSubmitted,
       editKras: canEditKras(viewer, f), copyKras: canCopyKras(viewer, f),
     },
     fy: fyLabel(month),
   };
 }
 // the employee and their reviewers (managers, directors, admin) edit KRAs directly until the review is submitted
-const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || viewer.id === f.empId);
+const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || (viewer.id === f.empId && !f.selfSubmitted));
 const fyLabel = m => { const [y, mo] = m.split('-').map(Number); const s = mo >= 4 ? y : y - 1; return `FY ${s}-${s + 1}`; };
 
 function mustForm(viewer, empId, month) {
@@ -68,7 +71,7 @@ const nameFromEmail = email => email.split('@')[0].split(/[._-]+/).filter(Boolea
 function ensureAccounts() {
   const add = (match, rec) => {
     if (employees.some(match)) return;
-    const id = Math.max(...employees.map(x => x.id)) + 1;
+    const id = Math.max(0, ...employees.map(x => x.id)) + 1;
     employees.push({ id, code: 'A' + String(id).padStart(3, '0'), team: 'HR', managerId: null, role: 'admin', level: null, joined: config.today, active: true, ...rec });
   };
   add(e => e.code === 'A900', { code: 'A900', name: 'Verve Admin', designation: 'System Admin', demo: true });
@@ -251,8 +254,9 @@ route('GET', '/api/home', ({ user, q }) => {
   const ownForm = user.role !== 'admin' && user.managerId ? L.peek(user.id, month) : null;
   if (ownForm) {
     const v = L.validate(ownForm), di = L.dueInfo(ownForm);
-    out.own = { status: L.reviewStatus(ownForm), scheduled: ownForm.scheduledDate, time: ownForm.scheduledTime || null, invite: inviteView(ownForm), zoom: ownForm.zoomLink || null, reviewDate: ownForm.reviewDate, due: di.due, submitted: ownForm.submitted, reschedules: L.rescheduleCount(ownForm),
+    out.own = { status: L.reviewStatus(ownForm), scheduled: ownForm.scheduledDate, time: ownForm.scheduledTime || null, invite: inviteView(ownForm), zoom: ownForm.zoomLink || null, reviewDate: ownForm.reviewDate, due: di.due, submitted: ownForm.submitted, selfSubmitted: !!ownForm.selfSubmitted, selfSubmittedAt: ownForm.selfSubmittedAt || null, reschedules: L.rescheduleCount(ownForm),
       rating: ownForm.submitted ? L.monthlyRating(ownForm) : null, preview: !ownForm.submitted && L.ratingsComplete(ownForm) ? L.monthlyRating(ownForm) : null,
+      manager: (L.emp(user.managerId) || {}).name || '',
       issues: L.employeeTodo(ownForm) }; // only what the person fills in; KRA set-up alerts go to their manager
   }
   return out;
@@ -266,6 +270,7 @@ route('PUT', '/api/form', ({ user, body }) => {
   if (f.locked) throw bad(LOCKED_MSG);
   const manage = L.canManage(user, f.empId), selfEdit = L.canSelfEdit(user, f.empId);
   if (!manage && !selfEdit) throw forbid();
+  if (f.selfSubmitted && !manage) throw bad(SENT_MSG);
   // managers often give ratings and remarks verbally, so the team member may enter those too
   const mgrFields = manage || selfEdit;
   const kraR = L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r.self, r.mgr]));
@@ -298,13 +303,39 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   if (!L.ratingsComplete(f)) errs.push('All self and manager ratings must be entered before the form is submitted.');
   if (errs.length) throw bad('Form cannot be submitted.', { errors: [...new Set(errs)] });
   f.submitted = true; f.locked = true;
+  if (!f.selfSubmitted) { f.selfSubmitted = true; f.selfSubmittedAt = new Date().toISOString(); }
   f.qSnapshot = L.activeQuestions(f.month, null);
   audit(user.name, 'submit form', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
 });
 
+// step 1 of 2: the employee sends their part (self ratings, self remarks, answers) to the manager.
+// Their part is then read-only for them; the manager can send it back, or adds their ratings and submits (step 2).
+route('POST', '/api/form/self-submit', ({ user, body }) => {
+  const f = mustForm(user, body.empId, body.month);
+  if (user.id !== f.empId) throw new HttpError(403, 'Only the employee can send their own form to the manager.');
+  if (f.locked) throw bad(LOCKED_MSG);
+  if (f.selfSubmitted) throw bad('You have already sent this form to your manager.');
+  const errs = L.employeeTodo(f);
+  if (errs.length) throw bad('Form cannot be submitted yet. Please fill in:', { errors: errs });
+  f.selfSubmitted = true; f.selfSubmittedAt = new Date().toISOString();
+  audit(user.name, 'send form to manager', `${L.emp(f.empId).name} ${f.month}`);
+  return formPayload(user, f);
+});
+// the manager hands the form back so the employee can change their part again
+route('POST', '/api/form/return', ({ user, body }) => {
+  const f = mustForm(user, body.empId, body.month);
+  if (!L.canManage(user, f.empId)) throw forbid();
+  if (f.locked) throw bad(LOCKED_MSG);
+  if (!f.selfSubmitted) throw bad('The employee has not sent this form yet.');
+  f.selfSubmitted = false; f.selfSubmittedAt = null;
+  audit(user.name, 'send form back to employee', `${L.emp(f.empId).name} ${f.month}`);
+  return formPayload(user, f);
+});
+
 // a submitted review is final: nobody can reopen or change it (admins included)
 const LOCKED_MSG = 'This review is completed and submitted, so the form can no longer be changed.';
+const SENT_MSG = 'You have sent this form to your manager, so your part can no longer be changed. Ask your manager to send it back if something needs fixing.';
 
 // KRA settings: sub-KRA totals must equal the parent KRA weight
 route('PUT', '/api/kras', ({ user, body }) => {
@@ -382,7 +413,8 @@ route('PUT', '/api/appraisal', ({ user, body }) => {
 // Scheduling
 route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const month = q.month || config.currentMonth;
-  L.visibleEmployees(user).filter(e => e.id !== user.id || user.role === 'employee').forEach(e => L.getForm(e.id, month));
+  // only people with a reporting manager have a review (same rule as ensureMonthForms); top-level directors are not reviewed
+  L.visibleEmployees(user).filter(e => e.managerId && (e.id !== user.id || user.role === 'employee')).forEach(e => L.getForm(e.id, month));
   const rows = L.reportRows(user, month, { team: q.team });
   const teams = [...new Set(rows.map(r => r.team))];
   const windows = teams.map(t => {
@@ -705,7 +737,7 @@ const desigOf = e => String(e.designation || '').toLowerCase();
 const ORG_LEVELS = {
   director: e => e.role === 'director' || /director/.test(desigOf(e)),
   srmanager: e => /senior manager/.test(desigOf(e)),
-  manager: e => /manager/.test(desigOf(e)) || e.role === 'teamlead',
+  manager: e => /manager/.test(desigOf(e)) || e.role === 'teamlead' || e.role === 'manager',
   srexec: e => /senior executive/.test(desigOf(e)),
   other: () => true,
 };
@@ -757,8 +789,15 @@ route('GET', '/api/teamreport', ({ user, q }) => {
 });
 
 // MIS report: month by month for the root's whole team, and each person's monthly rating
+// whose reviews the MIS report covers: everyone under the root; admins and directors without an id get the whole organisation
+const misScope = (user, q) => {
+  const org = !q.id && (user.role === 'admin' || user.role === 'director');
+  const root = scopeRoot(user, q.id);
+  const people = (org ? L.visibleEmployees(user) : L.subordinates(root.id)).filter(e => e.role !== 'admin' && e.managerId).sort(byName);
+  return { org, root, people };
+};
 route('GET', '/api/mis', ({ user, q }) => {
-  const root = scopeRoot(user, q.id), people = L.subordinates(root.id).sort(byName), months = reportMonths();
+  const { org, root, people } = misScope(user, q), months = reportMonths();
   const byMonth = months.map(m => {
     const fs = people.map(e => L.peek(e.id, m)).filter(Boolean);
     const due = fs.map(f => L.dueInfo(f).due);
@@ -771,10 +810,63 @@ route('GET', '/api/mis', ({ user, q }) => {
     const mgr = L.emp(e.managerId);
     return { id: e.id, name: e.name, designation: e.designation, manager: mgr ? mgr.name : '', cells, avg: avgOf(cells.map(c => c && c.rating).filter(x => x != null)) };
   });
-  return { me: root.id === user.id, person: personView(root), months: months.map(m => ({ key: m, label: D.monthLabel(m) })), byMonth, grid };
+  return { me: root.id === user.id, org, person: personView(root), months: months.map(m => ({ key: m, label: D.monthLabel(m) })), byMonth, grid };
+});
+// MIS Reporting graph: the average KRA score per month (submitted reviews), for a financial year,
+// optionally only the people under one director. kra = total | operational | process | people
+route('GET', '/api/mis/graph', ({ user, q }) => {
+  const { org, people: all } = misScope(user, q);
+  const curFy = +fyLabel(config.currentMonth).slice(3, 7), firstFy = +config.fyStartMonth.slice(0, 4);
+  const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy);
+  const kra = ['operational', 'process', 'people'].includes(q.kra) ? q.kra : 'total';
+  const directors = org ? employees.filter(e => e.active && e.role === 'director' && L.canView(user, e.id)).sort(byName) : [];
+  const dir = q.director && directors.find(e => String(e.id) === String(q.director));
+  const people = dir ? all.filter(e => L.isAncestor(dir.id, e.id)) : all;
+  const months = D.fyMonths(fy).map(m => {
+    const vals = people.map(e => L.peek(e.id, m)).filter(f => f && f.submitted && !L.isNewJoiner(f)).map(f => {
+      const sm = L.kraSummary(f);
+      if (kra === 'total') { const set = sm.kras.filter(x => x.subKras && x.scoreRaw != null), tw = set.reduce((a, x) => a + x.weight, 0); return tw ? set.reduce((a, x) => a + x.weight * x.scoreRaw, 0) / tw : null; }
+      const x = sm.kras.find(k => k.key === kra); return x && x.subKras ? x.scoreRaw : null;
+    }).filter(v => v != null);
+    return { key: m, label: D.monthLabel(m), open: m <= config.currentMonth, value: avg2(vals), n: vals.length };
+  });
+  return { fy, fys: Array.from({ length: curFy - firstFy + 1 }, (_, i) => firstFy + i), kra, director: dir ? dir.id : '', directors: directors.map(e => ({ id: e.id, name: e.name })), people: people.length, months };
 });
 
 // KPI report: one person's KRA scores month by month (30% self + 70% manager, weighted by sub-KRA)
+// Team report / My report: KRA scores month by month for a financial year, one table per person (submitted reviews only).
+// An employee gets their own table; a manager gets their own and everyone under them (all levels);
+// admins and directors without an id get the whole organisation (with a team filter).
+const round2 = x => x == null ? null : Math.round(x * 100) / 100;
+const avg2 = list => list.length ? round2(list.reduce((a, b) => a + b, 0) / list.length) : null;
+route('GET', '/api/yearly', ({ user, q }) => {
+  const curFy = +fyLabel(config.currentMonth).slice(3, 7), firstFy = +config.fyStartMonth.slice(0, 4);
+  const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy), months = D.fyMonths(fy);
+  const org = !q.id && !q.self && (user.role === 'admin' || user.role === 'director');
+  const root = org ? null : scopeRoot(user, q.id);
+  let people = org ? L.visibleEmployees(user) : q.self ? [root] : [root, ...(root.role === 'admin' ? [] : L.subordinates(root.id))];
+  people = people.filter(e => e.role !== 'admin' && e.managerId);
+  const teams = [...new Set(people.map(e => e.team))].sort();
+  if (q.team) people = people.filter(e => e.team === q.team);
+  const blocks = people.map(e => {
+    const cells = months.map(m => {
+      const f = L.peek(e.id, m);
+      if (!f || !f.submitted || L.isNewJoiner(f)) return null;
+      const sm = L.kraSummary(f), kra = {};
+      sm.kras.forEach(x => { kra[x.key] = x.subKras ? x.scoreRaw : null; });
+      const set = sm.kras.filter(x => x.subKras && x.scoreRaw != null), tw = set.reduce((a, x) => a + x.weight, 0);
+      return { operational: round2(kra.operational), process: round2(kra.process), people: round2(kra.people), total: tw ? round2(set.reduce((a, x) => a + x.weight * x.scoreRaw, 0) / tw) : null };
+    });
+    const totals = q4 => cells.map((c, i) => ({ c, i })).filter(x => x.c && x.c.total != null && q4(x.i)).map(x => x.c.total);
+    const mgr = e.managerId ? L.emp(e.managerId) : null;
+    return { ...personView(e), manager: mgr ? mgr.name : '', hasTeam: L.subordinates(e.id).length > 0, cells,
+      quarters: [0, 1, 2, 3].map(qi => avg2(totals(i => Math.floor(i / 3) === qi))), year: avg2(totals(() => true)) };
+  });
+  return { me: !!root && root.id === user.id, person: root ? personView(root) : null, org, fy, fyLabel: `FY ${fy}-${fy + 1}`,
+    fys: Array.from({ length: curFy - firstFy + 1 }, (_, i) => firstFy + i), teams, team: q.team || '',
+    months: months.map(m => ({ key: m, label: D.monthLabel(m), open: m <= config.currentMonth })), people: blocks };
+});
+
 route('GET', '/api/kpi', ({ user, q }) => {
   const root = scopeRoot(user, q.id);
   const months = reportMonths().filter(m => m >= (root.joined || '').slice(0, 7));
@@ -840,15 +932,18 @@ route('POST', '/api/questions/delete', ({ user, body }) => {
   q.to = body.from; audit(user.name, 'question deleted', `${q.text} from ${body.from}`);
   return { ok: true };
 });
-route('POST', '/api/questions/move', ({ user, body }) => {
+// drag-and-drop on the Questionnaire page: the new order of one answer type's active questions, sent as a list of ids
+route('POST', '/api/questions/reorder', ({ user, body }) => {
   adminOnly(user);
-  const list = questions.filter(q => !q.to).sort((a, b) => a.order - b.order);
-  const type = (questions.find(x => x.id === body.id) || {}).type;
-  const grp = list.filter(q => q.type === type);
-  const i = grp.findIndex(q => q.id === body.id), j = i + (body.dir === 'up' ? -1 : 1);
-  if (i < 0 || j < 0 || j >= grp.length) return { ok: true };
-  [grp[i].order, grp[j].order] = [grp[j].order, grp[i].order];
-  audit(user.name, 'question reordered', grp[i].text);
+  const type = body.type === 'rating' ? 'rating' : 'text';
+  const grp = questions.filter(q => !q.to && q.type === type).sort((a, b) => a.order - b.order);
+  const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+  if (ids.length !== grp.length || new Set(ids).size !== ids.length || !grp.every(q => ids.includes(q.id))) throw bad('The question list changed. Reload the page and try again.');
+  const was = Object.fromEntries(grp.map((q, i) => [q.id, i + 1])); // position before the move, for the audit log
+  const slots = grp.map(q => q.order); // the same order numbers, handed out in the new sequence
+  ids.forEach((id, i) => { questions.find(q => q.id === id).order = slots[i]; });
+  renumber();
+  audit(user.name, 'questions reordered', `${type === 'text' ? 'Text' : 'Rating'} questions, new order (old numbers): ${ids.map(id => 'Q' + was[id]).join(', ')}`);
   return { ok: true };
 });
 function renumber() {
@@ -910,6 +1005,11 @@ const server = http.createServer((req, res) => {
       const asUser = signedIn && s.as && signedIn.role === 'admin' ? L.emp(s.as) : null;
       const user = asUser && asUser.active ? asUser : signedIn;
       if (!r.open && !user) return send(401, { error: 'Please sign in to continue.' });
+      // The cookie is shared by every tab. A tab says who it was opened for ("<user id>:<real user id>"); if someone
+      // else has signed in (or switched "View as") in another tab since, refuse instead of reading or saving as them.
+      const tabFor = req.headers['x-pms-user'];
+      if (tabFor && user && !r.open && url.pathname !== '/api/me' && !url.pathname.startsWith('/api/auth/') && tabFor !== `${user.id}:${signedIn.id}`)
+        return send(409, { error: 'You are signed in as someone else in another tab.', code: 'SESSION_CHANGED' });
       let body = {};
       if (raw) { try { body = JSON.parse(raw); } catch { return send(400, { error: 'Request body is not valid JSON.' }); } }
       const result = await r.fn({ user, realUser: signedIn, session: s, q: Object.fromEntries(url.searchParams), body, cookies, secure: A.isSecure(req), setCookie: c => setCookies.push(c) });

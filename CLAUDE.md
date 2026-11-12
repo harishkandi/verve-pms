@@ -15,12 +15,21 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Admins can "View as" anyone (real user stays in the session). All `/api/auth/*` routes live under `/api` so Vercel forwards them.
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
-  Google emails the guests (employee + their manager when someone else schedules). Demo employees have no email on purpose.
+  Google emails the guests (employee + their manager when someone else schedules).
+- Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name + Reporting Manager only).
+  It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
+  names in code. `employees.js` parses/checks it (`npm run employees -- private/employees.tsv`, add `--apply` to write
+  into `DATABASE_URL` = staging); `data.js` also loads it on boot when the file exists. First import removed all demo
+  people and demo records; later imports update by name, add new people, mark missing ones inactive, keep forms.
+  Managers not on the list become top-level directors (not reviewed). Role is derived: no manager = director, has
+  reports = manager, else employee. Email, designation, team, joining date and code are not in the sheet yet:
+  placeholders are blank / team "Unassigned" / joined = FY start / code `V###`. Without emails nobody but
+  `ADMIN_EMAILS` can use Google sign-in (admins use "View as").
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12). User name, theme and log out
-  live in the top bar. The page scrolls inside `#main`, not the window (`SC()`); the footer sits outside `#main` so it
-  never moves. Admins get a grouped menu (Reporting
+  live in the top bar. The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
+  removed it, 2026-11-12). Admins get a grouped menu (Reporting
   manager / Reporting / Questions open as sub-menus); its Reporting manager lists come from `designation`
   (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
   There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
@@ -28,6 +37,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   incomplete", "Pending" = "Overdue" (server keeps the old names). Teams include "Directors" (was "Leadership") and
   "HR"; `migrate()` in `data.js` updates older saved state on boot.
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
+- Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
+  (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
+- Reports ported from the old portal (pms.verveadvisory.com): Team report / My report (`#/yearly`, `/api/yearly`,
+  quarter + FY filters) = the old "Yearly Reporting"; the MIS report's Reporting graph (`/api/mis/graph`) = the old
+  "Reporting Graph" (quarter, FY, director, KRA); Export KPI on the monthly form = CSV download.
 - Settings live in env vars, listed in `pms/.env.example`; `npm run dev` / `npm run local` read `pms/.env`.
 - Persistence: all state lives in the in-memory objects exported by `data.js`. With `DATABASE_URL` set, `db.js` loads
   them from one jsonb row (`pms_state`, id 1) on boot (seeding it when empty) and saves after any request that changed
@@ -37,7 +51,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   converts old saved data x20 and marks `config.ratingScale = 100`); questionnaire ratings stay 0-5; thresholds
   `clickupMin`/`learningMin` are % and the gap flags are percentage points. Employees' "What is left on my form" lists
   only what they fill in (`employeeTodo` in `logic.js`); KRA set-up and review-date alerts are for managers only. The
-  form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit. A manager remark is needed only when self and manager ratings differ; a submitted
+  form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit.
+  Monthly form is two steps: the employee clicks "Submit to manager" (`POST /api/form/self-submit`, blocked until
+  `employeeTodo` is empty; sets `form.selfSubmitted`, their part is then read-only), the manager can "Send back to
+  employee" (`POST /api/form/return`) or "Submit review" (`POST /api/form/submit`, final). Everyone who can edit gets
+  Save draft; employees' entries also autosave. A manager remark is needed only when self and manager ratings differ; a submitted
   monthly form is locked for good (no reopen, no edit request, admins included); until then the employee edits their
   own KRAs directly (there is no request/approve step); the One Pager Document is hidden from
   employees; monthly rating = per sub-KRA 30% self + 70% manager, weighted by
@@ -47,9 +65,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
     npm install
     npm run dev        # server on :3000, DATABASE_URL from ../.env.local (Neon), same DB as staging!
     npm start          # no .env loading; in-memory unless DATABASE_URL is set
-    npm run db:reset   # drop pms_state; next start reseeds demo data
+    npm run db:reset   # drop pms_state; next start starts empty (no demo data any more), then re-import the list
+    npm run employees -- private/employees.tsv [--apply]   # check / write the real employee list
 Smoke test (demo sign-in, i.e. no Google env): `curl -c j -H 'Content-Type: application/json' -d '{"id":1}' localhost:3000/api/auth/demo`
-then `curl -b j localhost:3000/api/me` (1 = admin, 7 = employee). Non-GET calls must send `Content-Type: application/json`.
+then `curl -b j localhost:3000/api/me` (ids follow the list order; the test admin "Verve Admin" A900 is the highest id). Non-GET calls must send `Content-Type: application/json`.
 
 ## Staging (live)
 | Piece | Where | Notes |

@@ -19,11 +19,17 @@ async function api(path, opts = {}) {
 async function apiCall(path, opts) {
   const res = await fetch('/api' + path, {
     method: opts.method || 'GET', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    // tells the server who this tab was opened for, so a sign-in in another tab cannot act through this one
+    headers: { 'Content-Type': 'application/json', ...(S.me && { 'X-PMS-User': `${S.me.id}:${S.me.real.id}` }) },
     body: opts.method && opts.method !== 'GET' ? JSON.stringify(opts.body || {}) : undefined,
   });
   const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
   if (res.status === 401 && S.me) { S.me = null; S.month = null; boot(); }
+  if (res.status === 409 && data.code === 'SESSION_CHANGED') {
+    // someone else signed in (or "View as" changed) in another tab: reload this tab for the current account
+    try { sessionStorage.setItem('pmsSwitched', '1'); } catch {}
+    location.hash = '#/home'; location.reload(); return new Promise(() => {});
+  }
   if (res.status === 404 && data.code === 'NO_ROUTE') {
     // this page is older than the server (PMS was updated): load the new version, at most once a minute
     let last = 0; try { last = +sessionStorage.getItem('pmsReloadedAt') || 0; sessionStorage.setItem('pmsReloadedAt', String(Date.now())); } catch {}
@@ -144,6 +150,7 @@ const ICON = {
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54z"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
   download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
 };
@@ -157,8 +164,6 @@ const SC = () => document.getElementById('main') || document.scrollingElement;
 const searchBox = (id, ph, val, w) => `<span class="search">${ico('search')}<input id="${id}" type="search" placeholder="${esc(ph)}" value="${esc(val || '')}"${w ? ` style="width:${w}px"` : ''}></span>`;
 // sidebar wordmark: "verve", a thin rule, "ADVISORY" right-aligned
 const WORDMARK = '<div class="wordmark"><img class="logo-w" src="verve-advisory-logo.png" alt="Verve Advisory"><div class="wr"></div><span class="wa">Performance Management</span></div>';
-// product mark on the login page: white circle, company line on top, product name with its second half in blue
-const PRODUCT_MARK = '<div class="pmark"><img src="verve-advisory-logo.png" alt="Verve Advisory"><span class="pm-rule"></span><span class="pm-n">Performance Management</span></div>';
 // two soft radial orbs: the depth on every navy surface
 const ORBS = '<i class="orb o1"></i><i class="orb o2"></i>';
 const GOOGLE_G = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
@@ -212,12 +217,16 @@ function loginPage(st, err) {
   const dom = '@' + st.domain;
   const alert = (msg, kind = 'err') => `<div class="ac-alert ${kind}" role="${kind === 'err' ? 'alert' : 'status'}">${ico(kind === 'err' ? 'alert' : 'info')}<span>${esc(msg)}</span></div>`;
   $('#root').innerHTML = `<div class="auth">
-  <aside class="auth-brand">${ORBS}${PRODUCT_MARK}<div class="auth-cap">Reviews · Scheduling · Reports</div><div class="auth-foot">© ${new Date().getFullYear()} Verve Advisory</div></aside>
+  <aside class="auth-brand"><div class="ab-in"><img class="logo-w ab-logo" src="verve-advisory-logo.png" alt="Verve Advisory">
+    <div class="ab-mid"><div class="ab-eyebrow">Verve PMS</div><h2>Performance Management System</h2>
+      <p>Monthly reviews, review meetings and reports for everyone at Verve Advisory, in one place.</p>
+      <ul class="ab-list"><li>${ico('review')}<span>Fill in and follow your monthly KRA review</span></li><li>${ico('calendar')}<span>Review meetings go straight to your Google Calendar</span></li><li>${ico('chart')}<span>Team, MIS and yearly reports for managers</span></li></ul></div>
+    <div class="ab-foot">© ${new Date().getFullYear()} Verve Advisory</div></div></aside>
   <main class="auth-main">${themeBtn()}
     <div class="auth-form">
       <img class="auth-logo" src="verve-advisory-logo.png" alt="Verve Advisory">
-      <h1>Welcome back</h1>
-      <p class="auth-sub">Sign in to Verve PMS with your work account.</p>
+      <h1>Sign in</h1>
+      <p class="auth-sub">Use your Verve Advisory work account.</p>
       <div id="aerr">${err ? alert(err) : ''}</div>
       <form id="lform" novalidate>
         <label class="fl" for="lemail"><span>Work email</span><span class="ac-field"><input id="lemail" type="email" autocomplete="username" placeholder="name${esc(dom)}" spellcheck="false"></span></label>
@@ -286,6 +295,8 @@ async function pickViewAs() {
 async function start() {
   S.me = await api('/me');
   S.month = S.month || S.me.currentMonth;
+  let switched = false; try { switched = sessionStorage.getItem('pmsSwitched'); sessionStorage.removeItem('pmsSwitched'); } catch {}
+  if (switched) setTimeout(() => toast(`The sign-in changed in another tab, so this tab now shows ${S.me.name}.`), 300);
   if (REDIRECT && (REDIRECT.error || REDIRECT.calendar)) { const r = REDIRECT; REDIRECT = {}; setTimeout(() => r.error ? toast(authMsg(r.error, r.email, S.me.domain), 'err') : toast('Google Calendar connected. You can now send review invites.'), 300); }
   const r = S.me.role, mgr = ['manager', 'teamlead', 'director', 'admin'].includes(r);
   // menu: [label, href, icon] = link, { label, icon, key, kids: [[label, href], ...] } = a group that opens, '--X' = eyebrow
@@ -294,13 +305,14 @@ async function start() {
     ['All active employees', '#/employees/active', 'idcard'],
     ['All inactive employees', '#/employees/inactive', 'eyeoff'],
     { key: 'org', label: 'Reporting manager', icon: 'sitemap', kids: ORG_TABS.map(([, l, slug]) => [l, '#/reporting' + (slug ? '/' + slug : '')]) },
-    { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
+    { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['MIS report', '#/mis'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
     { key: 'qs', label: 'Questions', icon: 'question', kids: [['Parameters summary', '#/params'], ['Questionnaire', '#/params/questions']] },
     '--Admin',
     ['Audit log', '#/audit', 'clock'],
   ] : [
     ['Dashboard', '#/home', 'home'],
     ['My review', `#/form/${S.me.id}/${S.month}`, 'review'],
+    mgr ? { key: 'myrep', label: 'Reports', icon: 'chart', kids: [['Team report', '#/yearly'], ['My report', '#/yearly/me']] } : ['My report', '#/yearly', 'chart'],
     mgr && ['My team', '#/team', 'team'],
     mgr && ['My team report', '#/teamreport', 'check'],
     mgr && ['My MIS report', '#/mis', 'grid'],
@@ -325,7 +337,7 @@ async function start() {
       <span class="tb-div"></span>
       <div class="tb-user"><span class="tb-who"><b title="${esc(S.me.name)}">${esc(S.me.name)}</b><small>${esc(S.me.designation || ROLE_LABEL[S.me.role])} · ${esc(ROLE_LABEL[S.me.role])}</small></span><span class="avatar">${initials(S.me.name)}</span></div>
       <button class="ibtn" id="logout" title="Log out" aria-label="Log out">${ico('logout')}</button></header>
-    <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main><footer class="pfoot"><img src="verve-advisory-logo.png" alt="Verve Advisory"><span>Performance Management System</span><span class="sp"></span><span>© ${new Date().getFullYear()} Verve Advisory. For internal use.</span></footer></div></div>`;
+    <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
   $('#root').onclick = e => {
     const g = e.target.closest('.ngrp-btn'); if (g) navOpen(g.parentNode, !g.parentNode.classList.contains('open'));
     if (e.target.closest('#logout')) signOut();
@@ -573,10 +585,6 @@ const widget = (icon, title, extra, body, cls = '') => `<div class="m ${cls}"><d
 let lastHome = {};
 // decorative half circle at the right end of the navy banner
 const HALO = '<i class="halo" aria-hidden="true"><i></i></i>';
-// a team's review window as a small chip; admins click it to change the window
-const winChip = (t, edit) => !t ? '' : edit
-  ? `<button type="button" class="wchip" data-win="${esc(t.team)}" title="Edit the ${esc(t.team)} review window">${ico('calendar')}${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</button>`
-  : `<span class="wchip" title="${esc(t.team)} review window">${ico('calendar')}${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>`;
 // Review quality widget: facts the status cards do not show
 function qualityBody(h, c) {
   const row = (icon, cls, label, n, sub) => `<div class="qrow ${cls}">${ico(icon)}<span>${label}<small>${sub}</small></span><b>${n}</b></div>`;
@@ -618,7 +626,7 @@ pages.home = async (v, opts = {}) => {
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>
     <div class="wgrid">
-      ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(a.team)} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${winChip(teams.find(t => t.team === a.team), d.canEditWindows)}${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
+      ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(a.team)} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
       <div class="m bare">
              ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => d.canEditWindows ? `<button type="button" class="win ed" data-win="${esc(t.team)}" title="Edit the ${esc(t.team)} review window"><b>${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</span>${winBadge(t)}</button>` : `<div class="win"><b title="${esc(t.team)}">${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
       </div>
@@ -630,16 +638,41 @@ pages.home = async (v, opts = {}) => {
       v.innerHTML = `<div id="hShell">${head(`${esc(month)} reviews`, `${esc(d.label)} · how reviews are going across your teams`)}<div id="hChips">${chips}</div><div id="hHero">${hero}</div><div id="hBody">${body}</div></div>`;
     }
   } else {
-    const o = d.own, w = d.window;
-    const issues = o ? o.issues : [];
-    html = head(`My ${esc(month)} review`, `${esc(d.label)} · ${esc(S.me.team || 'Review')} team`) + `<div class="chips"><span class="sp"></span>${monthSel()}</div>
-    <div class="hero">${ORBS}<div class="ring">${ringSvg(o && o.submitted ? 100 : 0)}<b>${o ? (o.submitted ? '✓' : issues.length) : '0'}<small>${o ? (o.submitted ? 'SUBMITTED' : `OPEN ITEM${issues.length === 1 ? '' : 'S'}`) : 'NO FORM'}</small></b></div>
-      <div><div class="hm">Your review</div><div class="ht">${o ? (o.submitted ? 'Submitted' : issues.length ? `${issues.length} item${issues.length === 1 ? '' : 's'} left on your form` : 'Ready for your manager') : 'No form this month'}</div><p>${o && o.scheduled ? `Scheduled ${fmtD(o.scheduled)}${o.time ? ', ' + fmtT(o.time) : ''}${o.invite ? ' · invite in your Google Calendar' : ''}` : 'Not scheduled yet'} · ${esc(S.me.team || 'Review')} window ${winText(w)}</p></div>
-      <div class="acts">${o && o.zoom ? `<a class="btn" href="${esc(o.zoom)}" target="_blank" rel="noopener">${ico('video')}Join Zoom</a>` : ''}<a class="btn yel" href="#/form/${S.me.id}/${S.month}">Open my review</a></div></div>
-    <div class="stats"><div class="stat ${o ? ({ 'Completed and Submitted': 'g', 'Completed but Not Submitted': 'a', 'Review Not Completed': 'r', Pending: 'b' }[o.status] || 'n') : 'n'}"><small>Review status</small><b class="bd">${o ? badge(o.status) : 'N/A'}</b><span>${o && o.submitted ? 'Submitted by your manager' : 'Updates as the form is filled'}</span><i class="wm">${ico('review')}</i></div><div class="stat n"><small>Scheduled date</small><b>${o && o.scheduled ? fmtD(o.scheduled) : 'N/A'}</b><span>${o && o.reschedules ? `Rescheduled ${o.reschedules}×` : o && o.time ? fmtT(o.time) + ' · set by your manager' : o && o.scheduled ? 'Set by your manager' : 'Not scheduled yet'}</span><i class="wm">${ico('calendar')}</i></div><div class="stat t"><small>Review date</small><b>${o && o.reviewDate ? fmtD(o.reviewDate) : 'N/A'}</b><span>${o && o.reviewDate ? esc(o.due) : 'Entered on the form'}</span><i class="wm">${ico('clock')}</i></div><div class="stat v"><small>Monthly rating</small><b>${o ? pc(o.rating ?? o.preview) : 'N/A'}</b><span>${o && o.rating != null ? 'Final' : o && o.preview != null ? 'Preview until submitted' : 'Needs all ratings'}</span><i class="wm">${ico('chart')}</i></div></div>
-    <div class="wgrid">
-      ${widget(o && o.submitted ? 'check' : 'alert', o && o.submitted ? 'Review submitted' : 'What is left on my form', issues.length ? `<span class="cnt">${issues.length}</span>` : '', `<div class="mb">${o ? (issues.length ? `<ul class="issues">${issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : `<div class="ok" style="margin:0">${o.submitted ? 'Your manager has submitted this review. Nothing left to do.' : 'Everything is filled in. Your manager can now submit the review.'}</div>`) : '<div class="empty">No review form for this month.</div>'}${o && !o.submitted ? `<div style="margin-top:14px"><a class="btn pri" href="#/form/${S.me.id}/${S.month}">Open my review</a></div>` : ''}</div>`, 'w8')}
-      ${widget('calendar', 'Review window', '', `<div class="mb"><div style="font-size:24px;line-height:32px;font-weight:700;color:var(--vr-brand-text);font-variant-numeric:tabular-nums">${fmtD(w.start)} to ${fmtD(w.end)}</div><div class="small" style="margin-top:2px">${esc(S.me.team || '')} team · ${winText(w)}</div><div class="tip"><b>Tip</b> Ratings count 30% self and 70% manager, weighted by sub-KRA then KRA. When your manager's rating differs from yours, they add a remark.</div></div>`)}
+    // employee: a plain summary of their own review (labelled rows), then what is left for them to fill in
+    const o = d.own, w = d.window, issues = o ? o.issues : [];
+    const kv = (label, value, note) => `<div class="kv"><dt>${label}</dt><dd>${value}${note ? `<small>${note}</small>` : ''}</dd></div>`;
+    const lead = !o ? 'There is no review form for you this month.'
+      : o.submitted ? 'Your manager has submitted this review. Nothing is left for you to do.'
+      : o.selfSubmitted ? 'You have sent your form to your manager. They add their ratings and submit the review.'
+      : issues.length ? `${issues.length} item${issues.length === 1 ? ' is' : 's are'} still to be filled in on your form.`
+      : 'Everything is filled in. Open your review and click Submit to manager.';
+    const rating = o && o.rating != null ? [pc(o.rating), 'Final'] : o && o.preview != null ? [pc(o.preview), 'Preview until your manager submits'] : ['Not available', 'Shown once all ratings are in'];
+    html = `<div class="phd ehd"><div><h1>Welcome, ${esc(S.me.name.split(' ')[0])}</h1><div class="crumb">${esc(d.label)} · ${esc(S.me.designation || ROLE_LABEL[S.me.role])}${S.me.team ? ` · ${esc(S.me.team)} team` : ''}</div></div><span class="sp"></span>${monthSel()}</div>
+    <section class="ecard">
+      <header class="ecard-h"><div><h2>My ${esc(month)} review</h2><p>${lead}</p></div><span class="sp"></span>
+        ${o && o.zoom ? `<a class="btn" href="${esc(o.zoom)}" target="_blank" rel="noopener">${ico('video')}Join Zoom</a>` : ''}
+        ${o ? `<a class="btn pri" href="#/form/${S.me.id}/${S.month}">${o.submitted ? 'View my review' : 'Open my review'}</a>` : ''}</header>
+      <dl class="kvgrid">
+        ${kv('Review status', o ? badge(o.status) : 'No form')}
+        ${kv('Reporting manager', esc(o && o.manager || 'Not assigned'))}
+        ${kv('Review window', `${fmtD(w.start)} to ${fmtD(w.end)}`, winText(w).replace(/^./, c => c.toUpperCase()))}
+        ${kv('Review meeting', o && o.scheduled ? `${fmtD(o.scheduled)}${o.time ? ', ' + fmtT(o.time) : ''}` : 'Not scheduled yet', o && o.scheduled ? [o.invite ? 'Invite in your Google Calendar' : 'Set by your manager', o.reschedules ? `rescheduled ${o.reschedules}×` : ''].filter(Boolean).join(' · ') : 'Your manager sets the date')}
+        ${kv('Review date', o && o.reviewDate ? fmtD(o.reviewDate) : 'Not entered', o && o.reviewDate ? esc(o.due) : 'Entered on the form')}
+        ${kv('Monthly rating', rating[0], rating[1])}
+      </dl>
+    </section>
+    <div class="egrid">
+      <section class="ecard"><header class="ecard-h sm"><h2>${o && o.submitted ? 'Review submitted' : o && o.selfSubmitted ? 'Sent to your manager' : 'What is left on my form'}</h2>${issues.length ? `<span class="cnt">${issues.length}</span>` : ''}</header>
+        ${o ? (issues.length ? `<ol class="todo">${issues.map(i => `<li>${esc(i)}</li>`).join('')}</ol>`
+          : `<div class="ok ebox">${o.submitted ? 'Your manager has submitted this review. Nothing left to do.' : o.selfSubmitted ? `You sent your form${o.selfSubmittedAt ? ` on ${fmtD(o.selfSubmittedAt.slice(0, 10))}` : ''}. Nothing left for you to do unless your manager sends it back.` : 'Everything is filled in. Open your review and click <b>Submit to manager</b>.'}</div>`)
+          : '<div class="empty">No review form for this month.</div>'}</section>
+      <aside class="ecard"><header class="ecard-h sm"><h2>How the review works</h2></header>
+        <ol class="steps">
+          <li><b>You fill in</b> your self ratings, remarks and the question answers (Save draft any time), then click <b>Submit to manager</b>.</li>
+          <li><b>Your manager</b> adds their ratings in the review meeting, with a remark where they differ from yours. They can send the form back if you need to change something.</li>
+          <li><b>Your manager submits</b> the review. After that the form is locked.</li>
+        </ol>
+        <p class="enote">Monthly rating: 30% your rating and 70% your manager's, weighted by sub-KRA and then by KRA.</p></aside>
     </div>`;
   }
   if (html != null) v.innerHTML = html;
@@ -705,10 +738,11 @@ function drawForm(v, errors) {
   const sum = formSummary(f);
   const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b> · <a href="#" id="tosum">See the review summary</a>` : 'Monthly rating: shows once every self and manager rating is in · <a href="#" id="tosum">See the review summary</a>';
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(monthLabel(S.month))}`) +
-    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn" id="copyk">Copy KRAs from last month</button>' : ''}<span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : ''}</div>
-    ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>' : ''}
+    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+    ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
+      : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your ratings (and a remark where they differ), then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="formhead">KRA · ${FP.fy} · ${esc(monthLabel(S.month))}</div>
-    <div class="card" style="margin-top:12px"><div class="row" style="margin:0;align-items:flex-end"><div class="orgname"><span class="avatar">${initials(e.name)}</span><div><b style="color:var(--vr-n-900)">${esc(e.name)}</b><div class="small">${esc(e.designation)} · Reports to ${m ? esc(m.name) : 'nobody yet'}</div></div></div>
+    <div class="card" style="margin-top:12px"><div class="row" style="margin:0;align-items:flex-end"><div class="empmeta"><div><b>Employee Name :</b> ${esc(e.name)}${e.designation ? ` ( ${esc(e.designation)} )` : ''}</div><div><b>Reporting Manager :</b> ${m ? esc(m.name) : 'Not assigned yet'}</div></div>
 <span class="sp"></span>
     <div><label class="f" style="margin:0 0 4px">Review date <i>*</i></label><input type="date" id="reviewDate" class="${noDate ? 'err' : ''}" value="${esc(f.reviewDate)}" ${p.editSelf || p.editManager ? '' : 'disabled'}></div></div>
     ${noDate ? '<div class="warn">Review date is required. Enter it before submitting the form.</div>' : ''}
@@ -729,8 +763,10 @@ function drawForm(v, errors) {
     }).join('')}</table></div>
     <div id="sec-summary">${summaryCard(sum)}</div>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
-    ${S.me.role === 'employee' || (!p.editSelf && !p.editManager) ? '' : '<button class="btn" id="save">Save draft</button>'}
-    ${S.me.role !== 'employee' && S.me.role !== 'teamlead' || p.canSubmit ? `<button class="btn pri" id="submit" ${p.canSubmit ? '' : 'disabled title="Only managers and admins can submit the form"'}>Submit review</button>` : ''}
+    ${p.canReturn ? '<button class="btn" id="giveback" title="Let the employee change their self ratings, remarks and answers again">Send back to employee</button>' : ''}
+    ${p.editSelf || p.editManager ? '<button class="btn" id="save">Save draft</button>' : ''}
+    ${p.canSelfSubmit ? '<button class="btn pri" id="selfsub">Submit to manager</button>' : ''}
+    ${p.canSubmit ? '<button class="btn pri" id="submit">Submit review</button>' : ''}
     </div>`;
   wireForm(v);
 }
@@ -763,6 +799,21 @@ function summaryCard(s) {
   <tr class="sub"><td><b>Total</b></td><td class="nr"><b>${s.weightTotal}</b></td><td></td><td></td><td class="nr"><b>${pc(s.rating)}</b></td><td class="nr"><b>${s.points ?? '–'}</b></td></tr></table></div>`}
   ${s.q.n ? `<div class="small" style="margin-top:12px">Questionnaire ratings (out of 5, not part of the monthly rating): self average <b>${s.q.self ?? '–'}</b> · manager average <b>${s.q.mgr ?? '–'}</b></div>` : ''}</div>`;
 }
+// Export KPI: the monthly form as it is on screen, as a CSV file Excel opens directly (UTF-8 with BOM)
+function exportKpi() {
+  const { form: f, employee: e, manager: m } = FP, sum = formSummary(f), q = x => `"${String(x ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Employee', e.name], ['Designation', e.designation], ['Reporting manager', m ? m.name : ''], ['Month', monthLabel(f.month)], ['Review date', f.reviewDate || ''],
+    ['Status', STATUS_TEXT[FP.status] || FP.status], ['Monthly rating (%)', sum.rating ?? ''], [], ['KRA', 'KRA weightage', 'Sr. no', 'Key performance indicator', 'Target', 'Weightage', 'Self rating (30%)', 'Manager rating (70%)', 'Remark', 'Manager remark']];
+  sum.kras.forEach(k => {
+    f.kras[k.key].rows.forEach((r, i) => lines.push([k.label, k.weight, i + 1, r.kpi, r.target, r.weight, r.self != null ? r.self + '%' : '', r.mgr != null ? r.mgr + '%' : '', r.selfRemark, r.mgrRemark]));
+    lines.push([`${k.label} total`, k.weight, '', '', '', '', k.self != null ? k.self + '%' : '', k.mgr != null ? k.mgr + '%' : '', `KRA score ${k.score != null ? k.score + '%' : '-'}`, `Points ${k.points ?? '-'}`]);
+  });
+  lines.push([], ['Questionnaire'], ['Sr. no', 'Question', 'Answer', 'Self rating (of 5)', 'Manager rating (of 5)', 'Manager remark']);
+  (FP.questions || []).forEach((x, i) => { const a = f.qa[x.id]; lines.push(x.type === 'text' ? [i + 1, x.text, a || ''] : [i + 1, x.text, '', a && a.self != null ? a.self : '', a && a.mgr != null ? a.mgr : '', a ? a.remark || '' : '']); });
+  const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `KPI_${e.name.replace(/\s+/g, '_')}_${f.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 // after Save draft or Submit: the calculated result in a dialog
 function summaryModal(title) {
   const m = modal(`<h2>${esc(title)}</h2>${summaryCard(formSummary(FP.form))}<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn pri" id="ok">Close</button></div>`);
@@ -786,7 +837,7 @@ function wireForm(v) {
   v.onchange = async e => {
     if (e.target.id === 'msel' || e.target.dataset.qt) return;
     if (e.target.id === 'reviewDate' && e.target.value && +e.target.value.slice(0, 4) < 1000) return; // still typing the year
-    // employees have no Save draft button, so their entries are saved as they type
+    // employees' entries are also saved as they type (Save draft just confirms and shows the summary)
     const mine = ++changeSeq;
     if (S.me.role === 'employee' && (FP.perms.editSelf || FP.perms.editManager)) { try { await save(); } catch (er) { toast(er.message, 'err'); } }
     if (mine !== changeSeq) return; // a newer change is in flight; it will redraw (and keep any remark focus)
@@ -833,11 +884,29 @@ function wireForm(v) {
   });
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   if ($('#save')) $('#save').onclick = async () => { try { await save(); toast('Draft saved'); drawForm(v); summaryModal('Draft saved'); } catch (e) { toast(e.message, 'err'); } };
+  $('#expk').onclick = () => exportKpi();
   if ($('#tosum')) $('#tosum').onclick = e => { e.preventDefault(); $('#sec-summary').scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+  const showErrors = e => { drawForm(v, e.data?.errors ? [e.message, ...e.data.errors] : [e.message]); SC().scrollTo({ top: 0, behavior: 'smooth' }); };
+  // step 2 (manager/admin): final submit, locks the form for good
   if ($('#submit')) $('#submit').onclick = async () => {
     attempted = true;
-    try { await save(); FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Review submitted'); drawForm(v); summaryModal('Review submitted'); }
-    catch (e) { drawForm(v, e.data?.errors || [e.message]); SC().scrollTo({ top: 0, behavior: 'smooth' }); }
+    try { await save(); } catch (e) { return showErrors(e); }
+    if (!await confirmBox('Submit this review?', 'After submitting, the form is locked for good. Nobody can change it, admins included.', { ok: 'Submit review' })) return;
+    try { FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Review submitted'); drawForm(v); summaryModal('Review submitted'); }
+    catch (e) { showErrors(e); }
+  };
+  // step 1 (employee): send self ratings, remarks and answers to the manager
+  if ($('#selfsub')) $('#selfsub').onclick = async () => {
+    attempted = true;
+    try { await save(); } catch (e) { return showErrors(e); }
+    if (!await confirmBox('Submit to your manager?', 'Your self ratings, remarks and answers will be sent to your manager and become read-only. Your manager can send the form back if something needs changing.', { ok: 'Submit to manager' })) return;
+    try { FP = await api('/form/self-submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Sent to your manager'); drawForm(v); summaryModal('Sent to your manager'); }
+    catch (e) { showErrors(e); }
+  };
+  if ($('#giveback')) $('#giveback').onclick = async () => {
+    if (!await confirmBox('Send back to the employee?', 'They can change their self ratings, remarks and answers again, and then submit it to you once more.', { ok: 'Send back' })) return;
+    try { await save(); FP = await api('/form/return', { method: 'POST', body: { empId: f.empId, month: f.month } }); toast('Form sent back to the employee'); drawForm(v); }
+    catch (e) { showErrors(e); }
   };
   v.onclick = async e => {
     const t = e.target, post = (u, b) => api(u, { method: 'POST', body: { empId: f.empId, month: f.month, ...b } });
@@ -920,7 +989,8 @@ pages.teamreport = async (v, id) => {
 pages.mis = async (v, id) => {
   const d = await api(`/mis${id ? '?id=' + id : ''}`), short = m => esc(m.label.split(' ')[0].slice(0, 3));
   const cell = x => !x ? '<span class="small" title="No form">–</span>' : x.rating != null ? `<b class="rt ${rateCls(x.rating)}" title="${esc(x.status)}">${pc(x.rating)}</b>` : `<span class="small" title="${esc(x.status)}">${{ 'Completed but Not Submitted': 'Not sub.', 'Review Not Completed': 'Open', Pending: 'Overdue' }[x.status] || '–'}</span>`;
-  v.innerHTML = reportHead(d, 'MIS report', 'MIS report') + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)</span><span class="sp"></span><a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team report</a><button class="btn pri" id="misx">Download CSV</button></div>
+  v.innerHTML = (d.org ? head('MIS report', 'PMS › MIS report · whole organisation') : reportHead(d, 'MIS report', 'MIS report')) + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for ${d.org ? 'everyone in the organisation' : `everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)`}</span><span class="sp"></span>${d.org ? '' : `<a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team report</a>`}<button class="btn pri" id="misx">Download CSV</button></div>
+  <div id="mgraph"></div>
   <h2>Month by month</h2>
   <div class="tablewrap"><table><tr><th>Month</th><th class="nr">Scheduled</th><th class="nr">Submitted</th><th class="nr">Not submitted</th><th class="nr">Form incomplete</th><th class="nr">Overdue</th><th class="nr" title="Review held within the window">On time</th><th class="nr" title="Review held after the window">Late</th><th class="nr">Avg rating</th><th>Completion</th></tr>
   ${d.byMonth.map(m => `<tr><td style="white-space:nowrap"><b>${esc(m.label.replace(/^([A-Za-z]{3})[A-Za-z]*/, '$1'))}</b></td><td class="nr">${m.scheduled}</td><td class="nr">${m.submitted}</td><td class="nr">${m.notSubmitted}</td><td class="nr">${m.notCompleted}</td><td class="nr">${m.pending}</td><td class="nr">${m.onTime}</td><td class="nr">${m.late}</td><td class="nr">${m.avgRating != null ? `<b class="rt ${rateCls(m.avgRating)}">${pc(m.avgRating)}</b>` : 'N/A'}</td>
@@ -929,6 +999,7 @@ pages.mis = async (v, id) => {
   <div class="tablewrap"><table><tr><th>Employee</th><th>Reports to</th>${d.months.map(m => `<th>${short(m)}</th>`).join('')}<th>Average</th><th></th></tr>
   ${d.grid.map(r => `<tr><td><b>${esc(r.name)}</b><div class="small">${esc(r.designation)}</div></td><td>${esc(r.manager)}</td>${r.cells.map(x => `<td>${cell(x)}</td>`).join('')}<td>${r.avg != null ? `<b class="rt ${rateCls(r.avg)}">${pc(r.avg)}</b>` : 'N/A'}</td><td><a class="btn sm" href="#/kpi/${r.id}">${ico('award')}KPI</a></td></tr>`).join('') || `<tr><td colspan="${d.months.length + 4}" class="small">Nobody reports to ${d.me ? 'you' : esc(d.person.name)}.</td></tr>`}</table></div>
   <p class="small">Ratings appear once a review is submitted. "Not sub." = completed but not submitted, "Open" = review not completed yet, – = no form that month. Ratings are percentages: blue is 80% and above, orange 60% to 79%, red below 60%.</p>`;
+  misGraph($('#mgraph'), id).catch(er => { $('#mgraph').innerHTML = errBox(er); });
   $('#misx').onclick = () => {
     const q = x => `"${String(x ?? '').replace(/"/g, '""')}"`;
     const lines = [['Employee', 'Designation', 'Reports to', ...d.months.map(m => m.label), 'Average'].map(q).join(','),
@@ -936,6 +1007,52 @@ pages.mis = async (v, id) => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `MIS-${d.person.name.replace(/\s+/g, '-')}.csv`; a.click();
   };
 };
+
+// MIS Reporting graph: average KRA score per month (submitted reviews) as columns, with the old portal's filters
+// (quarter, financial year, director, KRA). One series, so one colour and no legend; hover or focus a month for its value.
+const GF = { q: '', fy: '', director: '', kra: 'total' };
+const GKRA = [['total', 'Total (monthly rating)'], ['operational', 'Average Operational'], ['process', 'Average Process'], ['people', 'Average People']];
+async function misGraph(box, id) {
+  const g = await api(`/mis/graph?fy=${GF.fy}&kra=${GF.kra}&director=${GF.director}${id ? '&id=' + id : ''}`);
+  GF.fy = g.fy;
+  const qi = GF.q === '' ? null : +GF.q, ms = qi == null ? g.months : g.months.slice(qi * 3, qi * 3 + 3);
+  const kraName = GKRA.find(k => k[0] === g.kra)[1], vals = ms.filter(m => m.value != null);
+  const avg = vals.length ? Math.round(vals.reduce((a, m) => a + m.value, 0) / vals.length * 100) / 100 : null;
+  const period = `${qi == null ? 'the year' : ['Quarter I', 'Quarter II', 'Quarter III', 'Quarter IV'][qi]} · FY ${g.fy}-${g.fy + 1}`;
+  const mon = m => m.label.split(' ')[0].slice(0, 3);
+  const tip = m => m.value != null ? `${m.label} · ${kraName}: ${m.value.toFixed(2)}% (${m.n} submitted review${m.n === 1 ? '' : 's'})` : `${m.label} · ${m.open ? 'no submitted reviews' : 'not open yet'}`;
+  box.innerHTML = `<h2>Reporting graph</h2><div class="card gcard">
+    <div class="row" style="margin:0 0 16px">${ddSelect('gq', GF.q, [['', 'All'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']], { icon: 'filter' })}
+      ${ddSelect('gfy', String(g.fy), g.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
+      ${g.directors.length ? ddSelect('gdir', String(g.director), [['', 'All directors'], ...g.directors.map(x => [String(x.id), `All employees - ${x.name}`])], { icon: 'sitemap' }) : ''}
+      ${ddSelect('gkra', g.kra, GKRA, { icon: 'chart' })}</div>
+    <div class="ghead"><b class="rt ${rateCls(avg)}">${avg != null ? avg.toFixed(2) + '%' : 'N/A'}</b><span>${esc(kraName)}, average for ${period}<small>${g.people} ${g.people === 1 ? 'person' : 'people'} in scope · months with a submitted review only</small></span></div>
+    <div class="gchart" role="img" aria-label="${esc(kraName)} by month, ${esc(period)}">
+      <div class="gy" aria-hidden="true">${[100, 75, 50, 25, 0].map(t => `<span style="bottom:${t}%">${t}%</span>`).join('')}</div>
+      <div class="gplot">${[100, 75, 50, 25].map(t => `<i class="gl" style="bottom:${t}%"></i>`).join('')}<i class="gl base"></i>
+        ${ms.map((m, i) => `<div class="gcol" tabindex="0" data-i="${i}" aria-label="${esc(tip(m))}">${m.value != null ? `<div class="gbar" style="height:${Math.max(m.value, 1)}%"></div>` : ''}</div>`).join('')}</div>
+      <div class="gx" aria-hidden="true">${ms.map(m => `<span class="${m.open ? '' : 'off'}">${mon(m)}</span>`).join('')}</div>
+      <div class="gtip" hidden></div></div>
+    <details class="gtable"><summary>Show as table</summary><div class="tablewrap" style="margin-top:10px"><table><tr><th>Month</th><th class="nr">${esc(kraName)}</th><th class="nr">Submitted reviews</th></tr>
+      ${ms.map(m => `<tr><td>${esc(m.label)}</td><td class="nr">${m.value != null ? m.value.toFixed(2) + '%' : '–'}</td><td class="nr">${m.n}</td></tr>`).join('')}</table></div></details></div>`;
+  const redraw = () => misGraph(box, id).catch(er => { box.innerHTML = errBox(er); });
+  box.querySelector('#gq').onchange = e => { GF.q = e.target.value; redraw(); };
+  box.querySelector('#gfy').onchange = e => { GF.fy = +e.target.value; redraw(); };
+  box.querySelector('#gkra').onchange = e => { GF.kra = e.target.value; redraw(); };
+  if (box.querySelector('#gdir')) box.querySelector('#gdir').onchange = e => { GF.director = e.target.value; redraw(); };
+  // tooltip: on hover or keyboard focus, above the column
+  const chart = box.querySelector('.gchart'), tipEl = box.querySelector('.gtip');
+  const show = col => {
+    const m = ms[+col.dataset.i], cr = chart.getBoundingClientRect(), r = col.getBoundingClientRect(), bar = col.querySelector('.gbar');
+    tipEl.textContent = tip(m); tipEl.hidden = false;
+    const top = (bar ? bar.getBoundingClientRect().top : r.bottom) - cr.top;
+    tipEl.style.left = Math.min(Math.max(r.left - cr.left + r.width / 2, tipEl.offsetWidth / 2), cr.width - tipEl.offsetWidth / 2) + 'px';
+    tipEl.style.top = Math.max(top - 8, 0) + 'px';
+    box.querySelectorAll('.gcol.on').forEach(x => x.classList.remove('on')); col.classList.add('on');
+  };
+  const hide = () => { tipEl.hidden = true; box.querySelectorAll('.gcol.on').forEach(x => x.classList.remove('on')); };
+  box.querySelectorAll('.gcol').forEach(c => { c.onmouseenter = () => show(c); c.onfocus = () => show(c); c.onmouseleave = hide; c.onblur = hide; });
+}
 
 // My KPI Report: one person's KRA scores month by month
 pages.kpi = async (v, id) => {
@@ -949,6 +1066,50 @@ pages.kpi = async (v, id) => {
 };
 const reportTable = rows => `<div class="tablewrap"><table><tr><th>Manager / team</th><th>Employee</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
   ${rows.map(r => `<tr><td>${esc(r.manager)} / ${esc(r.team)}</td><td>${nameLink(r.empId, r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}${r.actual ? `<br>${badge(r.dueStatus)}` : ''}</td><td>${badge(r.status)}</td><td>${pc(r.rating)}</td><td class="${r.flags.length ? 'flag' : 'small'}">${r.flags.map(esc).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="8">No reviews in your access for this month.</td></tr>'}</table></div>`;
+
+// ---------- Team report / My report (KRA scores month by month for the year) ----------
+// #/yearly = me and everyone under me (admins and directors: everyone), #/yearly/me = only me, #/yearly/<id> = that person and their team
+// KRA scores per month for a financial year, one table per person: an employee sees their own, a manager sees themselves
+// and everyone under them, admins and directors see everyone. Scores come from submitted reviews (30% self + 70% manager).
+const YF = { key: null, person: '', team: '', q: '' }; // q: '' = whole year, '0'..'3' = Quarter I..IV
+pages.yearly = async (v, id) => {
+  const self = id === 'me';
+  const d = await api(`/yearly?fy=${S.yfy || ''}${self ? '&self=1' : id ? '&id=' + id : ''}`);
+  S.yfy = d.fy;
+  const key = id || 'me';
+  if (YF.key !== key) Object.assign(YF, { key, person: '', team: '' });
+  const pool = d.people.filter(p => !YF.team || p.team === YF.team);
+  if (YF.person && !pool.some(p => String(p.id) === YF.person)) YF.person = '';
+  const list = pool.filter(p => !YF.person || String(p.id) === YF.person);
+  const n2 = x => x == null ? '' : x.toFixed(2);
+  const mh = m => { const [mo, y] = m.label.split(' '); return `${mo}<br>${y}`; };
+  // the months shown: the whole year, or the three months of the chosen quarter (Quarter I = Apr-Jun)
+  const qi = YF.q === '' ? null : +YF.q, cols = qi == null ? d.months.map((_, i) => i) : [qi * 3, qi * 3 + 1, qi * 3 + 2];
+  const pick = arr => cols.map(i => arr[i]);
+  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${esc(p.designation)} · ${esc(p.team)}${p.manager ? ` · reports to ${esc(p.manager)}` : ''}</span></div>
+      <a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a><span class="sp"></span>
+      ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}">${ico('team')}Their team</a>` : ''}</div>
+    <div class="tablewrap"><table class="ytab"><tr><th>KRA name</th>${pick(d.months).map(m => `<th class="nr ${m.open ? '' : 'off'}">${mh(m)}</th>`).join('')}</tr>
+    ${[['operational', 'Operational'], ['process', 'Process'], ['people', 'People']].map(([k, l]) => `<tr><td>${l}</td>${pick(p.cells).map(c => `<td class="nr">${c && c[k] != null ? n2(c[k]) : ''}</td>`).join('')}</tr>`).join('')}
+    <tr class="ytot"><td>Total</td>${pick(p.cells).map(c => `<td class="nr">${c && c.total != null ? `<b class="rt ${rateCls(c.total)}">${n2(c.total)}</b>` : ''}</td>`).join('')}</tr>
+    <tr class="yavg"><td>Quarterly average</td>${(qi == null ? p.quarters.map((a, i) => [a, i]) : [[p.quarters[qi], qi]]).map(([a, i]) => `<td colspan="3" class="c"><small>Q${i + 1}</small> <b class="rt ${rateCls(a)}">${a != null ? n2(a) : '–'}</b></td>`).join('')}</tr>
+    ${qi != null ? '' : `<tr class="yavg"><td>Year average</td><td colspan="12" class="c"><b class="rt ${rateCls(p.year)}">${p.year != null ? n2(p.year) : '–'}</b></td></tr>`}</table></div></div>`;
+  const root = d.person, mgrView = root && d.people.length > 1;
+  v.innerHTML = head(d.me ? (mgrView ? 'Team report' : 'My report') : root ? (mgrView ? `Team report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team report',
+      root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
+    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(t => [t, t])], { icon: 'sitemap' }) : ''}
+    ${d.people.length > 1 ? ddSelect('yper', YF.person, [['', 'All people'], ...pool.map(p => [String(p.id), p.name])], { icon: 'team' }) : ''}
+    ${ddSelect('yq', YF.q, [['', 'All'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']], { icon: 'filter' })}
+    ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
+    <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
+    ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length - 1} ${d.people.length === 2 ? 'person' : 'people'} under them</span></div>` : ''}
+    ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
+    <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
+  $('#yfy').onchange = e => { S.yfy = +e.target.value; pages.yearly(v, id); };
+  $('#yq').onchange = e => { YF.q = e.target.value; pages.yearly(v, id); };
+  if ($('#yper')) $('#yper').onchange = e => { YF.person = e.target.value; pages.yearly(v, id); };
+  if ($('#yteam')) $('#yteam').onchange = e => { YF.team = e.target.value; YF.person = ''; pages.yearly(v, id); };
+};
 
 // ---------- review status report ----------
 const RF = { view: null, team: '', manager: '', status: '' };
@@ -971,7 +1132,7 @@ function reportPdf(d, c) {
     <div class="k">${[['Scheduled', c.scheduled], ['Submitted', c.submitted], ['Completed, not submitted', c.notSubmitted], ['Form incomplete', c.notCompleted], ['Overdue', c.pending]].map(([l, n]) => `<div><small>${l}</small><b>${n}</b></div>`).join('')}</div>
     <table><tr><th>Manager / team</th><th>Employee</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
     ${d.rows.map(r => `<tr><td>${esc(r.manager)} / ${esc(r.team)}</td><td>${esc(r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map(esc).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="9">No reviews.</td></tr>'}</table>
-    <footer>Verve Advisory · Performance Management System · For internal use</footer></body></html>`;
+    <footer>Verve Advisory · Performance Management System</footer></body></html>`;
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
   document.body.appendChild(f);
   f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
@@ -1183,7 +1344,8 @@ pages.params = async (v, arg) => {
       m.querySelector('#ok').onclick = async () => { await api('/params', { method: 'PUT', body: { from: m.querySelector('#eff').value, data: P } }); m.remove(); toast('Saved'); pages.params(v); };
     }
   };
-  if (admin) { await questionsBox($('#qbox')); if (arg === 'questions') requestAnimationFrame(() => { SC().scrollTop = $('#qbox').offsetTop - 24; }); }
+  // the page may have been left while the questions loaded, so look the box up again before scrolling to it
+  if (admin) { await questionsBox($('#qbox')); if (arg === 'questions') requestAnimationFrame(() => { const b = $('#qbox'); if (b) SC().scrollTop = b.offsetTop - 24; }); }
 };
 
 // ---------- questionnaire (admin, shown inside Parameters Summary) ----------
@@ -1194,8 +1356,33 @@ async function questionsBox(v) {
   const list = qs.filter(q => q.type === tab && !q.to).sort((a, b) => a.order - b.order);
   v.innerHTML = `<div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico('question')}</i>Questionnaire (monthly review form):</b><span class="acts"><button class="btn sm pri" data-a="new">${ico('plus')}Add new question</button></span></div>
   <div class="row"><div class="seg" style="margin:0"><button class="chip ${tab === 'text' ? 'on' : ''}" data-tab="text">Questions 1 to 5 (text answers)</button><button class="chip ${tab === 'rating' ? 'on' : ''}" data-tab="rating">Questions 6 to 12 (ratings)</button></div></div>
-  <div class="tablewrap"><table><tr><th>No.</th><th>Question</th><th>Answer type</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${q.type === 'text' ? 'Text answer' : 'Rating (0 to 5)'}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="up" data-id="${q.id}" title="Move up">↑</button><button class="btn sm" data-a="down" data-id="${q.id}" title="Move down">↓</button><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
+  <div class="tablewrap"><table class="qtab"><tr><th>No.</th><th>Question</th><th>Answer type</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.type === 'text' ? 'Text answer' : 'Rating (0 to 5)'}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
   <p class="small">Changes apply from the review month you choose. Forms already submitted keep the question and answers as they were. No limit on the number of questions.</p></div>`;
+  // reorder by drag-and-drop (the row moves live under the mouse) or, on the grip, with the arrow keys; saved when dropped
+  const tbl = v.querySelector('table.qtab'), order = () => [...tbl.querySelectorAll('tr[data-q]')].map(r => r.dataset.q), start = order();
+  const renum = () => tbl.querySelectorAll('tr[data-q] .qno span').forEach((x, i) => { x.textContent = i + 1; });
+  const saveOrder = async () => {
+    const ids = order(); if (ids.join() === start.join()) return;
+    try { await api('/questions/reorder', { method: 'POST', body: { type: tab, ids } }); toast('Question order saved'); }
+    catch (er) { toast(er.message, 'err'); }
+    const f = document.activeElement && document.activeElement.dataset.grip; await questionsBox(v);
+    if (f) { const g = v.querySelector(`[data-grip="${f}"]`); if (g) g.focus(); }
+  };
+  let dragRow = null;
+  tbl.addEventListener('dragstart', e => { dragRow = e.target.closest && e.target.closest('tr[data-q]'); if (!dragRow) return; dragRow.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragRow.dataset.q); });
+  tbl.addEventListener('dragover', e => {
+    if (!dragRow) return; e.preventDefault();
+    const tr = e.target.closest('tr[data-q]'); if (!tr || tr === dragRow) return;
+    const r = tr.getBoundingClientRect(); tr.parentNode.insertBefore(dragRow, e.clientY > r.top + r.height / 2 ? tr.nextSibling : tr); renum();
+  });
+  tbl.addEventListener('drop', e => e.preventDefault());
+  tbl.addEventListener('dragend', () => { if (!dragRow) return; dragRow.classList.remove('dragging'); dragRow = null; saveOrder(); });
+  tbl.addEventListener('keydown', e => {
+    const g = e.target.closest('[data-grip]'); if (!g || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault(); const tr = g.closest('tr'), sib = e.key === 'ArrowUp' ? tr.previousElementSibling : tr.nextElementSibling;
+    if (!sib || !sib.dataset.q) return;
+    e.key === 'ArrowUp' ? tr.parentNode.insertBefore(tr, sib) : tr.parentNode.insertBefore(sib, tr); renum(); g.focus(); saveOrder();
+  });
   const monthSelHtml = (sel) => `<select id="eff">${S.me.months.map(x => `<option value="${x.key}" ${x.key === sel ? 'selected' : ''}>${x.label}</option>`).join('')}</select>`;
   const dialog = (title, q) => {
     const m = modal(`<h2>${title}</h2><label class="f">Question text <i>*</i></label><textarea id="qt">${esc(q?.text || '')}</textarea>
@@ -1214,7 +1401,6 @@ async function questionsBox(v) {
     if (t.dataset.tab) { S.qtab = t.dataset.tab; questionsBox(v); }
     if (a === 'new') dialog('Add new question');
     if (a === 'edit') dialog('Edit question', qs.find(q => q.id === t.dataset.id));
-    if (a === 'up' || a === 'down') { await api('/questions/move', { method: 'POST', body: { id: t.dataset.id, dir: a } }); questionsBox(v); }
     if (a === 'del') {
       const q = qs.find(x => x.id === t.dataset.id);
       const m = modal(`<h2>Delete question?</h2><p>${esc(q.text)}</p><div class="warn">New forms from the chosen month will no longer show this question. Answers already submitted are kept and stay visible in past forms.</div><label class="f">Delete from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="row" style="margin-top:12px"><button class="btn dng solid" id="ok">Delete question</button><button class="btn" id="no">Cancel</button></div>`);
