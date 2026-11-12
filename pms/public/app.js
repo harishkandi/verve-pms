@@ -852,8 +852,8 @@ function drawForm(v, errors) {
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="kpi">${esc(r.kpi)}</textarea>` : esc(r.kpi)}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="target">${esc(r.target)}</textarea>` : esc(r.target)}</td>
       <td>${ed ? `<input class="num" type="number" data-k="${k}" data-i="${i}" data-f="weight" value="${r.weight}">` : r.weight}</td>
-      <td>${rateSel(r.self, `data-k="${k}" data-i="${i}" data-f="self"`, p.editSelf, `${r.self != null ? 'filled' : ''} ${needSelf && r.self == null ? 'err' : ''}`, KRA_RATINGS, '%')}</td>
-      <td>${rateSel(r.mgr, `data-k="${k}" data-i="${i}" data-f="mgr"`, p.editManager, r.mgr != null ? 'filled' : '', KRA_RATINGS, '%')}</td>
+      <td>${rateSel(r.self, `data-k="${k}" data-i="${i}" data-f="self"`, p.editSelf, `${r.self != null ? 'filled' : ''} ${needSelf && r.self == null ? 'err' : ''}`, KRA_RATINGS)}</td>
+      <td>${rateSel(r.mgr, `data-k="${k}" data-i="${i}" data-f="mgr"`, p.editManager, r.mgr != null ? 'filled' : '', KRA_RATINGS)}</td>
       <td><textarea class="${needSelf && !(r.selfRemark || '').trim() ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="selfRemark" ${p.editSelf ? '' : 'disabled'}>${esc(r.selfRemark)}</textarea></td>
       <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'}>${esc(r.mgrRemark)}</textarea>
       ${needRemark ? '<div class="flag">Manager remarks are required because there is a difference between the employee\'s self-rating and the manager\'s rating.</div>' : ''}</td></tr>`;
@@ -864,8 +864,7 @@ function drawForm(v, errors) {
   const text = qs.filter(q => q.type === 'text'), rate = qs.filter(q => q.type === 'rating');
   const noDate = !f.reviewDate && attempted;
   const sum = formSummary(f);
-  const sumLink = showSummary() ? ' · <a href="#" id="tosum">See the review summary</a>' : '';
-  const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b>${sumLink}` : `Monthly rating: shows once every self and manager rating is in${sumLink}`;
+  const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b>` : `Monthly rating: shows once every self and manager rating is in`;
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(monthLabel(S.month))}`) +
     `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn kcopy" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
@@ -882,6 +881,7 @@ function drawForm(v, errors) {
     ${sec('operational', 'Operational', '(Our value addition to the client via quality/financially)')}
     ${sec('process', 'Process', '(SOP and ClickUp)')}
     ${sec('people', 'People', '(Learning)')}
+    ${ratingBox(f)}
     <div class="kra qa" id="sec-questionnaire">Questionnaire<span>Text answers and rated questions</span></div>
     <div class="tablewrap"><table style="table-layout:fixed"><colgroup><col style="width:90px"><col style="width:38%"><col></colgroup><tr><th>Sr. no</th><th>Question</th><th>Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="row" style="margin:8px 0 0"><button class="btn pri sm" data-qsave="${q.id}">Save</button><button class="btn sm" data-qcancel="${q.id}">Cancel</button></div>`
       : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? `<button class="ibtn" data-qedit="${q.id}" title="Edit answer" aria-label="Edit answer" style="vertical-align:middle">${ico('pencil')}</button>` : ''}`}</td></tr>`).join('')}${rate.map((q, i) => {
@@ -891,11 +891,8 @@ function drawForm(v, errors) {
         <td>${rateSel(a.mgr, `data-qr="${q.id}" data-f="mgr"`, p.editManager, a.mgr != null ? 'filled' : '')}</td>
         <td><textarea class="${need ? 'err' : ''}" rows="1" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'}>${esc(a.remark || '')}</textarea>${need ? '<div class="flag">Manager remark required: ratings differ.</div>' : ''}</td></tr></table></td></tr>`;
     }).join('')}</table></div>
-    ${showSummary() ? `<div id="sec-summary">${summaryCard(sum)}</div>` : ''}
     <div class="row" style="justify-content:flex-end;margin-top:14px">
     ${p.canReturn ? '<button class="btn" id="giveback" title="Let the employee change their self ratings, remarks and answers again">Send back to employee</button>' : ''}
-    ${p.editSelf || p.editManager ? '<button class="btn" id="save">Save draft</button>' : ''}
-    ${p.canSelfSubmit ? '<button class="btn pri" id="selfsub">Submit to manager</button>' : ''}
     ${p.canSubmit ? '<button class="btn pri" id="submit">Submit review</button>' : ''}
     </div>`;
   wireForm(v);
@@ -918,16 +915,18 @@ function formSummary(f) {
   const qavg = key => { const v = qa.map(a => a[key]).filter(has); return v.length ? r1(v.reduce((a, b) => a + +b, 0) / v.length) : null; };
   return { kras, rating, points: done ? r1(set.reduce((a, x) => a + x.points, 0)) : null, weightTotal: tw, final: !!f.submitted, newJoiner: FP.newJoiner, q: { self: qavg('self'), mgr: qavg('mgr'), n: qa.length } };
 }
-function summaryCard(s) {
-  const cell = x => x == null ? '<span class="small">–</span>' : pc(x);
-  return `<div class="kra" style="margin-top:24px">Review summary<span>${s.final ? 'Final result of the submitted review' : 'Updates as ratings are entered; final once the review is submitted'}</span></div>
-  <div class="card fsum"><div class="fsum-big"><b class="rt ${rateCls(s.rating)}">${pc(s.rating)}</b><div><b>Monthly rating</b> <span class="badge ${s.final ? 'b-green' : 'b-amber'}">${s.final ? 'Final' : 'Preview'}</span>
-    <div class="small">${s.newJoiner ? 'New joiner: the rating starts once KRAs are set.' : s.rating == null ? 'Shows once every self and manager rating is in.' : `${s.points} points out of ${s.weightTotal} KRA weightage. Each KRA counts 30% self + 70% manager rating.`}</div></div></div>
-  ${s.newJoiner ? '' : `<div class="tablewrap" style="margin:16px 0 0"><table><tr><th>KRA</th><th class="nr">Weightage</th><th class="nr">Self rating (30%)</th><th class="nr">Manager rating (70%)</th><th class="nr">KRA score</th><th class="nr">Points</th></tr>
-  ${s.kras.map(x => x.subKras ? `<tr><td><b>${x.label}</b> <span class="small">${x.subKras} sub-KRA${x.subKras === 1 ? '' : 's'}</span></td><td class="nr">${x.weight}</td><td class="nr">${cell(x.self)}</td><td class="nr">${cell(x.mgr)}</td><td class="nr">${x.score != null ? `<b class="rt ${rateCls(x.score)}">${pc(x.score)}</b>` : cell(null)}</td><td class="nr">${x.points ?? '–'}</td></tr>`
-    : `<tr><td><b>${x.label}</b></td><td class="nr">${x.weight}</td><td colspan="4" class="small">KRA not set</td></tr>`).join('')}
-  <tr class="sub"><td><b>Total</b></td><td class="nr"><b>${s.weightTotal}</b></td><td></td><td></td><td class="nr"><b>${pc(s.rating)}</b></td><td class="nr"><b>${s.points ?? '–'}</b></td></tr></table></div>`}
-  ${s.q.n ? `<div class="small" style="margin-top:12px">Questionnaire ratings (out of 5, not part of the monthly rating): self average <b>${s.q.self ?? '–'}</b> · manager average <b>${s.q.mgr ?? '–'}</b></div>` : ''}</div>`;
+// Rating table below the People KRA: shows once every self and manager rating is in (average of the KRA ratings by KRA weightage,
+// monthly rating = 30% self + 70% manager)
+function ratingBox(f) {
+  const has = x => x != null && x !== '';
+  const set = ['operational', 'process', 'people'].map(k => f.kras[k]).filter(k => k.rows.length);
+  if (!set.length || !set.every(k => k.rows.every(r => has(r.self) && has(r.mgr)))) return '';
+  const tw = set.reduce((a, k) => a + (+k.weight || 0), 0); if (!tw) return '';
+  const avg = key => set.reduce((a, k) => { const rw = k.rows.reduce((x, r) => x + (+r.weight || 0), 0); return a + k.weight * (rw ? k.rows.reduce((x, r) => x + r.weight * r[key], 0) / rw : 0); }, 0) / tw;
+  const sr = avg('self'), mr = avg('mgr'), r2 = x => +x.toFixed(2);
+  return `<div class="tablewrap" style="margin-top:20px"><table class="ratebox"><tr><th>Rating</th><th>Self Rating</th><th>Management Rating</th></tr>
+    <tr><td>Average Rating</td><td>${r2(sr)}</td><td>${r2(mr)}</td></tr>
+    <tr class="mon"><td>Monthly Rating</td><td colspan="2"><b>${r2(0.3 * sr + 0.7 * mr)}%</b></td></tr></table></div>`;
 }
 // Export KPI: the monthly form as it is on screen, as a CSV file Excel opens directly (UTF-8 with BOM)
 function exportKpi() {
@@ -943,15 +942,6 @@ function exportKpi() {
   const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = `KPI_${e.name.replace(/\s+/g, '_')}_${f.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-// the Review summary (KRA-by-KRA calculation) is for reviewers only: employees do not see it
-const showSummary = () => S.me.role !== 'employee';
-// after Save draft or Submit: the calculated result in a dialog (employees just get the toast)
-function summaryModal(title) {
-  if (!showSummary()) return;
-  const m = modal(`<h2>${esc(title)}</h2>${summaryCard(formSummary(FP.form))}<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn pri" id="ok">Close</button></div>`);
-  m.querySelector('.box').classList.add('wide');
-  m.querySelector('#ok').onclick = () => m.remove();
 }
 // KRA change requests: employees ask, the manager approves, then the employee can edit once
 function kraBanner(p) {
@@ -983,7 +973,7 @@ function wireForm(v) {
     if (e.target.id === 'reviewDate' && e.target.value && +e.target.value.slice(0, 4) < 1000) return; // still typing the year
     // employees' entries are also saved as they type (Save draft just confirms and shows the summary)
     const mine = ++changeSeq;
-    if (S.me.role === 'employee' && (FP.perms.editSelf || FP.perms.editManager)) { try { await save(); } catch (er) { toast(er.message, 'err'); } }
+    if (FP.perms.editSelf || FP.perms.editManager) { try { await save(); } catch (er) { toast(er.message, 'err'); } }
     if (mine !== changeSeq) return; // a newer change is in flight; it will redraw (and keep any remark focus)
     // a typed date fires change after every digit, and a redraw would throw the cursor out of the field
     if (e.target.id === 'reviewDate' && e.target.value && !e.target.classList.contains('err')) return;
@@ -1014,16 +1004,14 @@ function wireForm(v) {
   const redraw = () => { const y = SC().scrollTop; drawForm(v); SC().scrollTop = y; };
   // question answers: the pencil opens a box; the Save button stores the answer (ratings and remarks still save automatically)
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
-  if ($('#save')) $('#save').onclick = async () => { try { await save(); toast('Draft saved'); drawForm(v); summaryModal('Draft saved'); } catch (e) { toast(e.message, 'err'); } };
   $('#expk').onclick = () => exportKpi();
-  if ($('#tosum')) $('#tosum').onclick = e => { e.preventDefault(); $('#sec-summary').scrollIntoView({ block: 'start', behavior: 'smooth' }); };
   const showErrors = e => { drawForm(v, e.data?.errors ? [e.message, ...e.data.errors] : [e.message]); SC().scrollTo({ top: 0, behavior: 'smooth' }); };
   // step 2 (manager/admin): final submit, locks the form for good
   if ($('#submit')) $('#submit').onclick = async () => {
     attempted = true;
     try { await save(); } catch (e) { return showErrors(e); }
     if (!await confirmBox('Submit this review?', 'After submitting, the form is locked for good. Nobody can change it, admins included.', { ok: 'Submit review' })) return;
-    try { FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Review submitted'); drawForm(v); summaryModal('Review submitted'); }
+    try { FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Review submitted'); drawForm(v); }
     catch (e) { showErrors(e); }
   };
   // step 1 (employee): send self ratings, remarks and answers to the manager
@@ -1031,7 +1019,7 @@ function wireForm(v) {
     attempted = true;
     try { await save(); } catch (e) { return showErrors(e); }
     if (!await confirmBox('Submit to your manager?', 'Your self ratings, remarks and answers will be sent to your manager and become read-only. Your manager can send the form back if something needs changing.', { ok: 'Submit to manager' })) return;
-    try { FP = await api('/form/self-submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Sent to your manager'); drawForm(v); summaryModal('Sent to your manager'); }
+    try { FP = await api('/form/self-submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Sent to your manager'); drawForm(v); }
     catch (e) { showErrors(e); }
   };
   if ($('#giveback')) $('#giveback').onclick = async () => {
