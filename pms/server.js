@@ -734,7 +734,7 @@ route('PUT', '/api/employees', ({ user, body }) => {
 route('POST', '/api/employees/inactive', ({ user, body }) => {
   adminOnly(user);
   const e = mustEmp(body.id);
-  if (!body.date || !body.reason) throw bad('Inactive-from date and reason are required.');
+  body.date = body.date || config.today; body.reason = body.reason || 'Moved to inactive'; // the screen only asks for a confirmation
   const f = L.peek(e.id, config.currentMonth);
   const warning = f && !['Completed and Submitted', 'Completed but Not Submitted'].includes(L.reviewStatus(f)) && body.date.slice(0, 7) === config.currentMonth
     ? 'Their review this month is not completed. It is counted until the inactive date.' : null;

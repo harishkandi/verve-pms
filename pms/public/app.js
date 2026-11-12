@@ -915,10 +915,11 @@ function formSummary(f) {
   const qavg = key => { const v = qa.map(a => a[key]).filter(has); return v.length ? r1(v.reduce((a, b) => a + +b, 0) / v.length) : null; };
   return { kras, rating, points: done ? r1(set.reduce((a, x) => a + x.points, 0)) : null, weightTotal: tw, final: !!f.submitted, newJoiner: FP.newJoiner, q: { self: qavg('self'), mgr: qavg('mgr'), n: qa.length } };
 }
-// Rating table below the People KRA: shows once every self and manager rating is in (average of the KRA ratings by KRA weightage,
+// Rating table below the People KRA: shown to everyone, only once the review is submitted (average of the KRA ratings by KRA weightage,
 // monthly rating = 30% self + 70% manager)
 function ratingBox(f) {
   const has = x => x != null && x !== '';
+  if (!f.submitted) return ''; // only once the manager has submitted the review
   const set = ['operational', 'process', 'people'].map(k => f.kras[k]).filter(k => k.rows.length);
   if (!set.length || !set.every(k => k.rows.every(r => has(r.self) && has(r.mgr)))) return '';
   const tw = set.reduce((a, k) => a + (+k.weight || 0), 0); if (!tw) return '';
@@ -1663,12 +1664,9 @@ pages.employees = async (v, arg) => {
       };
     }
     if (a === 'off') {
-      const m = modal(`<h2>Move ${esc(t.dataset.n)} to inactive?</h2><div id="er"></div><p class="small">From the chosen date the employee is left out of review schedules, status counts, reports and manager emails. Past forms stay available.</p>
-      <label class="f">Inactive from <i>*</i></label><input type="date" id="d"><label class="f">Reason <i>*</i></label><select id="r"><option>Resigned</option><option>Transferred out</option><option>Contract ended</option><option>Other</option></select><label class="f">Note (optional)</label><textarea id="note"></textarea>
-      <div class="row"><button class="btn dng solid" id="ok">Move to inactive</button><button class="btn" id="no">Cancel</button></div>`);
-      m.querySelector('#no').onclick = () => m.remove();
-      const go = async confirmed => { try { const r = await api('/employees/inactive', { method: 'POST', body: { id: t.dataset.id, date: m.querySelector('#d').value, reason: m.querySelector('#r').value, note: m.querySelector('#note').value, confirm: confirmed } }); if (r.needsConfirm) { m.querySelector('#er').innerHTML = `<div class="warn">${esc(r.warning)} Click again to confirm.</div>`; m.querySelector('#ok').onclick = () => go(true); return; } m.remove(); pages.employees(v); } catch (er) { m.querySelector('#er').innerHTML = errBox(er); } };
-      m.querySelector('#ok').onclick = () => go(false);
+      // just a confirmation: the inactive-from date is today and the person moves to All inactive employees
+      if (!await confirmBox(`Move ${t.dataset.n} to inactive?`, 'They are left out of review schedules, status counts, reports and manager emails from today. Past forms stay available.', { ok: 'Move to inactive', danger: true })) return;
+      try { await api('/employees/inactive', { method: 'POST', body: { id: t.dataset.id, confirm: true } }); toast(`${t.dataset.n} moved to inactive`); pages.employees(v); } catch (er) { toast(er.message, 'err'); }
     }
     if (a === 'on' && await confirmBox(`Reactivate ${t.dataset.n}?`, 'They can sign in again and are counted in schedules, reports and emails from today.', { ok: 'Reactivate' })) { await api('/employees/reactivate', { method: 'POST', body: { id: t.dataset.id } }); toast('Reactivated'); pages.employees(v); }
   };
