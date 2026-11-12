@@ -24,7 +24,8 @@ class Redirect { constructor(url) { this.url = url; } }
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
 // managers, and the employee themself, may copy last month's KRAs (copying does not need approval)
-const canCopyKras = (viewer, f) => canEditKras(viewer, f) || (!f.locked && viewer.id === f.empId); // employees may always copy last month's KRAs
+// (until they send the form to their manager: then their part is read-only)
+const canCopyKras = (viewer, f) => canEditKras(viewer, f) || (!f.locked && !f.selfSubmitted && viewer.id === f.empId);
 function formPayload(viewer, f) {
   const e = L.emp(f.empId);
   const month = f.month;
@@ -50,9 +51,9 @@ function formPayload(viewer, f) {
 }
 // the employee and their reviewers (managers, directors, admin) edit KRAs directly until the review is submitted
 // employees cannot change their own KRAs; they send a request, and once their manager approves it they can make the change (one save)
-const kraGrant = (viewer, f) => viewer.id === f.empId && !!f.kraRequest && f.kraRequest.status === 'approved';
+const kraGrant = (viewer, f) => viewer.id === f.empId && !f.selfSubmitted && !!f.kraRequest && f.kraRequest.status === 'approved';
 const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || kraGrant(viewer, f));
-const canRequestKra = (viewer, f) => !f.locked && viewer.id === f.empId && !L.canManage(viewer, f.empId) && !(f.kraRequest && ['pending', 'approved'].includes(f.kraRequest.status));
+const canRequestKra = (viewer, f) => !f.locked && !f.selfSubmitted && viewer.id === f.empId && !L.canManage(viewer, f.empId) && !(f.kraRequest && ['pending', 'approved'].includes(f.kraRequest.status));
 const canDecideKra = (viewer, f) => !f.locked && viewer.id !== f.empId && L.canManage(viewer, f.empId) && !!f.kraRequest && f.kraRequest.status === 'pending';
 const fyLabel = m => { const [y, mo] = m.split('-').map(Number); const s = mo >= 4 ? y : y - 1; return `FY ${s}-${s + 1}`; };
 

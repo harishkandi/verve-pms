@@ -22,7 +22,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name, Reporting Manager, Designation,
   Department (= team), Director; 76 rows + 4 top-level directors).
   It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
-  names in code. `employees.js` parses/checks it (`npm run employees -- private/employees.tsv`, add `--apply` to write
+  names in code. Shared with the team ONLY in the private org repo, on the separate branch `pms/employee-list`
+  (one file, `employees.tsv`, no code; never merge it into a code branch, never push it to `personal`). Get it with
+  `git fetch origin && git show origin/pms/employee-list:employees.tsv > pms/private/employees.tsv`. `employees.js` parses/checks it (`npm run employees -- private/employees.tsv`, add `--apply` to write
   into `DATABASE_URL` = staging); `data.js` also loads it on boot when the file exists. First import removed all demo
   people and demo records; later imports update by name, add new people, mark missing ones inactive, keep forms.
   Managers not on the list become top-level directors (not reviewed). Role is derived: no manager = director, has
@@ -64,8 +66,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `employeeTodo` is empty; sets `form.selfSubmitted`, their part is then read-only), the manager can "Send back to
   employee" (`POST /api/form/return`) or "Submit review" (`POST /api/form/submit`, final). Everyone who can edit gets
   Save draft; employees' entries also autosave. A manager remark is needed only when self and manager ratings differ; a submitted
-  monthly form is locked for good (no reopen, no edit request, admins included); until then the employee edits their
-  own KRAs directly (there is no request/approve step); the One Pager Document is hidden from
+  monthly form is locked for good (no reopen, no edit request, admins included). KRA changes by an employee need
+  their manager's approval (Vidya, 2026-11-12: `POST /api/kra-request`, `/api/kra-request/decide`; an approval allows
+  one KRA save, pending requests show on the manager's dashboard); copying last month's KRAs needs no approval; none
+  of this is possible after "Submit to manager" (`selfSubmitted`). The One Pager Document is hidden from
   employees; monthly rating = per sub-KRA 30% self + 70% manager, weighted by
   sub-KRA then KRA weight; demo "today" is `config.today` in `data.js`.
 
