@@ -145,6 +145,11 @@ function migrate() {
   if (config.windows.Leadership) { config.windows.Directors ||= config.windows.Leadership; delete config.windows.Leadership; }
   // the Directors team always has a window (top-level people); other teams come from the employee list (employees.js)
   config.windows.Directors ||= { start: 25, end: 30 };
+  // once the real list is in, windows of teams nobody is in (the old demo teams) go
+  if (employees.some(e => e.src === 'list')) {
+    const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
+    for (const t of Object.keys(config.windows)) if (t !== 'Directors' && !teams.has(t)) delete config.windows[t];
+  }
 }
 
 // the real employee list, when this machine has it (pms/private/employees.tsv). It is not in git, so Render does not
