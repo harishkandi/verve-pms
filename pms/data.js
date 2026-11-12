@@ -29,6 +29,8 @@ const config = {
     HR: { start: 25, end: 30 },
     Directors: { start: 25, end: 30 },
   },
+  // a manager's whole team can have its own window: { <manager id>: { start, end } } (set from the employee list or the Scheduling page)
+  managerWindows: {},
 };
 
 // role: admin | director | manager | teamlead | employee ; level is for the Reporting Manager menu.
@@ -117,10 +119,28 @@ const defaultRows = () => ({
 
 const emptyKras = () => ({ operational: { weight: 60, rows: [] }, process: { weight: 20, rows: [] }, people: { weight: 20, rows: [] } });
 
-function windowFor(team, month) {
-  const w = config.windows[team] || { start: 25, end: 31 };
-  return { start: `${month}-${pad(w.start)}`, end: `${month}-${pad(Math.min(w.end, daysIn(month)))}` };
+const DEFAULT_WINDOW = { start: 25, end: 2 };
+// a window whose end day is before its start day runs into the next month (25th to the 2nd)
+function windowDates(w, month) {
+  const [y, m] = month.split('-').map(Number);
+  const start = `${month}-${pad(Math.min(w.start, daysIn(month)))}`;
+  if (w.end >= w.start) return { start, end: `${month}-${pad(Math.min(w.end, daysIn(month)))}` };
+  const next = m === 12 ? `${y + 1}-01` : `${y}-${pad(m + 1)}`;
+  return { start, end: `${next}-${pad(Math.min(w.end, daysIn(next)))}` };
 }
+const windowFor = (team, month) => windowDates(config.windows[team] || DEFAULT_WINDOW, month);
+// date arithmetic on YYYY-MM-DD without time zones
+const addDays = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+// who sets this person's window: the nearest manager above them with their own window, otherwise the team's window
+function windowSource(e) {
+  const seen = new Set();
+  for (let m = employees.find(x => x.id === e.managerId); m && !seen.has(m.id); m = employees.find(x => x.id === m.managerId)) {
+    seen.add(m.id);
+    if (config.managerWindows && config.managerWindows[m.id]) return { key: 'm' + m.id, managerId: m.id, w: config.managerWindows[m.id] };
+  }
+  return { key: 't:' + e.team, managerId: null, w: config.windows[e.team] || DEFAULT_WINDOW };
+}
+const windowOf = (e, month) => ({ ...windowDates(windowSource(e).w, month), key: windowSource(e).key });
 
 // KRA ratings moved from 0-5 to percentages: 1 point = 20%, never below 10%
 const toPct = v => v === null || v === undefined || v === '' ? v : Math.min(100, Math.max(10, Math.round(+v * 2) * 10));
@@ -145,6 +165,12 @@ function migrate() {
   if (config.windows.Leadership) { config.windows.Directors ||= config.windows.Leadership; delete config.windows.Leadership; }
   // the Directors team always has a window (top-level people); other teams come from the employee list (employees.js)
   config.windows.Directors ||= { start: 25, end: 30 };
+  config.managerWindows ||= {};
+  // one-off: windows still at the old 25th-31st / 25th-30th defaults become 25th to the 2nd of the next month
+  if (!config.windowsV2) {
+    for (const [t, w] of Object.entries(config.windows)) if (w.start === 25 && (w.end === 31 || w.end === 30)) config.windows[t] = { start: 25, end: 2 };
+    config.windowsV2 = true;
+  }
   // once the real list is in, windows of teams nobody is in (the old demo teams) go
   if (employees.some(e => e.src === 'list')) {
     const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
@@ -159,4 +185,4 @@ if (fs.existsSync(LIST_FILE)) {
   catch (e) { console.error(`Employee list not loaded (${LIST_FILE}): ${e.message}`); }
 }
 
-module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, defaultRows, emptyKras, pad };
+module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, audit, fyMonths, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad };

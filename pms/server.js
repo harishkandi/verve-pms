@@ -197,13 +197,25 @@ const windowState = w => config.today < w.start ? { state: 'upcoming', days: day
   : config.today > w.end ? { state: 'closed', days: daysBetween(w.end, config.today) } : { state: 'open', days: daysBetween(config.today, w.end) };
 const fmtDay = iso => { const [, m, d] = iso.split('-').map(Number); return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
 const joinNames = a => a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+// report rows grouped by review window: a team follows its department's window unless a manager above it has its own
+function windowGroups(rows, month) {
+  const groups = new Map();
+  for (const r of rows) {
+    if (!groups.has(r.winKey)) {
+      const e = L.emp(r.empId), src = D.windowSource(e), mgr = src.managerId ? L.emp(src.managerId) : null;
+      groups.set(r.winKey, { key: r.winKey, team: r.team, managerId: src.managerId, label: mgr ? `${r.team} · ${mgr.name}'s team` : r.team, days: src.w, window: D.windowOf(e, month), rows: [] });
+    }
+    groups.get(r.winKey).rows.push(r);
+  }
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 // one short line for the hero banner: scheduled count, then the most useful window fact
 function homeSummary(teams, counts) {
   const bits = [`${plural(counts.scheduled, 'review')} scheduled`];
   const open = teams.filter(t => t.state === 'open'), up = teams.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
-  if (open.length) { const last = open.map(t => t.window.end).sort().pop(); bits.push(open.length === 1 ? `${open[0].team} window open until ${fmtDay(last)}` : `${open.length} windows open until ${fmtDay(last)}`); }
-  else if (up.length) bits.push(`Next window: ${up[0].team}, ${fmtDay(up[0].window.start)}`);
+  if (open.length) { const last = open.map(t => t.window.end).sort().pop(); bits.push(open.length === 1 ? `${open[0].label} window open until ${fmtDay(last)}` : `${open.length} windows open until ${fmtDay(last)}`); }
+  else if (up.length) bits.push(`Next window: ${up[0].label}, ${fmtDay(up[0].window.start)}`);
   else if (teams.length) bits.push('All windows closed');
   if (counts.pending) bits.push(`${plural(counts.pending, 'review')} past due`);
   return bits.join(' · ');
@@ -211,9 +223,9 @@ function homeSummary(teams, counts) {
 function homeTips(teams, counts, emails) {
   const tips = [];
   const up = teams.filter(t => t.state === 'upcoming' && t.collected < t.total);
-  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; const [y, m, d] = first.split('-').map(Number); const by = new Date(y, m - 1, d - 3); tips.push(`Collect ${joinNames(up.map(t => t.team))} review dates before ${fmtDay(by.toISOString().slice(0, 10))} to avoid overdue reviews.`); }
-  teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.team} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
-  teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.team} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
+  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; tips.push(`Collect ${joinNames(up.map(t => t.label))} review dates before ${fmtDay(D.addDays(first, -3))} to avoid overdue reviews.`); }
+  teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.label} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
+  teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.label} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
   if (emails && counts.scheduled && counts.submitted === counts.scheduled && !emails.drafts && !emails.sent) tips.push('All reviews are submitted. Generate the manager emails from Manager Emails.');
   return tips.slice(0, 2);
 }
@@ -228,10 +240,9 @@ route('GET', '/api/home', ({ user, q }) => {
   const mgr = user.role !== 'employee';
   const all = L.reportRows(user, month);
   const rows = q.team ? all.filter(r => r.team === q.team) : all;
-  const teams = [...new Set(all.map(r => r.team))].map(t => {
-    const tr = all.filter(r => r.team === t), w = D.windowFor(t, month);
-    const days = config.windows[t] || { start: 25, end: 31 };
-    return { team: t, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: w, startDay: days.start, endDay: days.end, ...windowState(w) };
+  const teams = windowGroups(all, month).map(g => {
+    const tr = g.rows;
+    return { key: g.key, team: g.team, label: g.label, managerId: g.managerId, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: g.window, startDay: g.days.start, endDay: g.days.end, ...windowState(g.window) };
   });
   const counts = L.counts(rows);
   // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
@@ -243,7 +254,7 @@ route('GET', '/api/home', ({ user, q }) => {
   };
   const attention = rows.filter(r => r.status !== 'Completed and Submitted' || r.flags.length)
     .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.status === 'Pending' ? 'Review pending' : r.status), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
-  const win = D.windowFor(user.team, month);
+  const win = D.windowOf(user, month);
   const scoped = q.team ? teams.filter(t => t.team === q.team) : teams; // hero text and tips follow the team filter
   const out = { month, label: D.monthLabel(month), today: config.today, counts, health, teams, attention, canEditWindows: user.role === 'admin', window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };
   const openT = scoped.filter(t => t.state === 'open'), upT = scoped.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
@@ -450,13 +461,7 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   // only people with a reporting manager have a review (same rule as ensureMonthForms); top-level directors are not reviewed
   L.visibleEmployees(user).filter(e => e.managerId && (e.id !== user.id || user.role === 'employee')).forEach(e => L.getForm(e.id, month));
   const rows = L.reportRows(user, month, { team: q.team });
-  const teams = [...new Set(rows.map(r => r.team))];
-  const windows = teams.map(t => {
-    const w = D.windowFor(t, month), tr = rows.filter(r => r.team === t);
-    const [y, m, d] = w.start.split('-').map(Number); const c = new Date(y, m - 1, d - 3);
-    const days = config.windows[t] || { start: 25, end: 31 };
-    return { team: t, start: w.start, end: w.end, startDay: days.start, endDay: days.end, collectedOn: c.toISOString().slice(0, 10), collected: tr.filter(r => r.scheduled).length, total: tr.length };
-  });
+  const windows = windowGroups(rows, month).map(g => ({ key: g.key, team: g.team, label: g.label, managerId: g.managerId, start: g.window.start, end: g.window.end, startDay: g.days.start, endDay: g.days.end, collectedOn: D.addDays(g.window.start, -3), collected: g.rows.filter(r => r.scheduled).length, total: g.rows.length }));
   return { windows, canEditWindows: user.role === 'admin', calendar: calendarState(realUser), rows: rows.map(r => {
     const f = L.peek(r.empId, month), e = L.emp(r.empId);
     return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: L.canManage(user, r.empId) };
@@ -1019,10 +1024,17 @@ route('PUT', '/api/config', ({ user, body }) => {
 // one team's review window (day of month, same every month), edited from the Scheduling page
 route('PUT', '/api/windows', ({ user, body }) => {
   adminOnly(user);
-  const team = String(body.team || '').trim(), start = Number(body.start), end = Number(body.end);
-  if (!team) throw bad('Team is required.');
+  const start = Number(body.start), end = Number(body.end);
   if (![start, end].every(n => Number.isInteger(n) && n >= 1 && n <= 31)) throw bad('Days must be whole numbers from 1 to 31.');
-  if (start > end) throw bad('The window must start on or before the day it ends.');
+  // an end day before the start day means the window runs into the next month (25 to 2)
+  if (body.managerId) {
+    const m = mustEmp(body.managerId);
+    config.managerWindows[m.id] = { start, end };
+    audit(user.name, 'review window updated', `${m.name}'s team: day ${start} to ${end}`);
+    return config.managerWindows[m.id];
+  }
+  const team = String(body.team || '').trim();
+  if (!team) throw bad('Team is required.');
   config.windows[team] = { start, end };
   audit(user.name, 'review window updated', `${team}: day ${start} to ${end}`);
   return config.windows[team];

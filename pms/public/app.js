@@ -421,15 +421,15 @@ function ddSelect(id, val, opts, o = {}) {
 }
 // admin: change a team's review window (day of month, applies to every month); w = { team, startDay, endDay }
 function windowDialog(w, onSaved) {
-  const m = modal(`<h2>Edit review window: ${esc(w.team)}</h2><div id="er"></div>
+  const m = modal(`<h2>Edit review window: ${esc(w.label || w.team)}</h2><div id="er"></div>
     <div class="row" style="align-items:flex-end;margin:0"><div><label class="f">From day <i>*</i></label><input class="num" type="number" min="1" max="31" id="ws" value="${w.startDay}"></div>
     <div><label class="f">To day <i>*</i></label><input class="num" type="number" min="1" max="31" id="we" value="${w.endDay}"></div></div>
-    <p class="small">Day of the month, used for every month. In shorter months the window ends on the last day. Dates are collected 3 days before the window opens.</p>
+    <p class="small">Day of the month, used for every month. If the end day is before the start day (25 to 2) the window ends in the next month. Dates are collected 3 days before the window opens.</p>
     <div class="row"><button class="btn pri" id="ok">Save window</button><button class="btn" id="no">Cancel</button></div>`);
   m.querySelector('#no').onclick = () => m.remove();
   m.querySelector('#ws').focus();
   m.querySelector('#ok').onclick = async () => {
-    try { await api('/windows', { method: 'PUT', body: { team: w.team, start: +m.querySelector('#ws').value, end: +m.querySelector('#we').value } }); m.remove(); toast(`${w.team} review window saved`); onSaved(); }
+    try { await api('/windows', { method: 'PUT', body: { ...(w.managerId ? { managerId: w.managerId } : { team: w.team }), start: +m.querySelector('#ws').value, end: +m.querySelector('#we').value } }); m.remove(); toast(`${w.label || w.team} review window saved`); onSaved(); }
     catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
   };
 }
@@ -719,7 +719,7 @@ pages.home = async (v, opts = {}) => {
     <div class="wgrid">
       ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(a.team)} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
       <div class="m bare">
-             ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => d.canEditWindows ? `<button type="button" class="win ed" data-win="${esc(t.team)}" title="Edit the ${esc(t.team)} review window"><b>${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</span>${winBadge(t)}</button>` : `<div class="win"><b title="${esc(t.team)}">${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
+             ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => d.canEditWindows ? `<button type="button" class="win ed" data-win="${esc(t.key)}" title="Edit the ${esc(t.label)} review window"><b>${esc(t.label)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</span>${winBadge(t)}</button>` : `<div class="win"><b title="${esc(t.label)}">${esc(t.label)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
       </div>
     </div>`;
     if (v.querySelector('#hShell') && opts.partial) {
@@ -815,7 +815,7 @@ pages.home = async (v, opts = {}) => {
       S.hteam = b.dataset.team; return pages.home(v, { partial: true, dir: to > from ? 1 : -1 });
     }
     const w = e.target.closest('[data-win]');
-    if (w) { const t = (lastHome.teams || []).find(x => x.team === w.dataset.win); if (t) windowDialog(t, () => pages.home(v, { partial: true })); return; }
+    if (w) { const t = (lastHome.teams || []).find(x => x.key === w.dataset.win); if (t) windowDialog(t, () => pages.home(v, { partial: true })); return; }
     const s = e.target.closest('[data-st]'); if (s) openReport(s.dataset.st);
   };
   v.onkeydown = e => { const s = e.target.closest?.('.stat[data-st]'); if (s && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openReport(s.dataset.st); } };
@@ -1240,7 +1240,6 @@ pages.yearly = async (v, id) => {
     ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
     <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
-    ${mgrView || d.org ? `<div class="small" style="margin:0 0 12px">${esc(monthLabel(d.cardMonth))} reviews of ${d.org ? 'everyone in the organisation' : 'the people in this report'} (pick another month in the calendar at the top)</div>${countTiles(d.counts)}` : ''}
     ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
   $('#yfy').onchange = e => { S.yfy = +e.target.value; pages.yearly(v, id); };
@@ -1332,7 +1331,7 @@ pages.scheduling = async v => {
     : r.scheduled && r.canManage && cal.connected ? `<button class="btn sm" data-inv="${r.empId}">${ico('send')}Send invite</button>` : '<span class="small">N/A</span>';
   v.innerHTML = head('Review scheduling', 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
   ${calCard}
-  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.team)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.team)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
+  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
   ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
   <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
   <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
@@ -1344,7 +1343,7 @@ pages.scheduling = async v => {
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
-  const win = r => d.windows.find(w => w.team === r.team);
+  const win = r => d.windows.find(w => w.key === r.winKey);
   // one dialog for schedule, reschedule and send-invite
   const slotDialog = (r, mode) => {
     const w = win(r), inv = r.invite, canInvite = cal.connected && r.hasEmail && !inv;
@@ -1375,7 +1374,7 @@ pages.scheduling = async v => {
   v.onclick = async e => {
     const t = e.target.closest('button, a'); if (!t) return;
     try {
-      if (t.dataset.win) windowDialog(d.windows.find(w => w.team === t.dataset.win), () => pages.scheduling(v));
+      if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
       else if (t.id === 'sc') {
         const b = {};
         v.querySelectorAll('[data-c]').forEach(i => { const k = i.dataset.c; b[k] = k === 'operationalRange' ? i.value.split(',').map(Number) : Number(i.value); });
