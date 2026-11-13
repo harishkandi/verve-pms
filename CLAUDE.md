@@ -22,7 +22,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name, Reporting Manager, Designation,
   Department (= team), Director; 76 rows + 4 top-level directors). Teams and reporting managers were replaced on
   2026-11-12 by Harish's team sheet ("Sheet4", the master for teams): 72 rows + 4 directors, 9 teams grouped by director
-  (designations kept from the earlier list; the old file is `pms/private/employees.before-2026-11-12.tsv`). Some team
+  (designations kept from the earlier list; the old file is `pms/private/employees.before-2026-11-12.tsv`). On 2026-11-13
+  designations were corrected from the name/designation table of "Task_List_HRMS_Tool - Employee_List" (11 people, e.g.
+  Consultants; specific titles like "Data Cloud Executive" kept), also on the `pms/employee-list` branch. Some team
   names are people's names, so team names never go into code: `teamLook()` in `app.js` matches keywords and gives the
   other teams distinct spare icons by their place in `S.me.teams` (sent by `/api/me`).
   It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
@@ -47,16 +49,21 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   hero + Work details card (code, email, designation, department, role, joining date, review window, reports) +
   Reporting line card (director down to the person), read-only, the admin keeps the details. Code and joining date from the list are placeholders (shown "Not set yet") until the
   admin sets them in Employees › Edit (`codeSet` / `joinedSet` flags). The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
-  removed it, 2026-11-12). Admins get a grouped menu (Reporting
-  manager / Reporting / Questions open as sub-menus); its Reporting manager lists come from `designation`
-  (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
+  removed it, 2026-11-12). Admins get a grouped menu (Reporting / Questions
+  open as sub-menus). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
+  duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
+  reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
+  click to drill down; opened from the Employees page button and names, highlights All active employees in the menu;
+  old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate).
   Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
   captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
   There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
   admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
   incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
   "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
-- Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit, Add member,
+- People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
+  member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
+- Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,
   Move to inactive). Checks: new manager active, not the admin account, no loops; "No manager" asks first (top-level
   director, not reviewed). If this month's review has started (`reviewProgress`: meeting set, sent to manager, manager
   ratings, KRA request) the admin picks "keep" (old manager finishes; `e.pendingManager` applies from next month via
@@ -71,6 +78,13 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   them who were in their old team come along (`teamOfManager` / `moveTeam` in `server.js`). Exceptions: reporting to a
   top-level director keeps the person's own team (directors lead several departments); no manager = "Directors"; a team
   the admin picks by hand in the same save wins. The Edit dialog fills the Team field as soon as a manager is picked.
+- Teams (2026-11-13): a team = the `team` name on each person + its window in `config.windows`. Admins add / rename /
+  delete (only when nobody active is in it) teams on the Teams page in the admin menu (`#/teams`, `pages.teams` in `app.js`;
+  `GET|POST|PUT /api/teams`, `POST /api/teams/delete` in `server.js`; the Window button reuses `windowDialog`). Vidya and
+  Harish each built a Teams screen; they were merged into this one page (no Teams button on Employees). "Directors" is fixed. Because the sheet
+  is master, a rename is stored in `config.teamRenames` (sheet name -> app name) and `importList` maps through it; teams
+  added in the app (`config.teamsAdded`) are not dropped while empty. A team changed by hand (`moveTeam` sets
+  `e.teamSetInApp`) is put back by the next import and listed with the replaced reporting changes.
 - Notifications (2026-11-12): bell in the top bar (`#tbbell`, panel `#tbnotes` with "Needs action" / "All", polled every
   minute via `apiCall` so no spinner). Server side is `notify.js`: `push(to, {type, text, link, action, key}, by)` (no
   note for your own action; same `key` updates the earlier item), `resolve(key)` closes action items for everyone,
@@ -81,6 +95,15 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   reporting changes, window / rules / questionnaire / parameters changes, list import (admins). In View as the admin
   sees the person's list but never marks it read. No email yet (no sender; Google Calendar already emails invites).
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
+- PMS report format (management's "PMS Reports Format" sheet, 2026-11-13) = the Review status report's "Full details"
+  switch (`/api/report?detail=1`, `fullTable()` in `app.js`) and its CSV export (same columns, sheet order: `PMS_COLUMNS` in
+  `server.js`), built by `pmsDetail()` in `logic.js`. No AI: the Operational/Process/People remark columns join each
+  sub-KRA's self and manager remark. Scheduled Date = first date picked (`f.firstScheduledDate`, older forms: first
+  reschedule's `from`). Final Status: Review Done / Questionnaire Done / Pending, "PMS form incomplete/errors/queries" (all
+  ratings in but a blocker), "Employee on leave" / "Serving Notice" (admin sets `e.workStatus = {type, from}` in Employees ›
+  Edit, from that review month on). Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
+  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules in
+  Review rules: `learningDoneMin` 60, `qMinWords` 15, `opMinSubKras` 3 (defaults filled by `migrate()`).
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
 - Reports ported from the old portal (pms.verveadvisory.com): Team report / My report (`#/yearly`, `/api/yearly`,
@@ -103,7 +126,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Save draft; employees' entries also autosave. Autosave sends only the fields that person changed (`formDirty` in
   `app.js`) and `PUT /api/form` changes only the fields it is sent, so the employee and the manager can have the form
   open together without wiping each other's entries (found in testing, 2026-11-12; never send the whole form back).
-  Top-level directors (no manager) get no new form (`mustForm`) and no My review / My report menu items. A manager remark is needed only when self and manager ratings differ; a submitted
+  Top-level directors (no manager) get no new form (`mustForm`) and no My review / My report menu items. Since 2026-11-13
+  (management meeting) Submit review needs all five on every sub-KRA: self rating, self remark, manager rating, manager remark
+  (always, not only when ratings differ: `MGR_REMARK`), and the SOP / learning document link in the self remark (`SOP_LINK` /
+  `LEARN_LINK` are now `block`); `managerGaps()` lists missing manager ratings. Rows are found by name (/sop/ in Process,
+  /learn/ in People). Questionnaire text answers under `config.qMinWords` (15) words are flagged (`Q_SHORT`), not blocked; a submitted
   monthly form is locked for good (no reopen, no edit request, admins included). KRA changes by an employee need
   their manager's approval (Vidya, 2026-11-12: `POST /api/kra-request`, `/api/kra-request/decide`; an approval allows
   one KRA save, pending requests show on the manager's dashboard); copying last month's KRAs needs no approval; none
@@ -122,7 +149,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
     npm run dev        # server on :3000, DATABASE_URL from ../.env.local (Neon), same DB as staging!
     npm start          # no .env loading; in-memory unless DATABASE_URL is set
     npm run db:reset   # drop pms_state; next start starts empty (no demo data any more), then re-import the list
-    npm run employees -- private/employees.tsv [--apply]   # check / write the real employee list
+    npm run employees -- private/employees.tsv [--apply]   # check / write the real employee list (staging; restart Render after)
+    node employees.js private/employees.tsv --apply --local-state   # same into npm run local's data (stop the local server first)
 Smoke test (demo sign-in, i.e. no Google env): `curl -c j -H 'Content-Type: application/json' -d '{"id":1}' localhost:3000/api/auth/demo`
 then `curl -b j localhost:3000/api/me` (ids follow the list order; the test admin "Verve Admin" A900 is the highest id). Non-GET calls must send `Content-Type: application/json`.
 

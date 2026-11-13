@@ -10,3 +10,10 @@ client_secret*.json
 
 # real company data (employee list): never commit, the staging repo is public
 pms/private/
+
+# made by `neon init` in the repo root (Neon tooling); the app does not use them
+/neon.ts
+/package.json
+/package-lock.json
+# reference documents kept next to the app, never served or committed (public/ is the web root)
+pms/public/*.docx

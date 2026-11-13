@@ -58,6 +58,8 @@ function formPayload(viewer, f) {
     },
     kraRequest: f.kraRequest || null,
     fy: fyLabel(month),
+    rules: { qMinWords: config.qMinWords }, // the form marks answers shorter than this
+
   };
 }
 // the employee and their reviewers (managers, directors, admin) edit KRAs directly until the review is submitted
@@ -385,7 +387,9 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
   if (!L.canManage(user, f.empId)) throw new HttpError(403, 'Only managers and admins can submit the form. Employees can fill in their self-ratings and self-remarks.');
   if (f.locked) throw bad('This form is already submitted.');
+  // everything missing at once (self rating and remark, manager rating and remark, SOP / learning links, review date)
   const errs = L.validate(f).filter(x => x.level === 'block').map(x => x.msg);
+  errs.push(...L.managerGaps(f));
   if (!L.ratingsComplete(f)) errs.push('All self and manager ratings must be entered before the form is submitted.');
   if (errs.length) throw bad('Form cannot be submitted.', { errors: [...new Set(errs)] });
   f.submitted = true; f.locked = true;
@@ -611,6 +615,7 @@ route('POST', '/api/scheduling/schedule', async ({ user, realUser, body }) => {
   const slot = slotOf(body, f);
   if (body.invite) await sendInvite(realUser, f, slot, body);
   f.scheduledDate = slot.date; f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
+  f.firstScheduledDate ||= slot.date; // the report's "Scheduled date" is the first date picked; later moves are counted as reschedules
   audit(user.name, 'schedule', `${L.emp(f.empId).name} ${slot.date} ${slot.time}${f.invite ? ' (calendar invite sent)' : ''}`);
   meetingNote(user, f, who => `${who} ${meetOf(f)} is set for ${slotText(f)} by ${user.name}${f.invite ? ' (Google Calendar invite sent)' : ''}.`);
   return { ok: true, invite: inviteView(f) };
@@ -626,6 +631,7 @@ route('POST', '/api/scheduling/reschedule', async ({ user, realUser, body }) => 
     Object.assign(f.invite, { date: slot.date, time: slot.time, duration: slot.duration });
   } else if (body.invite) await sendInvite(realUser, f, slot, body);
   if (slot.date !== f.scheduledDate) f.reschedules.push({ from: f.scheduledDate, to: slot.date, by: user.name, at: config.today });
+  f.firstScheduledDate ||= L.firstScheduled(f);
   f.scheduledDate = slot.date; f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
   audit(user.name, 'reschedule', `${L.emp(f.empId).name} to ${slot.date} ${slot.time}${f.invite ? ' (calendar invite updated)' : ''}`);
   meetingNote(user, f, who => `${who} ${meetOf(f)} was moved to ${slotText(f)} by ${user.name}.`);
@@ -662,22 +668,30 @@ route('POST', '/api/calendar/disconnect', async ({ realUser }) => {
 route('GET', '/api/report', ({ user, q }) => {
   const month = q.month || config.currentMonth;
   const view = q.view === 'team' || user.role === 'manager' || user.role === 'teamlead' ? q.view || 'team' : q.view || 'org';
-  const rows = L.reportRows(user, month, { team: q.team, manager: q.manager, status: q.status });
+  // detail=1: the "Full details" view, the columns of the PMS report format (remarks, SOP, learning, escalations)
+  const rows = L.reportRows(user, month, { team: q.team, manager: q.manager, status: q.status }, { detail: q.detail === '1' });
   const all = L.reportRows(user, month);
   const managers = [...new Set(all.map(r => r.managerId))].map(id => L.emp(id)).filter(Boolean).map(m => ({ id: m.id, name: m.name, team: m.team }));
   const byTeam = {};
   rows.forEach(r => (byTeam[`${r.manager} / ${r.team}`] ||= []).push(r));
   return {
-    view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers,
+    view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers, ...(q.detail === '1' && { columns: PMS_COLUMNS, rules: { opWeight: config.weights.operational, opMinSubKras: config.opMinSubKras, learningDoneMin: config.learningDoneMin, qMinWords: config.qMinWords } }),
     teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, ...L.counts(rs) })),
     scope: user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
   };
 });
+// CSV export = the PMS report format sheet (management's column order), plus the flags at the end
+const PMS_COLUMNS = [['code', 'Employee Code'], ['name', 'Name'], ['doj', 'DOJ'], ['designation', 'Designation'], ['department', 'Department'],
+  ['manager', 'Reporting Manager'], ['director', 'Director'], ['scheduled', 'Scheduled Date'], ['reschedules', 'No. of times rescheduled'], ['actual', 'Actual Date'],
+  ['finalStatus', 'Final Status'], ['opSet', 'Operational KRA properly set'], ['sop', 'SOP'], ['sopKra', 'SOP KRA'], ['sopLink', 'SOP link added'],
+  ['learning', 'Learning'], ['learningDone', 'Learning properly done'], ['learningLink', 'Learning document link added'], ['questionnaire', 'Questionnaire properly filled'],
+  ['percentage', 'Percentage'], ['opRemark', 'Operational Remark'], ['processRemark', 'Process Remarks'], ['peopleRemark', 'People Remark'], ['escalations', 'Escalations']];
 route('GET', '/api/report.csv', ({ user, q }) => {
-  const rows = L.reportRows(user, q.month || config.currentMonth, { team: q.team, manager: q.manager, status: q.status });
-  const head = ['Manager', 'Team', 'Employee', 'Scheduled', 'Due', 'Actual', 'Due status', 'Reschedules', 'Status', 'Monthly rating (%)', 'Flags'];
+  const rows = L.reportRows(user, q.month || config.currentMonth, { team: q.team, manager: q.manager, status: q.status }, { detail: true });
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  return { csv: [head, ...rows.map(r => [r.manager, r.team, r.name, r.scheduled, r.due, r.actual, r.dueStatus, r.reschedules, r.status, r.rating, r.flags.join('; ')])].map(r => r.map(esc).join(',')).join('\n') };
+  const cell = (k, v) => k === 'percentage' ? (v == null ? '' : `${v}%`) : k === 'escalations' ? v.join('; ') : v;
+  const head = ['Sl No', ...PMS_COLUMNS.map(c => c[1]), 'Flags'];
+  return { csv: [head, ...rows.map((r, i) => [i + 1, ...PMS_COLUMNS.map(([k]) => cell(k, r.detail[k])), r.flags.join('; ')])].map(r => r.map(esc).join(',')).join('\r\n') };
 });
 
 // Emails (not sent automatically: generate drafts, then send)
@@ -780,7 +794,7 @@ route('GET', '/api/employees', ({ user, q }) => {
       pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null }; });
   const active = rows.filter(e => e.active);
   return { active, inactive: rows.filter(e => !e.active), stats: orgStats(),
-    teams: [...new Set([...Object.keys(config.windows), ...rows.map(e => e.team)])].filter(Boolean).sort(),
+    teams: teamNames(), teamInfo: teamInfo(),
     designations: [...new Set(rows.map(e => e.designation))].filter(Boolean).sort(),
     // anyone active can become a reporting manager (their role then changes to Manager by itself); people who already lead come first
     managers: employees.filter(e => e.active && e.role !== 'admin').sort((a, b) => (a.role === 'employee') - (b.role === 'employee') || a.name.localeCompare(b.name))
@@ -794,24 +808,8 @@ route('GET', '/api/employee-forms', ({ user, q }) => {
   const rows = D.fyMonths().map(m => { const f = L.peek(id, m); return { month: m, label: D.monthLabel(m), reviewDate: f ? f.reviewDate : '', status: f ? L.reviewStatus(f) : 'Not started', rating: f && f.submitted ? L.monthlyRating(f) : null, open: !!f || m >= joined, beforeJoining: !f && m < joined }; });
   return { employee: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '' }, rows, annual: annualForms[`${id}|FY2026`] ? 'Submitted' : 'Opens in March' };
 });
-route('POST', '/api/employees', ({ user, body }) => {
-  adminOnly(user);
-  const need = ['name', 'code', 'email', 'designation', 'team', 'managerId', 'joined', 'window'];
-  const miss = need.filter(k => !body[k]);
-  if (miss.length) throw bad('Mandatory fields missing: ' + miss.join(', '), { errors: ['Mandatory fields missing: ' + miss.join(', ')] });
-  if (employees.some(e => e.code === body.code)) throw bad('Employee code already exists.');
-  const email = checkEmail(body.email, null, true);
-  const m = checkManager(null, body.managerId);
-  const id = Math.max(...employees.map(e => e.id)) + 1;
-  // the role follows the reporting line (a new member has no reports yet, so employee or team lead)
-  const e = { id, code: body.code, name: body.name, email, designation: body.designation, team: body.team, managerId: m.id, role: 'employee', level: null, joined: body.joined, active: true, newJoiner: true, codeSet: true, joinedSet: true };
-  e.role = L.deriveRole(e);
-  employees.push(e);
-  audit(user.name, 'add member', `${body.name} (${body.code}), reports to ${m.name}`);
-  notify(m.id, `${body.name} joined and reports to you. Set their KRAs once they are ready (new joiners start with the questionnaire only).`);
-  syncRoles(user.name);
-  return { id, masterAlert: masterAlertFor(e) };
-});
+// People are added only through the employee list (the sheet is the master: npm run employees -- <file> --apply), not in
+// the app: the Add new member button and POST /api/employees were removed on 2026-11-13.
 // work emails are how people sign in, so they must be on the org domain and belong to one person only
 function checkEmail(raw, selfId, required) {
   const email = String(raw || '').trim().toLowerCase();
@@ -824,7 +822,7 @@ function checkEmail(raw, selfId, required) {
 const ROLES = ['employee', 'teamlead', 'manager', 'director', 'admin'];
 
 // ---------- reporting changes ----------
-// Every change of reporting manager goes through here (Employees table and Edit, Add member, Move to inactive):
+// Every change of reporting manager goes through here (Employees table and Edit, Move to inactive):
 // check the new manager, decide who finishes this month's review, clean up what belonged to the old manager,
 // re-derive roles and leave a note on the dashboards of the people involved.
 const nextMonthOf = m => { let [y, mo] = m.split('-').map(Number); mo++; if (mo > 12) { mo = 1; y++; } return `${y}-${D.pad(mo)}`; };
@@ -876,7 +874,7 @@ function teamOfManager(e, managerId) {
 function moveTeam(who, e, team, why) {
   const from = e.team; if (!team || team === from) return [];
   const moved = [e, ...L.subordinates(e.id).filter(x => x.active && x.team === from)];
-  for (const x of moved) x.team = team;
+  for (const x of moved) { x.team = team; x.teamSetInApp = true; } // the next import of the sheet reports it if it differs
   audit(who, 'team changed', `${moved.map(x => x.name).join(', ')}: ${from} → ${team} (${why})`);
   return [`${e.name} is now in the ${team} team (was ${from})${moved.length > 1 ? `, with ${moved.length - 1} ${moved.length === 2 ? 'person' : 'people'} under them: ${moved.slice(1).map(x => x.name).join(', ')}` : ''}.`];
 }
@@ -964,12 +962,21 @@ route('PUT', '/api/employees', async ({ user, body }) => {
   const show = (k, v) => k === 'managerId' ? (v ? (L.emp(v) || {}).name || v : 'none') : (v || 'none');
   const LBL = { name: 'name', email: 'email', designation: 'designation', team: 'team', role: 'role', managerId: 'manager', code: 'code', joined: 'joining date' };
   const changes = Object.keys(next).filter(k => (next[k] ?? '') !== (e[k] ?? '')).map(k => `${LBL[k]} ${show(k, e[k])} → ${show(k, next[k])}`);
+  // working status (Edit dialog only; the quick edits in the table do not send it): shown as the Final Status in the
+  // PMS report from this review month on, until the admin sets the person back to Working
+  let workStatus;
+  if (body.workStatus !== undefined) {
+    const ws = String(body.workStatus || ''), cur = e.workStatus ? e.workStatus.type : '', name = x => L.WORK_STATUS[x] || 'Working';
+    if (ws && !L.WORK_STATUS[ws]) throw bad('Unknown working status.', { errors: ['Unknown working status.'] });
+    if (ws !== cur) { workStatus = ws ? { type: ws, from: config.currentMonth } : null; changes.push(`working status ${name(cur)} → ${name(ws)}`); }
+  }
   const teamBefore = e.team;
   // the admin picked a team by hand in this save: that choice wins over the new manager's team
   if (plan && !plan.same && next.team !== teamBefore) plan.keepTeam = true;
   const notes = [];
   if (next.team !== teamBefore) { notes.push(...moveTeam(user.name, e, next.team, 'changed by hand')); const i = changes.findIndex(c => c.startsWith('team ')); if (i >= 0) changes.splice(i, 1); }
   Object.assign(e, next);
+  if (workStatus) e.workStatus = workStatus; else if (workStatus === null) delete e.workStatus;
   if (changes.length) audit(user.name, 'edit member', `${e.name} (${e.code}): ${changes.join(', ')}`);
   const warnings = plan ? await applyMove(user, e, plan) : [];
   if (plan && plan.notes) notes.push(...plan.notes);
@@ -1046,32 +1053,17 @@ function orgHelpers(month) {
 const byName = (a, b) => a.name.localeCompare(b.name);
 const leadsFirst = (a, b) => (b.role !== 'employee') - (a.role !== 'employee') || byName(a, b);
 
-// Reporting hierarchy (admin). Five lists by designation (the admin menu's Reporting manager group):
-//   level=director | srmanager | manager (and team leads) | srexec | other (everyone else: executives, analysts, ...)
-// Each person is in exactly one list (first match wins). And a drill-down: id=<person> lists the people who report
-// to that person, so the admin follows director -> their managers -> a manager's employees, with the path back up.
-const desigOf = e => String(e.designation || '').toLowerCase();
-const ORG_LEVELS = {
-  director: e => e.role === 'director' || /director/.test(desigOf(e)),
-  srmanager: e => /senior manager/.test(desigOf(e)),
-  manager: e => /manager/.test(desigOf(e)) || e.role === 'teamlead' || e.role === 'manager',
-  srexec: e => /senior executive/.test(desigOf(e)),
-  other: () => true,
-};
-const levelOf = e => Object.keys(ORG_LEVELS).find(k => ORG_LEVELS[k](e));
-const STAFF_LEVELS = ['srexec', 'other']; // their tiles count their own reviews; leader lists count the whole organisation
+// Reporting flow (admin, opened from the Employees page): who reports to whom, by the reporting line.
+// No id = the directors (people with no reporting manager); id=<person> = the people who report to that person, so the
+// admin follows director -> their managers -> a manager's employees, with the path back up. Counts by role are the
+// dashboard's All stats cards and lists by role are the Employees page, so there are no lists by designation here.
 route('GET', '/api/org', ({ user, q }) => {
   adminOnly(user);
   const month = q.month || config.currentMonth, H = orgHelpers(month);
-  const levelCounts = Object.fromEntries(Object.keys(ORG_LEVELS).map(k => [k, H.people.filter(e => levelOf(e) === k).length]));
-  if (!q.id) {
-    const level = ORG_LEVELS[q.level] ? q.level : 'director';
-    const list = H.people.filter(e => levelOf(e) === level).sort(byName);
-    return { month, level, levelCounts, person: null, path: [], counts: H.countsOf(STAFF_LEVELS.includes(level) ? list : H.people), rows: list.map(H.rowFor) };
-  }
+  if (!q.id) return { month, person: null, path: [], counts: H.countsOf(H.people), rows: H.people.filter(e => !e.managerId).sort(byName).map(H.rowFor) };
   const p = mustEmp(q.id);
   if (p.role === 'admin') throw notFound('Employee not found.');
-  return { month, level: null, levelCounts, person: { ...H.rowFor(p), active: p.active }, path: H.above(p).map(c => ({ id: c.id, name: c.name })),
+  return { month, person: { ...H.rowFor(p), active: p.active }, path: H.above(p).map(c => ({ id: c.id, name: c.name })),
     counts: H.countsOf(L.subordinates(p.id)), rows: H.direct(p.id).sort(leadsFirst).map(H.rowFor) };
 });
 
@@ -1280,75 +1272,20 @@ route('GET', '/api/audit', ({ user }) => { adminOnly(user); return auditLog.slic
 route('GET', '/api/config', ({ user }) => { adminOnly(user); return config; });
 route('PUT', '/api/config', ({ user, body }) => {
   adminOnly(user);
-  for (const k of ['operationalRange', 'peopleMin', 'peopleMax', 'clickupMin', 'learningMin', 'ratingGapFlag', 'emailGapFlag', 'selfShare', 'mgrShare']) if (body[k] !== undefined) config[k] = body[k];
+  // the PMS report rules are checked: a blank box would otherwise turn into 0 and switch the check off
+  const RANGE = { learningDoneMin: [10, 100, 'Learning properly done from (%)'], qMinWords: [1, 200, 'Questionnaire answer minimum words'], opMinSubKras: [1, 10, 'Operational sub-KRAs minimum'] };
+  for (const [k, [lo, hi, label]] of Object.entries(RANGE)) if (body[k] !== undefined && !(Number.isInteger(body[k]) && body[k] >= lo && body[k] <= hi)) throw bad(`${label} must be a whole number from ${lo} to ${hi}.`);
+  for (const k of ['operationalRange', 'peopleMin', 'peopleMax', 'clickupMin', 'learningMin', 'ratingGapFlag', 'emailGapFlag', 'selfShare', 'mgrShare', ...Object.keys(RANGE)]) if (body[k] !== undefined) config[k] = body[k];
   if (body.windows) config.windows = body.windows;
   audit(user.name, 'config updated', 'thresholds / windows');
   employees.filter(e => e.active && ['manager', 'teamlead', 'director'].includes(e.role)).forEach(e => N.push(e.id, { type: 'change', key: `rules|${config.currentMonth}`, link: '#/report', text: `The review rules (thresholds for flags such as ClickUp, learning and rating gaps) were updated by ${user.name}.` }, user));
   return config;
 });
-// Teams (admin): add, rename, delete. A team is its name on each member plus its review window in config.windows, so every
-// page (dashboard chips, progress, reports, Employees) follows by itself once these two places agree.
-const TEAM_LOCKED = { Directors: 'The Directors team is built in (top-level directors sit there).' };
-const teamMembers = (t, active) => employees.filter(e => e.team === t && e.role !== 'admin' && (active === undefined || e.active === active));
-const teamNames = () => [...new Set([...Object.keys(config.windows), ...employees.filter(e => e.role !== 'admin').map(e => e.team)])].filter(Boolean);
-function cleanTeamName(raw) {
-  const n = String(raw || '').replace(/\s+/g, ' ').trim();
-  if (!n) throw bad('Team name is required.');
-  if (n.length > 50) throw bad('Team name can be at most 50 characters.');
-  return n;
-}
-route('GET', '/api/teams', ({ user }) => {
-  adminOnly(user);
-  // Directors is built in and not managed here, so it is left off the list
-  return { teams: teamNames().filter(t => !TEAM_LOCKED[t]).sort((a, b) => a.localeCompare(b)).map(t => {
-    const w = config.windows[t] || { start: 25, end: 2 };
-    return { name: t, active: teamMembers(t, true).length, inactive: teamMembers(t, false).length, window: w, locked: TEAM_LOCKED[t] || null };
-  }) };
-});
-route('POST', '/api/teams', ({ user, body }) => {
-  adminOnly(user);
-  const name = cleanTeamName(body.name);
-  if (teamNames().some(t => t.toLowerCase() === name.toLowerCase())) throw bad(`A team called "${name}" already exists.`);
-  config.windows[name] = { start: 25, end: 2 };
-  (config.addedTeams ||= []).push(name); // kept even while nobody is in it (the list import would otherwise drop it)
-  audit(user.name, 'team added', name);
-  return { name };
-});
-route('PUT', '/api/teams', ({ user, body }) => {
-  adminOnly(user);
-  const from = String(body.name || ''), to = cleanTeamName(body.newName);
-  if (!teamNames().includes(from)) throw notFound('Team not found.');
-  if (TEAM_LOCKED[from]) throw bad(TEAM_LOCKED[from] + ' It cannot be renamed.');
-  if (to === from) return { name: to, moved: 0 };
-  if (teamNames().some(t => t !== from && t.toLowerCase() === to.toLowerCase())) throw bad(`A team called "${to}" already exists.`);
-  if (TEAM_LOCKED[to]) throw bad(`"${to}" is a built-in team name.`);
-  const people = employees.filter(e => e.team === from);
-  people.forEach(e => { e.team = to; });
-  if (config.windows[from]) { config.windows[to] = config.windows[from]; delete config.windows[from]; }
-  if (config.addedTeams) config.addedTeams = config.addedTeams.map(t => t === from ? to : t);
-  audit(user.name, 'team renamed', `${from} → ${to} (${people.length} ${people.length === 1 ? 'person' : 'people'})`);
-  return { name: to, moved: people.length };
-});
-route('POST', '/api/teams/delete', ({ user, body }) => {
-  adminOnly(user);
-  const name = String(body.name || '');
-  if (!teamNames().includes(name)) throw notFound('Team not found.');
-  if (TEAM_LOCKED[name]) throw bad(TEAM_LOCKED[name] + ' It cannot be deleted.');
-  const n = teamMembers(name, true).length;
-  if (n) throw bad(`${name} still has ${n} active ${n === 1 ? 'member' : 'members'}. Move them to another team on the Employees page first, then delete the team.`);
-  // inactive people keep no team rather than pointing at one that no longer exists
-  employees.filter(e => e.team === name).forEach(e => { e.team = ''; });
-  delete config.windows[name];
-  if (config.addedTeams) config.addedTeams = config.addedTeams.filter(t => t !== name);
-  audit(user.name, 'team deleted', name);
-  return { ok: true };
-});
 // one team's review window (day of month, same every month), edited from the Scheduling page
 route('PUT', '/api/windows', ({ user, body }) => {
   adminOnly(user);
-  const start = Number(body.start), end = Number(body.end);
-  if (![start, end].every(n => Number.isInteger(n) && n >= 1 && n <= 31)) throw bad('Days must be whole numbers from 1 to 31.');
   // an end day before the start day means the window runs into the next month (25 to 2)
+  const { start, end } = windowDays(body);
   if (body.managerId) {
     const m = mustEmp(body.managerId);
     config.managerWindows[m.id] = { start, end };
@@ -1380,13 +1317,15 @@ function masterRows() {
     return masterCache.rows;
   } catch { return null; } // no list on this machine (staging), or it cannot be read
 }
+// a team renamed in the app is still called its old name in the sheet (config.teamRenames maps one to the other)
+const masterTeam = t => (t && (config.teamRenames || {})[t]) || t || '';
 const masterRowOf = e => { const rows = masterRows(); return rows ? rows.find(r => mkey(r.name) === mkey(e.name)) || null : null; };
 // where PMS and the list disagree for one person: the manager (a planned move counts as the manager) and the team
 function masterDiffs(e) {
   const r = masterRowOf(e); if (!r) return [];
   const out = [], pmsMgr = e.pendingManager ? e.pendingManager.id : e.managerId, pmsName = pmsMgr ? nameOf(pmsMgr) : '';
   if (mkey(pmsName) !== mkey(r.manager)) out.push({ id: e.id, name: e.name, field: 'manager', label: 'Reporting manager', pms: pmsName || 'No manager', master: r.manager || 'No manager' });
-  if (r.team && mkey(r.team) !== mkey(e.team)) out.push({ id: e.id, name: e.name, field: 'team', label: 'Team', pms: e.team || 'No team', master: r.team });
+  if (r.team && mkey(masterTeam(r.team)) !== mkey(e.team)) out.push({ id: e.id, name: e.name, field: 'team', label: 'Team', pms: e.team || 'No team', master: r.team });
   return out;
 }
 // shown to the admin right after a reporting change or a new member: the list needs the same change
@@ -1407,7 +1346,7 @@ route('GET', '/api/master', ({ user }) => {
 // have yet is not undone. New people and people who left come in with a full list import (node employees.js).
 function syncFromMaster(who = 'Employee list') {
   const rows = masterRows(); if (!rows) return null;
-  const was = config.masterSnapshot, now = Object.fromEntries(rows.map(r => [mkey(r.name), { manager: mkey(r.manager), team: r.team || '' }]));
+  const was = config.masterSnapshot, now = Object.fromEntries(rows.map(r => [mkey(r.name), { manager: mkey(r.manager), team: masterTeam(r.team) }]));
   config.masterSnapshot = now;
   if (!was) return []; // first look: just remember the list as it is
   const changes = [];
@@ -1439,7 +1378,7 @@ function syncFromMaster(who = 'Employee list') {
   const fyStart = `${config.fyStartMonth}-01`;
   const make = (name, r, managerId) => {
     const id = Math.max(0, ...employees.map(x => x.id)) + 1;
-    const e = { id, src: 'list', level: null, active: true, name, code: (r && r.code) || 'V' + String(id).padStart(3, '0'), email: (r && r.email) || '', designation: (r && r.designation) || '', team: (r && r.team) || (r ? 'Unassigned' : 'Directors'),
+    const e = { id, src: 'list', level: null, active: true, name, code: (r && r.code) || 'V' + String(id).padStart(3, '0'), email: (r && r.email) || '', designation: (r && r.designation) || '', team: (r && masterTeam(r.team)) || (r ? 'Unassigned' : 'Directors'),
       joined: (r && EMPLIST.normDate(r.joined)) || fyStart, managerId, role: 'employee', newJoiner: !!r, codeSet: !!(r && r.code), joinedSet: !!(r && EMPLIST.normDate(r.joined)) };
     e.role = managerId ? 'employee' : 'director'; employees.push(e); config.windows[e.team] ||= { start: 25, end: 2 };
     return e;
@@ -1478,6 +1417,81 @@ function watchMaster() {
   };
   tick(); masterTimer = setInterval(tick, 30000); masterTimer.unref();
 }
+
+// ---------- teams (admin, Employees page › Teams) ----------
+// A team is the name on each person plus its review window (config.windows). The employee sheet stays the master for
+// who is in which team, so the app remembers what it changed: a rename is kept in config.teamRenames (sheet name -> name
+// in the app, used by the next import) and a team added here is in config.teamsAdded, so it stays while nobody is in it.
+const DIRECTORS = 'Directors'; // top-level directors; the code relies on this name
+const teamKey = t => String(t || '').trim().toLowerCase();
+const teamNames = () => [...new Set([...Object.keys(config.windows), ...employees.filter(e => e.active && e.role !== 'admin').map(e => e.team)])].filter(Boolean).sort();
+function teamName(raw, self) {
+  const name = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!name) throw bad('Team name is required.');
+  if (name.length > 40) throw bad('Keep the team name to 40 characters or fewer.');
+  const clash = teamNames().find(t => t !== self && teamKey(t) === teamKey(name));
+  if (clash) throw bad(`There is already a team called ${clash}.`);
+  // a name the sheet still uses for a renamed team would pull that team's people in at the next import
+  const R = config.teamRenames || {}, alias = Object.keys(R).find(k => teamKey(k) === teamKey(name) && R[k] !== self);
+  if (alias) throw bad(`${alias} is what the employee sheet calls the ${R[alias]} team. Pick another name.`);
+  return name;
+}
+function mustTeam(raw) { const t = teamNames().find(x => x === String(raw || '').trim()); if (!t) throw bad('That team does not exist.'); return t; }
+function windowDays(body) {
+  const start = Number(body.start), end = Number(body.end);
+  if (![start, end].every(n => Number.isInteger(n) && n >= 1 && n <= 31)) throw bad('Days must be whole numbers from 1 to 31.');
+  return { start, end };
+}
+const teamInfo = () => teamNames().map(t => {
+  const R = config.teamRenames || {};
+  return { name: t, members: employees.filter(e => e.active && e.role !== 'admin' && e.team === t).length, window: config.windows[t] || D.DEFAULT_WINDOW,
+    fixed: t === DIRECTORS, added: (config.teamsAdded || []).includes(t), sheetName: Object.keys(R).filter(k => R[k] === t) };
+});
+// the Teams page (admin menu): every team with its active members, window and sheet name
+route('GET', '/api/teams', ({ user }) => { adminOnly(user); return { teams: teamInfo() }; });
+route('POST', '/api/teams', ({ user, body }) => {
+  adminOnly(user);
+  const name = teamName(body.name), w = windowDays(body);
+  config.windows[name] = w;
+  (config.teamsAdded ||= []).push(name);
+  audit(user.name, 'team added', `${name}: review window day ${w.start} to ${w.end}`);
+  return { ok: true, name };
+});
+route('PUT', '/api/teams', ({ user, body }) => {
+  adminOnly(user);
+  const from = mustTeam(body.from);
+  if (from === DIRECTORS) throw bad('The Directors team holds the top-level directors and keeps its name.');
+  const to = teamName(body.to, from);
+  if (to === from) return { ok: true, name: to, moved: 0 };
+  // everyone carries the new name, inactive people too, so their past forms stay with the team
+  const people = employees.filter(e => e.team === from);
+  people.forEach(e => { e.team = to; });
+  if (config.windows[from]) { config.windows[to] = config.windows[from]; delete config.windows[from]; }
+  const added = config.teamsAdded ||= [], wasAdded = added.includes(from);
+  if (wasAdded) added.splice(added.indexOf(from), 1, to);
+  // the sheet still has the old name: every sheet name that led to this team now leads to the new name
+  const R = config.teamRenames ||= {}, viaRename = Object.values(R).includes(from);
+  for (const k of Object.keys(R)) if (R[k] === from) R[k] = to;
+  if (!wasAdded && !viaRename) R[from] = to; // the old name came from the sheet itself
+  for (const k of Object.keys(R)) if (R[k] === k) delete R[k]; // renamed back to the sheet's name
+  audit(user.name, 'team renamed', `${from} → ${to} (${people.length} ${people.length === 1 ? 'person' : 'people'})`);
+  const active = people.filter(e => e.active);
+  active.forEach(e => N.push(e.id, { type: 'change', key: `team|${e.id}`, text: `Your team ${from} is now called ${to}.` }, user));
+  return { ok: true, name: to, moved: active.length };
+});
+route('POST', '/api/teams/delete', ({ user, body }) => {
+  adminOnly(user);
+  const t = mustTeam(body.name);
+  if (t === DIRECTORS) throw bad('The Directors team holds the top-level directors and cannot be deleted.');
+  const n = employees.filter(e => e.active && e.role !== 'admin' && e.team === t).length;
+  if (n) throw bad(`${t} still has ${n} active ${n === 1 ? 'person' : 'people'}. Move them to another team first.`);
+  delete config.windows[t];
+  if (config.teamsAdded) config.teamsAdded = config.teamsAdded.filter(x => x !== t);
+  const R = config.teamRenames || {};
+  for (const k of Object.keys(R)) if (R[k] === t) delete R[k];
+  audit(user.name, 'team deleted', t);
+  return { ok: true };
+});
 
 // ---------- server ----------
 const server = http.createServer((req, res) => {
