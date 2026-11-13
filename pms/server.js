@@ -195,7 +195,7 @@ ensureMonthForms();
 const calendarState = real => { const l = C.linked(real.id); return { google: A.google, connected: !!l, email: l ? l.email : '', canConnect: A.google && A.isOrgEmail(real.email) }; };
 route('GET', '/api/me', ({ user, realUser }) => (ensureMonthForms(), {
   ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(Boolean))].sort(),
-  months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, today: config.today, fy: fyLabel(config.currentMonth),
+  months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, firstMonth: config.fyStartMonth, today: config.today, fy: fyLabel(config.currentMonth),
   photo: D.photos[user.id] || '', real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
 }));
 
@@ -458,7 +458,7 @@ route('PUT', '/api/kras', ({ user, body }) => {
   if (usedGrant) { audit(user.name, 'KRA change made after approval', `${L.emp(f.empId).name} ${f.month}`); delete f.kraRequest; const m = mgrOf(f.empId); if (m) N.push(m.id, { type: 'request', link: N.formLink(f.empId, f.month), text: `${user.name} changed their KRAs for ${D.monthLabel(f.month)} (after your approval).` }, user); }
   else if (user.id !== f.empId) N.push(f.empId, { type: 'change', key: `kras|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} updated your KRAs for ${D.monthLabel(f.month)}.` }, user);
   // later unsubmitted months follow the new structure
-  D.fyMonths().filter(m => m > f.month && m <= config.currentMonth).forEach(m => { const g = D.forms[`${f.empId}|${m}`]; if (g && !g.locked) apply(g); });
+  Object.keys(D.forms).filter(k => k.startsWith(f.empId + '|')).map(k => k.split('|')[1]).filter(m => m > f.month && m <= config.currentMonth).forEach(m => { const g = D.forms[`${f.empId}|${m}`]; if (g && !g.locked) apply(g); });
   L.emp(f.empId).newJoiner = L.emp(f.empId).newJoiner && L.KRAS.every(([k]) => f.kras[k].rows.length === 0);
   audit(user.name, 'KRA settings', `${L.emp(f.empId).name} from ${f.month}`);
   return formPayload(user, f);
@@ -491,8 +491,7 @@ route('POST', '/api/kra-request/decide', ({ user, body }) => {
 route('POST', '/api/form/copy-kras', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
   if (!canCopyKras(user, f)) throw forbid();
-  const months = D.fyMonths(), i = months.indexOf(f.month);
-  const src = i > 0 ? L.getForm(f.empId, months[i - 1]) : null;
+  const src = D.validMonth(D.prevMonth(f.month)) ? L.getForm(f.empId, D.prevMonth(f.month)) : null; // April copies March of the year before
   if (!src) throw bad('There is no previous month to copy KRAs from.');
   f.kras = JSON.parse(JSON.stringify(src.kras));
   for (const [k] of L.KRAS) f.kras[k].rows.forEach(r => { r.self = null; r.selfRemark = ''; r.mgr = null; r.mgrRemark = ''; });

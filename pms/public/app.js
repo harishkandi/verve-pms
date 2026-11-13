@@ -453,6 +453,19 @@ function markNav() {
   if (best) { best.classList.add('on'); const g = best.closest('.ngrp'); if (g) { g.classList.add('has-on'); navOpen(g, true); } }
   document.querySelectorAll('.ngrp').forEach(g => { if (navOpenKeys.has(g.dataset.g) && !g.classList.contains('open')) navOpen(g, true); });
 }
+// month + year pickers for the monthly form (as in the old portal): every month, and calendar years newest first.
+// The tool runs year after year, so older forms stay reachable; a month without a form says so.
+function fyPick(selKey, annualOpt) {
+  const [sy, sm] = selKey.split('-'), thisYear = +S.me.currentMonth.slice(0, 4);
+  const years = Array.from({ length: thisYear - 2015 + 1 }, (_, i) => thisYear - i);
+  return `<select id="msel" title="Month">${MONTHS.map((n, i) => { const mm = String(i + 1).padStart(2, '0'); return `<option value="${mm}" ${annualOpt.includes('selected') ? '' : mm === sm ? 'selected' : ''}>${n}</option>`; }).join('')}${annualOpt}</select>`
+    + `<select id="ysel" title="Year">${years.map(y => `<option value="${y}" ${String(y) === sy ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
+}
+// either picker changing opens that month and year (Annual review has no month)
+function wirePick(empId) {
+  const go = () => { const m = $('#msel').value, y = $('#ysel').value; if (m === 'annual') { location.hash = `#/form/${empId}/annual`; return; } S.month = `${y}-${m}`; location.hash = `#/form/${empId}/${S.month}`; };
+  $('#msel').onchange = go; $('#ysel').onchange = go;
+}
 // month picker: a styled dropdown over a hidden native select, so pages keep listening to #msel change events
 // o.heading: shown as the page heading (month name only, no box); click it to change the month
 function monthSel(id = 'msel', o = {}) {
@@ -943,7 +956,12 @@ pages.form = async (v, emp, month) => {
   if (month === 'annual') return drawAppraisal(v, emp);
   S.month = month || S.month;
   attempted = false; editingQ.clear(); focusQ = null; formDirty.clear();
-  FP = await api(`/form?emp=${emp}&month=${S.month}`);
+  try { FP = await api(`/form?emp=${emp}&month=${S.month}`); }
+  catch (er) {
+    if (!/No form exists/.test(er.message)) throw er;
+    v.innerHTML = head('Monthly review form', `PMS › ${esc(monthLabel(S.month))}`) + `<div class="row">${fyPick(S.month, '<option value="annual">Annual review</option>')}</div><div class="info">There is no review form for ${esc(monthLabel(S.month))}. Forms start from ${esc(monthLabel(S.me.firstMonth))}, or from the month the person joined, and the current month is the latest one that opens.</div>`;
+    return wirePick(emp);
+  }
   drawForm(v);
 };
 
@@ -982,7 +1000,7 @@ function drawForm(v, errors) {
   const sum = formSummary(f);
   const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b>` : `Monthly rating: shows once every self and manager rating is in`;
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(monthLabel(S.month))}`) +
-    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}" ${m.key === S.month ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('')}<option value="annual">Annual review</option></select>${p.copyKras ? '<button class="btn kcopy" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+    `<div class="row">${fyPick(S.month, '<option value="annual">Annual review</option>')}${p.copyKras ? '<button class="btn kcopy" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your ratings (and a remark where they differ), then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
@@ -1079,7 +1097,7 @@ const formDirty = new Set();
 const RATING_FIELDS = ['self', 'selfRemark', 'mgr', 'mgrRemark'];
 function wireForm(v) {
   const { form: f } = FP;
-  $('#msel').onchange = e => { location.hash = `#/form/${f.empId}/${e.target.value}`; };
+  wirePick(f.empId);
   v.oninput = e => {
     const t = e.target;
     if (t.id === 'reviewDate') { f.reviewDate = t.value; formDirty.add('rd'); }
@@ -1220,7 +1238,7 @@ pages.team = async (v, arg) => {
   arg = String(arg || '').toLowerCase();
   const id = /^\d+$/.test(arg) ? arg : '', list = arg === 'managers';
   const d = await api(`/myteam?month=${S.month}${id ? '&id=' + id : ''}`), p = d.person, c = d.counts, mon = monShort();
-  const crumbs = d.me ? `PMS › My team${list ? ' › Reporting manager list' : ''}`
+  const crumbs = d.me ? `PMS › My team${list ? ' › Reporting Manager' : ''}`
     : ['<a href="#/team">My team</a>', ...d.path.filter(x => x.id !== S.me.id).map(x => `<a href="#/team/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ');
   const up = d.path.filter(x => x.id !== S.me.id), back = up.length ? `#/team/${up[up.length - 1].id}` : '#/team';
   const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}<a class="btn sm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${ico('file')}Open form</a></span>`;
@@ -1235,12 +1253,12 @@ pages.team = async (v, arg) => {
     : `<tr><th>Sr. no</th><th>Name</th><th>Employees</th><th>${mon} review</th><th>Rating</th><th>Reports</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td>${count(r)}</td><td>${review(r)}</td><td>${r.review && r.review.rating != null ? `<b class="rt ${rateCls(r.review.rating)}">${pc(r.review.rating)}</b>` : 'N/A'}</td><td>${reportLinks(r)}</td></tr>`).join('')
         || `<tr><td colspan="6" class="small">Nobody reports to ${d.me ? 'you' : esc(p.name)}.</td></tr>`}`;
-  v.innerHTML = head('My team', crumbs) + `<div class="seg" role="tablist"><a role="tab" href="#/team" class="${d.me && !list ? 'on' : ''}">My team <span class="cnt">${d.members.length}</span></a><a role="tab" href="#/team/managers" class="${list ? 'on' : ''}">Reporting manager list <span class="cnt">${d.managers.length}</span></a></div>
+  v.innerHTML = head('My team', crumbs) + `<div class="seg" role="tablist"><a role="tab" href="#/team" class="${d.me && !list ? 'on' : ''}">My team <span class="cnt">${d.members.length}</span></a><a role="tab" href="#/team/managers" class="${list ? 'on' : ''}">Reporting Manager <span class="cnt">${d.managers.length}</span></a></div>
   <div class="row">${monthSel()}${searchBox('tq', 'Search name, team or email', S.tq)}<span class="sp"></span>${d.me ? '' : `<a class="btn" href="${back}">← Back</a>`}</div>
   ${d.me ? '' : `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, p.team)}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? esc(p.manager.name) : 'nobody'} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span>${reportLinks(p)}</div>`}
   <div class="small" style="margin:0 0 12px">${mon} reviews of everyone under ${d.me ? 'you' : esc(p.name)} (all levels)</div>
   ${countTiles(c)}
-  <h2>${list ? `Reporting manager list (${rows.length})` : `${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})`}</h2>
+  <h2>${list ? `Reporting Manager (${rows.length})` : `${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})`}</h2>
   <div class="tablewrap"><table>${table}<tr id="tnone" hidden><td colspan="9" class="small">No one here matches your search.</td></tr></table></div>
   <p class="small">${list ? 'Every manager and team lead under you, at every level. Click the Employees count to open their team.' : 'Click a name or the Employees count to open that person\'s team; click a review status to open the form.'}</p>`;
   onMonth(() => pages.team(v, arg));
@@ -2087,7 +2105,7 @@ function paintAppraisal(v) {
   ];
   const [title, desc, body] = steps[apStep - 1];
   v.innerHTML = head('Appraisal form ' + AP.fy, `${esc(e.name)} · annual review`) +
-    `<div class="row"><select id="msel">${S.me.months.map(m => `<option value="${m.key}">${m.label.split(" ")[0]}</option>`).join('')}<option value="annual" selected>Annual review</option></select>${sub ? '<span class="badge b-green">Submitted</span>' : ''}</div>
+    `<div class="row">${fyPick(S.month, '<option value="annual" selected>Annual review</option>')}${sub ? '<span class="badge b-green">Submitted</span>' : ''}</div>
     <div class="apcard"><div class="aphead"><i class="orb o1"></i><span class="aplogo"><img src="verve-advisory-logo.png" alt="Verve Advisory"></span><span><b>Appraisal ${AP.fy}</b><small>PERFORMANCE REVIEW FORM</small></span></div>
     <div class="apsteps">${AP_STEPS.map((s, i) => `<button class="apstep ${i + 1 < apStep ? 'done' : ''} ${i + 1 === apStep ? 'cur' : ''}" data-apgo="${i + 1}"><i>${i + 1 < apStep ? '✓' : i + 1}</i><span>${s}</span></button>`).join('')}</div>
     <div class="apbody"><h2 class="aptitle">${title.toUpperCase()}</h2>${desc ? `<p class="apdesc">${desc}</p>` : ''}${body}</div>
@@ -2099,7 +2117,7 @@ function paintAppraisal(v) {
 
 function wireAppraisal(v) {
   const emp = AP.employee.id, saveAp = async submit => { AP = await api('/appraisal', { method: 'PUT', body: { empId: emp, form: AP.form, submit: !!submit } }); };
-  $('#msel').onchange = e => { S.month = e.target.value === 'annual' ? S.month : e.target.value; location.hash = `#/form/${emp}/${e.target.value}`; };
+  wirePick(emp);
   v.oninput = e => {
     const t = e.target, f = AP.form;
     if (t.dataset.ap) f[t.dataset.ap] = t.value;

@@ -85,7 +85,15 @@ const paramsVersions = [{ from: '2026-04', data: JSON.parse(JSON.stringify(param
 // ---------- helpers ----------
 const pad = n => String(n).padStart(2, '0');
 const monthKey = (y, m) => `${y}-${pad(m)}`;
-const fyMonths = (startYear = 2026) => {
+// the financial year (April to March) a month belongs to, named by the year it starts in
+const fyStartOf = key => { const [y, m] = key.split('-').map(Number); return m >= 4 ? y : y - 1; };
+// a form can exist for any month from the tool's first one up to the current month (earlier years stay viewable)
+const validMonth = key => {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(key || '')) return false;
+  return key >= config.fyStartMonth && key <= config.currentMonth;
+};
+const prevMonth = key => { const [y, m] = key.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
+const fyMonths = (startYear = fyStartOf(config.currentMonth)) => {
   const out = [];
   for (let i = 0; i < 12; i++) {
     const m = ((3 + i) % 12) + 1, y = startYear + (3 + i >= 12 ? 1 : 0);
@@ -187,4 +195,4 @@ if (fs.existsSync(LIST_FILE)) {
   catch (e) { console.error(`Employee list not loaded (${LIST_FILE}): ${e.message}`); }
 }
 
-module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, photos, notifications, audit, fyMonths, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad };
+module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, photos, notifications, audit, fyMonths, fyStartOf, validMonth, prevMonth, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad };

@@ -49,7 +49,7 @@ function getForm(empId, month) {
   const k = `${empId}|${month}`;
   if (forms[k]) return forms[k];
   const e = emp(empId);
-  if (!e || !D.fyMonths().includes(month) || month < e.joined.slice(0, 7)) return null;
+  if (!e || !D.validMonth(month) || month < e.joined.slice(0, 7)) return null;
   // a new month starts with no KRAs; the person chooses whether to copy last month's (Copy KRAs from last month)
   const kras = D.emptyKras();
   return forms[k] = { empId, month, reviewDate: '', scheduledDate: null, actualDate: null, reschedules: [], selfSubmitted: false, selfSubmittedAt: null, submitted: false, locked: false, kras, qa: {}, qSnapshot: null };
