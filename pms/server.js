@@ -676,7 +676,7 @@ route('GET', '/api/report', ({ user, q }) => {
   rows.forEach(r => (byTeam[`${r.manager} / ${r.team}`] ||= []).push(r));
   return {
     view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers, ...(q.detail === '1' && { columns: PMS_COLUMNS, rules: { opWeight: config.weights.operational, opMinSubKras: config.opMinSubKras, learningDoneMin: config.learningDoneMin, qMinWords: config.qMinWords } }),
-    teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, ...L.counts(rs) })),
+    teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, manager: rs[0].manager, team: rs[0].team, ...L.counts(rs) })),
     scope: user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
   };
 });
@@ -795,7 +795,7 @@ route('GET', '/api/employees', ({ user, q }) => {
   const active = rows.filter(e => e.active);
   return { active, inactive: rows.filter(e => !e.active), stats: orgStats(),
     teams: teamNames(), teamInfo: teamInfo(),
-    designations: [...new Set(rows.map(e => e.designation))].filter(Boolean).sort(),
+    designations: [...new Set([...rows.map(e => e.designation), 'Consultant'])].filter(Boolean).sort(), // Consultant is always offered, even when nobody has it yet
     // anyone active can become a reporting manager (their role then changes to Manager by itself); people who already lead come first
     managers: employees.filter(e => e.active && e.role !== 'admin').sort((a, b) => (a.role === 'employee') - (b.role === 'employee') || a.name.localeCompare(b.name))
       .map(e => ({ id: e.id, name: e.name, lead: e.role !== 'employee', team: e.team, top: !e.managerId })) };
