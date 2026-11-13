@@ -4,6 +4,7 @@
 //
 //   node employees.js private/employees.tsv           check the file and show what would change (nothing is written)
 //   node employees.js private/employees.tsv --apply   write it into the database (DATABASE_URL, i.e. staging)
+//   node employees.js private/employees.tsv --apply --local-state   write it into the local data of `npm run local`
 //
 // First import: the demo employees and all demo records (forms, scheduling, appraisals, emails, audit log,
 // calendar links) are removed. Later imports update people by name, add new ones and mark people no longer on
@@ -153,14 +154,17 @@ if (require.main === module) (async () => {
   if (p.problems.length) { p.problems.forEach(x => console.log('PROBLEM:', x)); process.exit(1); }
   if (!apply) { console.log('\nCheck only. Nothing was written. Add --apply to write it into the database.'); return; }
   const db = require('./db'), D = require('./data');
-  if (!process.env.DATABASE_URL) { console.log('DATABASE_URL is not set: nothing to write to.'); process.exit(1); }
+  // --local-state (no DATABASE_URL): write into this machine's saved local data (private/state.json, `npm run local`);
+  // stop the local server first, or it saves its own copy over the file
+  const local = process.argv.includes('--local-state') && !process.env.DATABASE_URL;
+  if (!process.env.DATABASE_URL && !local) { console.log('DATABASE_URL is not set: nothing to write to. Add --local-state to update the local data instead.'); process.exit(1); }
   await db.init(); D.migrate();
   const r = importList(D, text, { who: 'Employee list import' });
   // admins see what the import did under the bell
   const N = require('./notify');
   N.admins().forEach(a => N.push(a.id, { type: 'admin', link: '#/employees/active', text: `Employee list imported: ${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.overwritten.length ? `, ${r.overwritten.length} reporting or team change${r.overwritten.length === 1 ? '' : 's'} made in the app replaced by the list (see the audit log)` : ''}.` }));
   await db.save();
-  console.log(`\nSaved to the database. ${r.first ? 'Demo data removed. ' : ''}${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.inactive.length ? ': ' + r.inactive.join(', ') : ''}.`);
+  console.log(`\nSaved to ${local ? 'the local data (private/state.json)' : 'the database'}. ${r.first ? 'Demo data removed. ' : ''}${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.inactive.length ? ': ' + r.inactive.join(', ') : ''}.`);
   if (r.overwritten.length) console.log(`\nReporting and team changes made in the app were replaced by the list (put them in the sheet if they should stay):\n- ${r.overwritten.join('\n- ')}`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });

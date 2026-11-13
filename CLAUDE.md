@@ -22,7 +22,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name, Reporting Manager, Designation,
   Department (= team), Director; 76 rows + 4 top-level directors). Teams and reporting managers were replaced on
   2026-11-12 by Harish's team sheet ("Sheet4", the master for teams): 72 rows + 4 directors, 9 teams grouped by director
-  (designations kept from the earlier list; the old file is `pms/private/employees.before-2026-11-12.tsv`). Some team
+  (designations kept from the earlier list; the old file is `pms/private/employees.before-2026-11-12.tsv`). On 2026-11-13
+  designations were corrected from the name/designation table of "Task_List_HRMS_Tool - Employee_List" (11 people, e.g.
+  Consultants; specific titles like "Data Cloud Executive" kept), also on the `pms/employee-list` branch. Some team
   names are people's names, so team names never go into code: `teamLook()` in `app.js` matches keywords and gives the
   other teams distinct spare icons by their place in `S.me.teams` (sent by `/api/me`).
   It lives in `pms/private/employees.tsv`, git-ignored on purpose: the staging repo is public, never commit it or put
@@ -142,7 +144,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
     npm run dev        # server on :3000, DATABASE_URL from ../.env.local (Neon), same DB as staging!
     npm start          # no .env loading; in-memory unless DATABASE_URL is set
     npm run db:reset   # drop pms_state; next start starts empty (no demo data any more), then re-import the list
-    npm run employees -- private/employees.tsv [--apply]   # check / write the real employee list
+    npm run employees -- private/employees.tsv [--apply]   # check / write the real employee list (staging; restart Render after)
+    node employees.js private/employees.tsv --apply --local-state   # same into npm run local's data (stop the local server first)
 Smoke test (demo sign-in, i.e. no Google env): `curl -c j -H 'Content-Type: application/json' -d '{"id":1}' localhost:3000/api/auth/demo`
 then `curl -b j localhost:3000/api/me` (ids follow the list order; the test admin "Verve Admin" A900 is the highest id). Non-GET calls must send `Content-Type: application/json`.
 
