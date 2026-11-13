@@ -231,7 +231,7 @@ function homeTips(teams, counts, emails) {
 }
 const emailStates = (user, month) => {
   const mgrs = employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && L.canView(user, e.id) && e.role !== 'admin');
-  const allowed = mgrs.filter(m => user.role === 'admin' || user.role === 'director' || m.id === user.id || L.isAncestor(user.id, m.id));
+  const allowed = mgrs.filter(m => user.role === 'admin' || m.id === user.id || L.isAncestor(user.id, m.id));
   return allowed.map(m => ({ managerId: m.id, name: m.name, team: m.team, state: (emailsOutbox.find(x => x.managerId === m.id && x.month === month) || {}).state || 'not generated' }));
 };
 
@@ -572,7 +572,7 @@ route('GET', '/api/report', ({ user, q }) => {
   return {
     view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers,
     teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, ...L.counts(rs) })),
-    scope: user.role === 'director' || user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
+    scope: user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
   };
 });
 route('GET', '/api/report.csv', ({ user, q }) => {
@@ -588,7 +588,7 @@ route('GET', '/api/emails', ({ user, q }) => { adminOnly(user); return emailStat
 route('GET', '/api/email', ({ user, q }) => {
   adminOnly(user);
   const id = mustEmp(q.manager).id;
-  if (user.role !== 'admin' && user.role !== 'director' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
+  if (user.role !== 'admin' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
   const month = q.month || config.currentMonth;
   const e = emailsOutbox.find(x => x.managerId === id && x.month === month);
   return { ...L.buildEmail(id, month), state: e ? e.state : 'not generated', sentAt: e && e.sentAt };
@@ -597,7 +597,7 @@ route('POST', '/api/emails/generate', ({ user, body }) => {
   adminOnly(user);
   const month = body.month || config.currentMonth; let n = 0;
   employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && e.role !== 'admin').forEach(m => {
-    if (user.role !== 'admin' && user.role !== 'director' && m.id !== user.id && !L.isAncestor(user.id, m.id)) return;
+    if (user.role !== 'admin' && m.id !== user.id && !L.isAncestor(user.id, m.id)) return;
     if (!emailsOutbox.find(x => x.managerId === m.id && x.month === month)) { emailsOutbox.push({ managerId: m.id, month, state: 'draft' }); n++; }
   });
   audit(user.name, 'generate emails', `${n} drafts for ${month}`);
@@ -606,7 +606,7 @@ route('POST', '/api/emails/generate', ({ user, body }) => {
 route('POST', '/api/emails/send', ({ user, body }) => {
   adminOnly(user);
   const mgr = mustEmp(body.managerId);
-  if (user.role !== 'admin' && user.role !== 'director' && mgr.id !== user.id && !L.isAncestor(user.id, mgr.id)) throw forbid();
+  if (user.role !== 'admin' && mgr.id !== user.id && !L.isAncestor(user.id, mgr.id)) throw forbid();
   const month = body.month || config.currentMonth;
   let e = emailsOutbox.find(x => x.managerId === +body.managerId && x.month === month);
   if (!e) emailsOutbox.push(e = { managerId: +body.managerId, month });
@@ -843,7 +843,7 @@ route('GET', '/api/myteam', ({ user, q }) => {
 // MIS report: month by month for the root's whole team, and each person's monthly rating
 // whose reviews the MIS report covers: everyone under the root; admins and directors without an id get the whole organisation
 const misScope = (user, q) => {
-  const org = !q.id && (user.role === 'admin' || user.role === 'director');
+  const org = !q.id && user.role === 'admin';
   const root = scopeRoot(user, q.id);
   const people = (org ? L.visibleEmployees(user) : L.subordinates(root.id)).filter(e => e.role !== 'admin' && e.managerId).sort(byName);
   return { org, root, people };
@@ -896,7 +896,7 @@ const avg2 = list => list.length ? round2(list.reduce((a, b) => a + b, 0) / list
 route('GET', '/api/yearly', ({ user, q }) => {
   const curFy = +fyLabel(config.currentMonth).slice(3, 7), firstFy = +config.fyStartMonth.slice(0, 4);
   const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy), months = D.fyMonths(fy);
-  const org = !q.id && !q.self && (user.role === 'admin' || user.role === 'director');
+  const org = !q.id && !q.self && user.role === 'admin';
   const root = org ? null : scopeRoot(user, q.id);
   // Team report: only the people under the root (their own table is My report, so it is not shown twice);
   // someone with nobody under them gets their own table

@@ -18,12 +18,11 @@ function subordinates(id) {
 const isAncestor = (viewerId, targetId) => subordinates(viewerId).some(e => e.id === targetId);
 function canView(viewer, targetId) {
   if (!emp(targetId)) return false;
-  if (viewer.role === 'admin' || viewer.role === 'director') return true;
+  if (viewer.role === 'admin') return true; // everyone else, directors included, sees themselves and the people under them
   return viewer.id === targetId || isAncestor(viewer.id, targetId);
 }
 // A reviewer can enter manager ratings and submit; admin can do everything
-const canManage = (viewer, targetId) => viewer.role === 'admin' || isAncestor(viewer.id, targetId) ||
-  (viewer.role === 'director' && viewer.id !== targetId);
+const canManage = (viewer, targetId) => viewer.role === 'admin' || isAncestor(viewer.id, targetId);
 const canSelfEdit = (viewer, targetId) => viewer.id === targetId || viewer.role === 'admin';
 function visibleEmployees(viewer, includeInactive = false) {
   const base = employees.filter(e => e.role !== 'admin' && canView(viewer, e.id));
