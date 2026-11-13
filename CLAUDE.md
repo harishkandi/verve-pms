@@ -71,6 +71,12 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   them who were in their old team come along (`teamOfManager` / `moveTeam` in `server.js`). Exceptions: reporting to a
   top-level director keeps the person's own team (directors lead several departments); no manager = "Directors"; a team
   the admin picks by hand in the same save wins. The Edit dialog fills the Team field as soon as a manager is picked.
+- Teams (2026-11-13): a team = the `team` name on each person + its window in `config.windows`. Admins add / rename /
+  delete (only when nobody active is in it) teams in Employees › Teams (`teamsDialog()` in `app.js`; `POST|PUT /api/teams`,
+  `POST /api/teams/delete` in `server.js`; the Window button reuses `windowDialog`). "Directors" is fixed. Because the sheet
+  is master, a rename is stored in `config.teamRenames` (sheet name -> app name) and `importList` maps through it; teams
+  added in the app (`config.teamsAdded`) are not dropped while empty. A team changed by hand (`moveTeam` sets
+  `e.teamSetInApp`) is put back by the next import and listed with the replaced reporting changes.
 - Notifications (2026-11-12): bell in the top bar (`#tbbell`, panel `#tbnotes` with "Needs action" / "All", polled every
   minute via `apiCall` so no spinner). Server side is `notify.js`: `push(to, {type, text, link, action, key}, by)` (no
   note for your own action; same `key` updates the earlier item), `resolve(key)` closes action items for everyone,
@@ -81,6 +87,15 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   reporting changes, window / rules / questionnaire / parameters changes, list import (admins). In View as the admin
   sees the person's list but never marks it read. No email yet (no sender; Google Calendar already emails invites).
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
+- PMS report format (management's "PMS Reports Format" sheet, 2026-11-13) = the Review status report's "Full details"
+  switch (`/api/report?detail=1`, `fullTable()` in `app.js`) and its CSV export (same columns, sheet order: `PMS_COLUMNS` in
+  `server.js`), built by `pmsDetail()` in `logic.js`. No AI: the Operational/Process/People remark columns join each
+  sub-KRA's self and manager remark. Scheduled Date = first date picked (`f.firstScheduledDate`, older forms: first
+  reschedule's `from`). Final Status: Review Done / Questionnaire Done / Pending, "PMS form incomplete/errors/queries" (all
+  ratings in but a blocker), "Employee on leave" / "Serving Notice" (admin sets `e.workStatus = {type, from}` in Employees ›
+  Edit, from that review month on). Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
+  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules in
+  Review rules: `learningDoneMin` 60, `qMinWords` 15, `opMinSubKras` 3 (defaults filled by `migrate()`).
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
 - Reports ported from the old portal (pms.verveadvisory.com): Team report / My report (`#/yearly`, `/api/yearly`,
@@ -103,7 +118,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Save draft; employees' entries also autosave. Autosave sends only the fields that person changed (`formDirty` in
   `app.js`) and `PUT /api/form` changes only the fields it is sent, so the employee and the manager can have the form
   open together without wiping each other's entries (found in testing, 2026-11-12; never send the whole form back).
-  Top-level directors (no manager) get no new form (`mustForm`) and no My review / My report menu items. A manager remark is needed only when self and manager ratings differ; a submitted
+  Top-level directors (no manager) get no new form (`mustForm`) and no My review / My report menu items. Since 2026-11-13
+  (management meeting) Submit review needs all five on every sub-KRA: self rating, self remark, manager rating, manager remark
+  (always, not only when ratings differ: `MGR_REMARK`), and the SOP / learning document link in the self remark (`SOP_LINK` /
+  `LEARN_LINK` are now `block`); `managerGaps()` lists missing manager ratings. Rows are found by name (/sop/ in Process,
+  /learn/ in People). Questionnaire text answers under `config.qMinWords` (15) words are flagged (`Q_SHORT`), not blocked; a submitted
   monthly form is locked for good (no reopen, no edit request, admins included). KRA changes by an employee need
   their manager's approval (Vidya, 2026-11-12: `POST /api/kra-request`, `/api/kra-request/decide`; an approval allows
   one KRA save, pending requests show on the manager's dashboard); copying last month's KRAs needs no approval; none

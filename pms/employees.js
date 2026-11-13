@@ -82,24 +82,28 @@ function importList(S, text, { who = 'System', today } = {}) {
   // people added by hand on the Employees page are matched too, so a later list does not duplicate them
   const byName = new Map(employees.filter(e => e.role !== 'admin').map(e => [key(e.name), e]));
   let nextId = Math.max(0, ...employees.map(e => e.id)) + 1;
-  const added = [], updated = [];
+  const added = [], updated = [], teamOverwritten = [];
   for (const r of p.people) {
     let e = byName.get(key(r.name));
     if (!e) { e = { id: nextId++, src: 'list', level: null, active: true }; employees.push(e); byName.set(key(r.name), e); added.push(r.name); }
     else updated.push(r.name);
+    // a team renamed in the app keeps its new name: the sheet's old name is looked up in config.teamRenames
+    const team = (r.team && (config.teamRenames || {})[r.team]) || r.team, teamBefore = e.team;
     Object.assign(e, { src: 'list' }, {
       name: r.name, role: r.role, active: true,
       code: r.code || e.code || 'V' + String(e.id).padStart(3, '0'),
       email: r.email || e.email || '', designation: r.designation || e.designation || '',
-      team: r.team || e.team || (r.top ? 'Directors' : 'Unassigned'), joined: normDate(r.joined) || e.joined || fyStart,
+      team: team || e.team || (r.top ? 'Directors' : 'Unassigned'), joined: normDate(r.joined) || e.joined || fyStart,
       // real values (from the list or set by the admin) vs the placeholders above; the profile hides placeholders
       codeSet: !!r.code || !!e.codeSet, joinedSet: !!normDate(r.joined) || !!e.joinedSet,
     });
     delete e.inactiveFrom; delete e.reason;
+    if (e.teamSetInApp && teamBefore !== e.team) teamOverwritten.push(`${e.name}: was in ${teamBefore} (changed in the app), the list says ${e.team}`);
+    delete e.teamSetInApp;
   }
   // the list is the master copy: a reporting change made in the app (or planned for next month) is replaced by the list's
   // manager, and the import says so, so HR can put the change into the sheet if it should stay
-  const overwritten = [];
+  const overwritten = [...teamOverwritten];
   for (const r of p.people) {
     const e = byName.get(key(r.name)), id = r.manager ? byName.get(key(r.manager)).id : null;
     const was = e.managerId, nameOf = x => (employees.find(y => y.id === x) || {}).name || 'no manager';
@@ -107,10 +111,10 @@ function importList(S, text, { who = 'System', today } = {}) {
     if (e.pendingManager && e.pendingManager.id !== id) overwritten.push(`${e.name}: planned move to ${nameOf(e.pendingManager.id)} dropped, the list says ${r.manager || 'no manager'}`);
     e.managerId = id; delete e.managerSetInApp; delete e.pendingManager;
   }
-  overwritten.forEach(x => S.audit(who, 'reporting change replaced by the list', x));
+  overwritten.forEach(x => S.audit(who, 'change made in the app replaced by the list', x));
   // review windows: drop teams nobody is in any more (the demo teams), give new departments the default window
   const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
-  for (const t of Object.keys(config.windows)) if (!teams.has(t)) delete config.windows[t];
+  for (const t of Object.keys(config.windows)) if (!teams.has(t) && !(config.teamsAdded || []).includes(t)) delete config.windows[t]; // teams added in the app stay
   for (const t of teams) config.windows[t] ||= { start: 25, end: 2 };
   // a "Review window" like 10-15 on a manager's row is the window for that manager's whole team
   config.managerWindows ||= {};
@@ -151,9 +155,9 @@ if (require.main === module) (async () => {
   const r = importList(D, text, { who: 'Employee list import' });
   // admins see what the import did under the bell
   const N = require('./notify');
-  N.admins().forEach(a => N.push(a.id, { type: 'admin', link: '#/employees/active', text: `Employee list imported: ${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.overwritten.length ? `, ${r.overwritten.length} reporting change${r.overwritten.length === 1 ? '' : 's'} made in the app replaced by the list (see the audit log)` : ''}.` }));
+  N.admins().forEach(a => N.push(a.id, { type: 'admin', link: '#/employees/active', text: `Employee list imported: ${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.overwritten.length ? `, ${r.overwritten.length} reporting or team change${r.overwritten.length === 1 ? '' : 's'} made in the app replaced by the list (see the audit log)` : ''}.` }));
   await db.save();
   console.log(`\nSaved to the database. ${r.first ? 'Demo data removed. ' : ''}${r.added.length} added, ${r.updated.length} updated, ${r.inactive.length} made inactive${r.inactive.length ? ': ' + r.inactive.join(', ') : ''}.`);
-  if (r.overwritten.length) console.log(`\nReporting changes made in the app were replaced by the list (put them in the sheet if they should stay):\n- ${r.overwritten.join('\n- ')}`);
+  if (r.overwritten.length) console.log(`\nReporting and team changes made in the app were replaced by the list (put them in the sheet if they should stay):\n- ${r.overwritten.join('\n- ')}`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });

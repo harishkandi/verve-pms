@@ -3,6 +3,10 @@
 const fs = require('fs');
 const { LIST_FILE, importList } = require('./employees');
 
+// rules behind the PMS report format (2026-11-13): learning counts as properly done from this manager rating (%),
+// questionnaire text answers need at least this many words, and the Operational KRA needs at least this many sub-KRAs
+function REPORT_RULES() { return { learningDoneMin: 60, qMinWords: 15, opMinSubKras: 3 }; }
+
 const config = {
   currentMonth: '2026-11',     // review month being run; its forms are open from the 1st of the month
   fyStartMonth: '2026-04',
@@ -15,6 +19,7 @@ const config = {
   ratingScale: 100,
   clickupMin: 60,
   learningMin: 40,
+  ...REPORT_RULES(),
   ratingGapFlag: 20,           // section 8.4 O3
   emailGapFlag: 15,            // section 11
   selfShare: 0.3,
@@ -168,6 +173,8 @@ function migrate() {
   // the Directors team always has a window (top-level people); other teams come from the employee list (employees.js)
   config.windows.Directors ||= { start: 25, end: 30 };
   config.managerWindows ||= {};
+  // rules added after the state was first saved (the saved config replaces the defaults above)
+  for (const [k, v] of Object.entries(REPORT_RULES())) if (typeof config[k] !== 'number') config[k] = v;
   // one-off: windows still at the old 25th-31st / 25th-30th defaults become 25th to the 2nd of the next month
   if (!config.windowsV2) {
     for (const [t, w] of Object.entries(config.windows)) if (w.start === 25 && (w.end === 31 || w.end === 30)) config.windows[t] = { start: 25, end: 2 };
@@ -176,7 +183,7 @@ function migrate() {
   // once the real list is in, windows of teams nobody is in (the old demo teams) go
   if (employees.some(e => e.src === 'list')) {
     const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
-    for (const t of Object.keys(config.windows)) if (t !== 'Directors' && !teams.has(t)) delete config.windows[t];
+    for (const t of Object.keys(config.windows)) if (t !== 'Directors' && !teams.has(t) && !(config.teamsAdded || []).includes(t)) delete config.windows[t];
   }
 }
 
@@ -187,4 +194,4 @@ if (fs.existsSync(LIST_FILE)) {
   catch (e) { console.error(`Employee list not loaded (${LIST_FILE}): ${e.message}`); }
 }
 
-module.exports = { migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, photos, notifications, audit, fyMonths, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad };
+module.exports = { DEFAULT_WINDOW, migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, photos, notifications, audit, fyMonths, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad };
