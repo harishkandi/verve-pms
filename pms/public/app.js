@@ -4,8 +4,6 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 // "a · b" without stray dots when a part is empty
 const dotJoin = (...parts) => parts.filter(x => x != null && x !== '').map(esc).join(' · ');
 const S = { user: null, me: null, month: null, page: null };
-// anything not served from this machine is the shared staging demo
-const IS_STAGING = !['localhost', '127.0.0.1', ''].includes(location.hostname);
 const ROLE_LABEL = { admin: 'Admin', director: 'Director', manager: 'Manager', teamlead: 'Team lead', employee: 'Employee' };
 
 // the session lives in an HttpOnly cookie set by the server; the browser sends it with every call
@@ -401,7 +399,7 @@ async function start() {
     : `<div class="ngrp" data-g="${i.key}"><button type="button" class="ngrp-btn" aria-expanded="false">${ico(i.icon)}<span>${i.label}</span>${ico('right')}</button>
       <div class="nsub">${i.kids.map(([l, h]) => `<a data-h="${h}" href="${h}"><i></i><span>${l}</span></a>`).join('')}</div></div>`;
   $('#root').innerHTML = `<div id="app"><nav class="side">${ORBS}<div class="side-in">${WORDMARK}
-    ${groups.map((g, gi) => `<div class="eyebrow">${esc(g.label)}${gi === 0 && IS_STAGING ? '<span class="badge b-amber" title="Staging: dummy data">Staging</span>' : ''}</div><div class="links">${g.links.map(navItem).join('')}</div>`).join('')}
+    ${groups.map(g => `<div class="eyebrow">${esc(g.label)}</div><div class="links">${g.links.map(navItem).join('')}</div>`).join('')}
     <div class="side-sp"></div></div></nav>
     <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span>
       ${S.me.real.role === 'admin' && !S.me.viewingAs ? `<button class="btn sm" id="asbtn" title="See PMS exactly as another person sees it">${ico('eye')}View as…</button>` : ''}<span class="tbn"><button type="button" class="ibtn tb-bell" id="tbbell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${ico('bell')}<b class="tb-cnt" id="tbcnt" hidden></b></button><div class="tb-notes" id="tbnotes" role="dialog" aria-label="Notifications" hidden></div></span>${themeBtn()}
