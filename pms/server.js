@@ -460,7 +460,8 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const month = q.month || config.currentMonth;
   // only people with a reporting manager have a review (same rule as ensureMonthForms); top-level directors are not reviewed
   L.visibleEmployees(user).filter(e => e.managerId && (e.id !== user.id || user.role === 'employee')).forEach(e => L.getForm(e.id, month));
-  const rows = L.reportRows(user, month, { team: q.team });
+  // a director schedules the reviews of the people who report to them directly, not of everyone further down
+  const rows = L.reportRows(user, month, { team: q.team }).filter(r => user.role !== 'director' || r.managerId === user.id);
   const windows = windowGroups(rows, month).map(g => ({ key: g.key, team: g.team, label: g.label, managerId: g.managerId, start: g.window.start, end: g.window.end, startDay: g.days.start, endDay: g.days.end, collectedOn: D.addDays(g.window.start, -3), collected: g.rows.filter(r => r.scheduled).length, total: g.rows.length }));
   return { windows, canEditWindows: user.role === 'admin', calendar: calendarState(realUser), rows: rows.map(r => {
     const f = L.peek(r.empId, month), e = L.emp(r.empId);
