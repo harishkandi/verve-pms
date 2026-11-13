@@ -1847,7 +1847,7 @@ pages.employees = async (v, arg) => {
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
-  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
+  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
@@ -1896,21 +1896,6 @@ pages.employees = async (v, arg) => {
       const h = '#/employees/' + S.etab; // keep the address (and the menu highlight) in step with the tile
       if (location.hash !== h) { location.hash = h; return; }
       return pages.employees(v);
-    }
-    if (a === 'add') {
-      const m = modal(`<h2>Add new member</h2><div id="er"></div>${[['name', 'Full name', ''], ['code', 'Employee code', ''], ['email', 'Work email', 'name' + dom], ['designation', 'Designation', '']].map(([k, l, ph]) => `<label class="f">${l} <i>*</i></label><input id="n_${k}" style="width:100%" placeholder="${esc(ph)}" ${k === 'email' ? 'type="email" autocomplete="off"' : ''}>`).join('')}
-      <div class="small">They sign in with this Google account. It must end with ${esc(dom)}.</div>
-      <label class="f">Team <i>*</i></label><select id="n_team">${d.teams.map(t => `<option>${t}</option>`).join('')}</select>
-      <label class="f">Reporting manager <i>*</i></label><select id="n_managerId">${d.managers.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
-      <label class="f">Date of joining <i>*</i></label><input type="date" id="n_joined"><div class="small">The role follows the reporting line: they become a manager once someone reports to them.</div>
-      <label class="f">Review window <i>*</i></label><select id="n_window"><option value="team">Same as team</option></select>
-      <div class="info">New joiner: no KRAs are set yet, so only the questionnaire is checked. After 2 complete months the tool shows "need to set KRA of the month".</div><div class="row"><button class="btn pri" id="ok">Save member</button><button class="btn" id="no">Cancel</button></div>`);
-      m.querySelector('#no').onclick = () => m.remove();
-      m.querySelector('#ok').onclick = async () => {
-        const b = {}; ['name', 'code', 'email', 'designation', 'team', 'managerId', 'joined', 'window'].forEach(k => b[k] = m.querySelector('#n_' + k).value.trim());
-        if (b.email && !emailOk(b.email)) { m.querySelector('#er').innerHTML = `<div class="warn">Work email must end with ${esc(dom)}.</div>`; m.querySelector('#n_email').classList.add('err'); return; }
-        try { await api('/employees', { method: 'POST', body: b }); m.remove(); toast('Member added'); pages.employees(v); } catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
-      };
     }
     if (a === 'edit') {
       const p = [...d.active, ...d.inactive].find(x => String(x.id) === t.dataset.id);

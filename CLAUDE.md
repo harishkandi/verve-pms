@@ -61,7 +61,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
   incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
   "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
-- Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit, Add member,
+- People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
+  member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
+- Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,
   Move to inactive). Checks: new manager active, not the admin account, no loops; "No manager" asks first (top-level
   director, not reviewed). If this month's review has started (`reviewProgress`: meeting set, sent to manager, manager
   ratings, KRA request) the admin picks "keep" (old manager finishes; `e.pendingManager` applies from next month via

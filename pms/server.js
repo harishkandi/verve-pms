@@ -803,24 +803,8 @@ route('GET', '/api/employee-forms', ({ user, q }) => {
   const rows = D.fyMonths().map(m => { const f = L.peek(id, m); return { month: m, label: D.monthLabel(m), reviewDate: f ? f.reviewDate : '', status: f ? L.reviewStatus(f) : 'Not started', rating: f && f.submitted ? L.monthlyRating(f) : null, open: !!f || m >= joined, beforeJoining: !f && m < joined }; });
   return { employee: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '' }, rows, annual: annualForms[`${id}|FY2026`] ? 'Submitted' : 'Opens in March' };
 });
-route('POST', '/api/employees', ({ user, body }) => {
-  adminOnly(user);
-  const need = ['name', 'code', 'email', 'designation', 'team', 'managerId', 'joined', 'window'];
-  const miss = need.filter(k => !body[k]);
-  if (miss.length) throw bad('Mandatory fields missing: ' + miss.join(', '), { errors: ['Mandatory fields missing: ' + miss.join(', ')] });
-  if (employees.some(e => e.code === body.code)) throw bad('Employee code already exists.');
-  const email = checkEmail(body.email, null, true);
-  const m = checkManager(null, body.managerId);
-  const id = Math.max(...employees.map(e => e.id)) + 1;
-  // the role follows the reporting line (a new member has no reports yet, so employee or team lead)
-  const e = { id, code: body.code, name: body.name, email, designation: body.designation, team: body.team, managerId: m.id, role: 'employee', level: null, joined: body.joined, active: true, newJoiner: true, codeSet: true, joinedSet: true };
-  e.role = L.deriveRole(e);
-  employees.push(e);
-  audit(user.name, 'add member', `${body.name} (${body.code}), reports to ${m.name}`);
-  notify(m.id, `${body.name} joined and reports to you. Set their KRAs once they are ready (new joiners start with the questionnaire only).`);
-  syncRoles(user.name);
-  return { id };
-});
+// People are added only through the employee list (the sheet is the master: npm run employees -- <file> --apply), not in
+// the app: the Add new member button and POST /api/employees were removed on 2026-11-13.
 // work emails are how people sign in, so they must be on the org domain and belong to one person only
 function checkEmail(raw, selfId, required) {
   const email = String(raw || '').trim().toLowerCase();
@@ -833,7 +817,7 @@ function checkEmail(raw, selfId, required) {
 const ROLES = ['employee', 'teamlead', 'manager', 'director', 'admin'];
 
 // ---------- reporting changes ----------
-// Every change of reporting manager goes through here (Employees table and Edit, Add member, Move to inactive):
+// Every change of reporting manager goes through here (Employees table and Edit, Move to inactive):
 // check the new manager, decide who finishes this month's review, clean up what belonged to the old manager,
 // re-derive roles and leave a note on the dashboards of the people involved.
 const nextMonthOf = m => { let [y, mo] = m.split('-').map(Number); mo++; if (mo > 12) { mo = 1; y++; } return `${y}-${D.pad(mo)}`; };
