@@ -110,7 +110,7 @@ function importList(S, text, { who = 'System', today } = {}) {
   overwritten.forEach(x => S.audit(who, 'reporting change replaced by the list', x));
   // review windows: drop teams nobody is in any more (the demo teams), give new departments the default window
   const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
-  for (const t of Object.keys(config.windows)) if (!teams.has(t)) delete config.windows[t];
+  for (const t of Object.keys(config.windows)) if (!teams.has(t) && !(config.addedTeams || []).includes(t)) delete config.windows[t];
   for (const t of teams) config.windows[t] ||= { start: 25, end: 2 };
   // a "Review window" like 10-15 on a manager's row is the window for that manager's whole team
   config.managerWindows ||= {};

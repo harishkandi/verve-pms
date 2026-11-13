@@ -176,7 +176,7 @@ function migrate() {
   // once the real list is in, windows of teams nobody is in (the old demo teams) go
   if (employees.some(e => e.src === 'list')) {
     const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
-    for (const t of Object.keys(config.windows)) if (t !== 'Directors' && !teams.has(t)) delete config.windows[t];
+    for (const t of Object.keys(config.windows)) if (t !== 'Directors' && !teams.has(t) && !(config.addedTeams || []).includes(t)) delete config.windows[t];
   }
 }
 

@@ -283,6 +283,12 @@ route('GET', '/api/home', ({ user, q }) => {
     const tr = g.rows;
     return { key: g.key, team: g.team, label: g.label, managerId: g.managerId, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: g.window, startDay: g.days.start, endDay: g.days.end, ...windowState(g.window) };
   });
+  // an admin sees every team on the dashboard, including ones just added that nobody has joined yet
+  if (user.role === 'admin') for (const t of Object.keys(config.windows).sort()) if (!teams.some(x => x.team === t)) {
+    const w = D.windowFor(t, month), days = config.windows[t];
+    teams.push({ key: 't:' + t, team: t, label: t, managerId: null, ...L.counts([]), collected: 0, total: 0, window: w, startDay: days.start, endDay: days.end, ...windowState(w) });
+  }
+  teams.sort((a, b) => a.label.localeCompare(b.label));
   const counts = L.counts(rows);
   // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
   const rated = rows.filter(r => r.rating != null);
@@ -1274,6 +1280,62 @@ route('PUT', '/api/config', ({ user, body }) => {
   audit(user.name, 'config updated', 'thresholds / windows');
   employees.filter(e => e.active && ['manager', 'teamlead', 'director'].includes(e.role)).forEach(e => N.push(e.id, { type: 'change', key: `rules|${config.currentMonth}`, link: '#/report', text: `The review rules (thresholds for flags such as ClickUp, learning and rating gaps) were updated by ${user.name}.` }, user));
   return config;
+});
+// Teams (admin): add, rename, delete. A team is its name on each member plus its review window in config.windows, so every
+// page (dashboard chips, progress, reports, Employees) follows by itself once these two places agree.
+const TEAM_LOCKED = { Directors: 'The Directors team is built in (top-level directors sit there).' };
+const teamMembers = (t, active) => employees.filter(e => e.team === t && e.role !== 'admin' && (active === undefined || e.active === active));
+const teamNames = () => [...new Set([...Object.keys(config.windows), ...employees.filter(e => e.role !== 'admin').map(e => e.team)])].filter(Boolean);
+function cleanTeamName(raw) {
+  const n = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!n) throw bad('Team name is required.');
+  if (n.length > 50) throw bad('Team name can be at most 50 characters.');
+  return n;
+}
+route('GET', '/api/teams', ({ user }) => {
+  adminOnly(user);
+  return { teams: teamNames().sort((a, b) => a.localeCompare(b)).map(t => {
+    const w = config.windows[t] || { start: 25, end: 2 };
+    return { name: t, active: teamMembers(t, true).length, inactive: teamMembers(t, false).length, window: w, locked: TEAM_LOCKED[t] || null };
+  }) };
+});
+route('POST', '/api/teams', ({ user, body }) => {
+  adminOnly(user);
+  const name = cleanTeamName(body.name);
+  if (teamNames().some(t => t.toLowerCase() === name.toLowerCase())) throw bad(`A team called "${name}" already exists.`);
+  config.windows[name] = { start: 25, end: 2 };
+  (config.addedTeams ||= []).push(name); // kept even while nobody is in it (the list import would otherwise drop it)
+  audit(user.name, 'team added', name);
+  return { name };
+});
+route('PUT', '/api/teams', ({ user, body }) => {
+  adminOnly(user);
+  const from = String(body.name || ''), to = cleanTeamName(body.newName);
+  if (!teamNames().includes(from)) throw notFound('Team not found.');
+  if (TEAM_LOCKED[from]) throw bad(TEAM_LOCKED[from] + ' It cannot be renamed.');
+  if (to === from) return { name: to, moved: 0 };
+  if (teamNames().some(t => t !== from && t.toLowerCase() === to.toLowerCase())) throw bad(`A team called "${to}" already exists.`);
+  if (TEAM_LOCKED[to]) throw bad(`"${to}" is a built-in team name.`);
+  const people = employees.filter(e => e.team === from);
+  people.forEach(e => { e.team = to; });
+  if (config.windows[from]) { config.windows[to] = config.windows[from]; delete config.windows[from]; }
+  if (config.addedTeams) config.addedTeams = config.addedTeams.map(t => t === from ? to : t);
+  audit(user.name, 'team renamed', `${from} → ${to} (${people.length} ${people.length === 1 ? 'person' : 'people'})`);
+  return { name: to, moved: people.length };
+});
+route('POST', '/api/teams/delete', ({ user, body }) => {
+  adminOnly(user);
+  const name = String(body.name || '');
+  if (!teamNames().includes(name)) throw notFound('Team not found.');
+  if (TEAM_LOCKED[name]) throw bad(TEAM_LOCKED[name] + ' It cannot be deleted.');
+  const n = teamMembers(name, true).length;
+  if (n) throw bad(`${name} still has ${n} active ${n === 1 ? 'member' : 'members'}. Move them to another team on the Employees page first, then delete the team.`);
+  // inactive people keep no team rather than pointing at one that no longer exists
+  employees.filter(e => e.team === name).forEach(e => { e.team = ''; });
+  delete config.windows[name];
+  if (config.addedTeams) config.addedTeams = config.addedTeams.filter(t => t !== name);
+  audit(user.name, 'team deleted', name);
+  return { ok: true };
 });
 // one team's review window (day of month, same every month), edited from the Scheduling page
 route('PUT', '/api/windows', ({ user, body }) => {

@@ -378,6 +378,7 @@ async function start() {
     ['Dashboard', '#/home', 'home'],
     ['All active employees', '#/employees/active', 'idcard'],
     ['All inactive employees', '#/employees/inactive', 'eyeoff'],
+    ['Teams', '#/teams', 'team'],
     { key: 'org', label: 'Reporting manager', icon: 'sitemap', kids: ORG_TABS.map(([, l, slug]) => [l, '#/reporting' + (slug ? '/' + slug : '')]) },
     { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['MIS report', '#/mis'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
     { key: 'qs', label: 'Questions', icon: 'question', kids: [['Parameters summary', '#/params'], ['Questionnaire', '#/params/questions']] },
@@ -804,6 +805,7 @@ pages.home = async (v, opts = {}) => {
   const d = await api(`/home?month=${S.month}&team=${encodeURIComponent(mgr ? S.hteam || '' : '')}`);
   const c = d.counts, pct = pctOf(c.submitted, c.scheduled), month = d.label.split(' ')[0];
   lastHome = d;
+  if (mgr && S.hteam && !d.teams.some(t => t.team === S.hteam)) { S.hteam = ''; return pages.home(v, opts); } // the filtered team was renamed or deleted
   let html = null;
   if (mgr) {
     const q = d.quick, teams = d.teams, att = d.attention, SHOW = 8;
@@ -1993,6 +1995,39 @@ pages.reporting = async (v, arg) => {
   };
   $('#orgq').oninput = e => { S.orgq = e.target.value; filter(); showResults(v, S.orgq); };
   filter();
+};
+
+// ---------- teams (admin): add, rename, delete ----------
+pages.teams = async v => {
+  const { teams } = await api('/teams');
+  const dayTxt = w => `Day ${w.start} to ${w.end}`;
+  v.innerHTML = head('Teams', 'Add, rename or delete teams. The dashboard, reports and Employees page follow straight away.') + `
+  <div class="row"><span class="small">${teams.length} team${teams.length === 1 ? '' : 's'}</span><span class="sp"></span><button class="btn pri" data-a="add">${ico('plus')}Add team</button></div>
+  <div class="tablewrap"><table><tr><th>Team</th><th>Active members</th><th>Inactive</th><th>Review window</th><th>Actions</th></tr>${teams.map(t => `<tr>
+    <td>${teamIco(t.name)}<b>${esc(t.name)}</b>${t.locked ? ` <span class="badge b-grey" title="${esc(t.locked)}">Built in</span>` : ''}</td>
+    <td><a href="#/employees/active" data-q="${esc(t.name)}">${t.active}</a></td><td>${t.inactive}</td><td>${dayTxt(t.window)}</td>
+    <td>${t.locked ? '<span class="small">Cannot be changed</span>' : `<span class="acts"><button class="btn sm" data-a="rename" data-t="${esc(t.name)}">${ico('pencil')}Rename</button><button class="btn sm dng" data-a="del" data-t="${esc(t.name)}" data-n="${t.active}">${ico('trash')}Delete</button></span>`}</td></tr>`).join('')}</table></div>`;
+  const nameForm = (title, val, okLabel) => modal(`<h2>${title}</h2><div id="er"></div><label class="f">Team name <i>*</i></label><input id="tn" maxlength="50" value="${esc(val)}" autocomplete="off"><div class="row"><button class="btn pri" id="ok">${okLabel}</button><button class="btn" id="no">Cancel</button></div>`);
+  const ask = (m, run) => {
+    const inp = m.querySelector('#tn'); inp.focus(); inp.select();
+    const go = async () => { try { await run(inp.value.trim()); m.remove(); pages.teams(v); } catch (er) { m.querySelector('#er').innerHTML = errBox(er); } };
+    m.querySelector('#no').onclick = () => m.remove(); m.querySelector('#ok').onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  };
+  v.onclick = async e => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    const a = b.dataset.a, t = b.dataset.t;
+    if (a === 'add') ask(nameForm('Add team', '', 'Add team'), async name => { await api('/teams', { method: 'POST', body: { name } }); toast(`Team "${name}" added`); });
+    if (a === 'rename') ask(nameForm('Rename team', t, 'Save'), async name => {
+      const r = await api('/teams', { method: 'PUT', body: { name: t, newName: name } });
+      if (S.hteam === t) S.hteam = r.name; // keep the dashboard's team filter on the renamed team
+      toast(`Renamed to "${r.name}"${r.moved ? ` (${r.moved} ${r.moved === 1 ? 'person' : 'people'} updated)` : ''}`);
+    });
+    if (a === 'del') {
+      if (+b.dataset.n) return toast(`${t} still has ${b.dataset.n} active member${b.dataset.n === '1' ? '' : 's'}. Move them to another team on the Employees page first.`, 'err');
+      if (!await confirmBox(`Delete ${t}?`, 'The team and its review window will be removed. This cannot be undone.', { ok: 'Delete team', danger: true })) return;
+      try { await api('/teams/delete', { method: 'POST', body: { name: t } }); if (S.hteam === t) S.hteam = ''; toast(`Team "${t}" deleted`); pages.teams(v); } catch (er) { toast(er.message, 'err'); }
+    }
+  };
 };
 
 // ---------- audit ----------
