@@ -1445,6 +1445,9 @@ function fullTable(d) {
 pages.report = async v => {
   const q = `month=${S.month}&team=${RF.team}&manager=${RF.manager}&status=${encodeURIComponent(RF.status)}`;
   const d = await api('/report?' + q + (RF.full ? '&detail=1' : ''));
+  // a server still running older code answers without the Full details columns: say so instead of failing silently
+  const noDetail = RF.full && !(d.columns && d.rules);
+  if (noDetail) RF.full = false;
   const full = ['director', 'admin'].includes(S.me.role);
   RF.view ||= full ? 'org' : 'team';
   const c = d.counts;
@@ -1458,7 +1461,8 @@ pages.report = async v => {
     ${countTiles(c)}
     ${RF.view === 'team' ? `<h2>Team-wise</h2><div class="tablewrap"><table><tr><th>Manager / team</th><th class="nr">Scheduled</th><th class="nr">Submitted</th><th class="nr">Not submitted</th><th class="nr">Form incomplete</th><th class="nr">Overdue</th></tr>${d.teamCounts.map(t => `<tr><td>${esc(t.name)}</td><td class="nr">${t.scheduled}</td><td class="nr">${t.submitted}</td><td class="nr">${t.notSubmitted}</td><td class="nr">${t.notCompleted}</td><td class="nr">${t.pending}</td></tr>`).join('')}</table></div>` : ''}
     <div class="row" style="align-items:center"><h2 style="margin:0">${RF.view === 'org' ? 'Employee-wise (organisation)' : 'Employee-wise'}</h2><span class="sp"></span>
-      <div class="seg one" role="group" aria-label="Table columns"><button type="button" class="chip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
+      <div class="row" style="margin:0;gap:8px" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
+    ${noDetail ? '<div class="warn">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
     ${RF.full ? fullTable(d) : reportTable(d.rows)}
     ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningDoneMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}
     <p class="small">Directors see the whole organisation. Managers see their own team and everyone under them at every level. Employees do not see this report.</p>`;
