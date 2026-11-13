@@ -8,6 +8,9 @@
 // First import: the demo employees and all demo records (forms, scheduling, appraisals, emails, audit log,
 // calendar links) are removed. Later imports update people by name, add new ones and mark people no longer on
 // the list inactive; forms are kept. Admin records (ADMIN_EMAILS, test admin) are never touched.
+// Designations: since 2026-11-13 they follow the name/designation table of "Task_List_HRMS_Tool - Employee_List"
+// (e.g. consultants); a more specific title of the same level ("Data Cloud Executive" for Executive) is kept.
+// Staging keeps its state in memory: after --apply, restart (or redeploy) the Render service before it saves again.
 const fs = require('fs');
 const path = require('path');
 
