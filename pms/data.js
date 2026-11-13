@@ -165,6 +165,8 @@ function KRA_TO_PERCENT() {
 
 // one-off fixes for state saved by an older version (db.js loads it over the seed): run after loading, safe to run again
 function migrate() {
+  // annual appraisals are kept per financial year (empId|2026); the ones saved before that belong to the first year
+  for (const k of Object.keys(appraisals)) if (!k.includes('|')) { appraisals[`${k}|${fyStartOf(config.fyStartMonth)}`] = appraisals[k]; delete appraisals[k]; }
   // Grooming and Health parameters: replace the short labels with their full wording (only items still exactly as seeded)
   const full = [...PARAM_TEXT.grooming, ...PARAM_TEXT.health], byLabel = Object.fromEntries(full.map(t => [t.split(':')[0], t]));
   for (const v of paramsVersions) for (const sec of v.data.sections || []) sec.items = sec.items.map(it => byLabel[it] || it);

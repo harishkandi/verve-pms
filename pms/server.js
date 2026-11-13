@@ -510,32 +510,43 @@ route('POST', '/api/form/copy-kras', ({ user, body }) => {
   return formPayload(user, f);
 });
 
+// Financial years (April to March) are named by the year they start in. The annual forms are kept per year, so a new one opens each April
+// and the earlier years stay readable. No fy given = the current financial year.
+const fyNow = () => D.fyStartOf(config.currentMonth);
+function fyArg(raw) {
+  if (raw === undefined || raw === null || raw === '') return fyNow();
+  const y = Number(raw), first = D.fyStartOf(config.fyStartMonth);
+  if (!Number.isInteger(y) || y < first || y > fyNow()) throw bad('That financial year has no forms.');
+  return y;
+}
+const fyName = y => `${y}-${String(y + 1).slice(2)}`;
+
 // ---------- Appraisal form (annual, 6 steps) ----------
 const blankAppraisal = () => ({ recap: [{ expectation: '', achievements: '', improvement: '' }], kraProgress: [{ kra: '', progress: '' }], strengths: '', improvements: '', operational: '', process: '', people: '', submittedAt: null });
-const appraisalPayload = (user, empId) => {
-  const e = L.emp(empId), m = e.managerId ? L.emp(e.managerId) : null, a = appraisals[empId] || blankAppraisal();
-  return { employee: { id: e.id, name: e.name, designation: e.designation, department: e.team, reviewer: m ? m.name : 'Not assigned' }, fy: '2026-27', form: a,
+const appraisalPayload = (user, empId, fy = fyNow()) => {
+  const e = L.emp(empId), m = e.managerId ? L.emp(e.managerId) : null, a = appraisals[`${empId}|${fy}`] || blankAppraisal();
+  return { employee: { id: e.id, name: e.name, designation: e.designation, department: e.team, reviewer: m ? m.name : 'Not assigned' }, fy: fyName(fy), fyStart: fy, form: a,
     perms: { edit: L.canSelfEdit(user, empId) || L.canManage(user, empId) } };
 };
 route('GET', '/api/appraisal', ({ user, q }) => {
   const id = +(q.emp || user.id);
   if (!L.emp(id) || !L.canView(user, id)) throw forbid();
-  return appraisalPayload(user, id);
+  return appraisalPayload(user, id, fyArg(q.fy));
 });
 route('PUT', '/api/appraisal', ({ user, body }) => {
   const id = +body.empId;
   if (!L.emp(id) || !L.canView(user, id)) throw forbid();
   if (!L.canSelfEdit(user, id) && !L.canManage(user, id)) throw forbid();
   const s = v => String(v ?? '');
-  const f = body.form || {}, cur = appraisals[id] || blankAppraisal();
-  appraisals[id] = {
+  const fy = fyArg(body.fy), f = body.form || {}, cur = appraisals[`${id}|${fy}`] || blankAppraisal();
+  appraisals[`${id}|${fy}`] = {
     recap: (f.recap || []).map(r => ({ expectation: s(r.expectation), achievements: s(r.achievements), improvement: s(r.improvement) })),
     kraProgress: (f.kraProgress || []).map(r => ({ kra: s(r.kra), progress: s(r.progress) })),
     strengths: s(f.strengths), improvements: s(f.improvements), operational: s(f.operational), process: s(f.process), people: s(f.people),
     submittedAt: body.submit ? new Date().toISOString() : cur.submittedAt,
   };
-  audit(user.name, body.submit ? 'submit appraisal' : 'save appraisal', L.emp(id).name);
-  return appraisalPayload(user, id);
+  audit(user.name, body.submit ? 'submit appraisal' : 'save appraisal', `${L.emp(id).name} ${fyName(fy)}`);
+  return appraisalPayload(user, id, fy);
 });
 
 // Scheduling
@@ -734,7 +745,7 @@ route('GET', '/api/annual', ({ user, q }) => {
   noEmployees(user);
   const e = mustEmp(q.emp || user.id), empId = e.id;
   if (!L.canView(user, empId)) throw forbid();
-  const months = D.fyMonths();
+  const fy = fyArg(q.fy), months = D.fyMonths(fy);
   const summary = months.map(m => {
     const f = L.peek(empId, m);
     if (!f) return { month: m, label: D.monthLabel(m), filled: false };
@@ -753,14 +764,14 @@ route('GET', '/api/annual', ({ user, q }) => {
       sop, learn, status: L.reviewStatus(f), highlights: v.map(x => x.short).slice(0, 3), subKras: L.KRAS.map(([x, l]) => `${l}: ${k[x].rows.map(r => `${r.kpi} (${r.weight})`).join(', ') || 'not set'}`),
     };
   });
-  const key = `${empId}|FY2026`;
-  return { employee: view(e), fy: 'FY 2026-2027', months: summary, annual: annualForms[key] || { reviewDate: '', accomplishments: '', kraReflection: '', learnings: '', selfRating: '', mgrRating: '', mgrRemark: '', submitted: false },
+  const key = `${empId}|FY${fy}`;
+  return { employee: view(e), fy: `FY ${fy}-${fy + 1}`, fyStart: fy, months: summary, annual: annualForms[key] || { reviewDate: '', accomplishments: '', kraReflection: '', learnings: '', selfRating: '', mgrRating: '', mgrRemark: '', submitted: false },
     perms: { editSelf: (L.canSelfEdit(user, empId)) && !(annualForms[key] || {}).submitted, editMgr: L.canManage(user, empId) && !(annualForms[key] || {}).submitted, submit: L.canManage(user, empId) } };
 });
 route('PUT', '/api/annual', ({ user, body }) => {
   noEmployees(user);
   const empId = +body.empId; if (!L.canView(user, empId)) throw forbid();
-  const key = `${empId}|FY2026`;
+  const key = `${empId}|FY${fyArg(body.fy)}`;
   const cur = annualForms[key] || {};
   if (cur.submitted) throw bad('The annual review is already submitted.');
   const next = { ...cur };
@@ -806,7 +817,7 @@ route('GET', '/api/employee-forms', ({ user, q }) => {
   // admin can open any month of the year; the form is created on first open. Only months before joining have none.
   const joined = (e.joined || '').slice(0, 7);
   const rows = D.fyMonths().map(m => { const f = L.peek(id, m); return { month: m, label: D.monthLabel(m), reviewDate: f ? f.reviewDate : '', status: f ? L.reviewStatus(f) : 'Not started', rating: f && f.submitted ? L.monthlyRating(f) : null, open: !!f || m >= joined, beforeJoining: !f && m < joined }; });
-  return { employee: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '' }, rows, annual: annualForms[`${id}|FY2026`] ? 'Submitted' : 'Opens in March' };
+  return { employee: { ...e, manager: e.managerId ? L.emp(e.managerId).name : '' }, rows, annual: annualForms[`${id}|FY${fyNow()}`] ? 'Submitted' : 'Opens in March' };
 });
 // People are added only through the employee list (the sheet is the master: npm run employees -- <file> --apply), not in
 // the app: the Add new member button and POST /api/employees were removed on 2026-11-13.

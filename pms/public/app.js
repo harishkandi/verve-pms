@@ -460,18 +460,25 @@ function markNav() {
   if (best) { best.classList.add('on'); const g = best.closest('.ngrp'); if (g) { g.classList.add('has-on'); navOpen(g, true); } }
   document.querySelectorAll('.ngrp').forEach(g => { if (navOpenKeys.has(g.dataset.g) && !g.classList.contains('open')) navOpen(g, true); });
 }
-// month + year pickers for the monthly form (as in the old portal): every month, and calendar years newest first.
-// The tool runs year after year, so older forms stay reachable; a month without a form says so.
-function fyPick(selKey, annualOpt) {
-  const [sy, sm] = selKey.split('-'), thisYear = +S.me.currentMonth.slice(0, 4);
-  const years = Array.from({ length: thisYear - 2015 + 1 }, (_, i) => thisYear - i);
-  return `<select id="msel" title="Month">${MONTHS.map((n, i) => { const mm = String(i + 1).padStart(2, '0'); return `<option value="${mm}" ${annualOpt.includes('selected') ? '' : mm === sm ? 'selected' : ''}>${n}</option>`; }).join('')}${annualOpt}</select>`
-    + `<select id="ysel" title="Year">${years.map(y => `<option value="${y}" ${String(y) === sy ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
+// financial-year + month pickers for the monthly form: the year is April to March (2026-2027), its months run April to March and
+// then the Annual review. Earlier years stay selectable, and a new year appears by itself when the current month passes March.
+// selKey = the month shown (null on the annual form); annualFy = the year of the annual form shown
+function fyPick(selKey, annualFy) {
+  const first = fyOf(S.me.firstMonth), last = fyOf(S.me.currentMonth), cur = annualFy != null ? annualFy : fyOf(selKey);
+  const years = Array.from({ length: last - first + 1 }, (_, i) => last - i); // newest first
+  const months = fyMonthsOf(cur).filter(m => m.key >= S.me.firstMonth);
+  return `<select id="msel" title="Month">${months.map(m => `<option value="${m.key}" ${m.key === selKey ? 'selected' : ''}>${m.label.split(' ')[0]}</option>`).join('')}<option value="annual" ${annualFy != null ? 'selected' : ''}>Annual review</option></select>`
+    + `<select id="ysel" title="Financial year (April to March)">${years.map(y => `<option value="${y}" ${y === cur ? 'selected' : ''}>${y}-${y + 1}</option>`).join('')}</select>`;
 }
-// either picker changing opens that month and year (Annual review has no month)
+// either picker changing opens that month (or that year's annual review). A new year opens on the same month, or its latest open month.
 function wirePick(empId) {
-  const go = () => { const m = $('#msel').value, y = $('#ysel').value; if (m === 'annual') { location.hash = `#/form/${empId}/annual`; return; } S.month = `${y}-${m}`; location.hash = `#/form/${empId}/${S.month}`; };
-  $('#msel').onchange = go; $('#ysel').onchange = go;
+  $('#msel').onchange = () => { const m = $('#msel').value; if (m === 'annual') { location.hash = `#/form/${empId}/annual-${$('#ysel').value}`; return; } S.month = m; location.hash = `#/form/${empId}/${m}`; };
+  $('#ysel').onchange = () => {
+    const y = +$('#ysel').value;
+    if ($('#msel').value === 'annual') { location.hash = `#/form/${empId}/annual-${y}`; return; }
+    const open = fyMonthsOf(y).filter(m => m.started && m.key >= S.me.firstMonth), same = open.find(m => m.key.slice(5) === ($('#msel').value || '').slice(5)), to = same || open[open.length - 1];
+    if (to) { S.month = to.key; location.hash = `#/form/${empId}/${to.key}`; }
+  };
 }
 // month picker: a styled dropdown over a hidden native select, so pages keep listening to #msel change events
 // o.heading: shown as the page heading (month name only, no box); click it to change the month
@@ -822,6 +829,7 @@ function kraAccessCard(o) {
 pages.home = async (v, opts = {}) => {
   if (typeof opts !== 'object') opts = {};
   const mgr = S.me.role !== 'employee';
+  if (S.me.role !== 'admin') S.hteam = ''; // the team tabs are for the admin only; managers and directors see their own team as one
   const d = await api(`/home?month=${S.month}&team=${encodeURIComponent(mgr ? S.hteam || '' : '')}`);
   const c = d.counts, pct = pctOf(c.submitted, c.scheduled), month = d.label.split(' ')[0];
   lastHome = d;
@@ -842,7 +850,7 @@ pages.home = async (v, opts = {}) => {
         <div><small>Dates collected</small><b>${q.datesCollected} / ${q.datesTotal}</b></div>
         <div><small>Past due</small><b>${c.pending}</b></div>
         <div><small>Manager emails</small><b>${q.emails.sent} of ${q.emails.total} sent</b></div></div></div></div>`;
-    const chips = `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(tl(t.team))}</button>`).join('')}</div></div>`;
+    const chips = S.me.role !== 'admin' ? '' : `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(tl(t.team))}</button>`).join('')}</div></div>`;
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
     const share = n => `${pctOf(n, c.scheduled)}% of scheduled`;
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}${r.movedFrom ? ` · first sent to ${esc(r.movedFrom)}` : ''}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
@@ -960,13 +968,13 @@ pages.home = async (v, opts = {}) => {
 // ---------- monthly form ----------
 let FP = null, attempted = false;
 pages.form = async (v, emp, month) => {
-  if (month === 'annual') return drawAppraisal(v, emp);
+  if (/^annual/.test(month || '')) return drawAppraisal(v, emp, month.split('-')[1]); // annual or annual-2026
   S.month = month || S.month;
   attempted = false; editingQ.clear(); focusQ = null; formDirty.clear();
   try { FP = await api(`/form?emp=${emp}&month=${S.month}`); }
   catch (er) {
     if (!/No form exists/.test(er.message)) throw er;
-    v.innerHTML = head('Monthly review form', `PMS › ${esc(monthLabel(S.month))}`) + `<div class="row">${fyPick(S.month, '<option value="annual">Annual review</option>')}</div><div class="info">There is no review form for ${esc(monthLabel(S.month))}. Forms start from ${esc(monthLabel(S.me.firstMonth))}, or from the month the person joined, and the current month is the latest one that opens.</div>`;
+    v.innerHTML = head('Monthly review form', `PMS › ${esc(monthLabel(S.month))}`) + `<div class="row">${fyPick(S.month)}</div><div class="info">There is no review form for ${esc(monthLabel(S.month))}. Forms start from ${esc(monthLabel(S.me.firstMonth))}, or from the month the person joined, and the current month is the latest one that opens.</div>`;
     return wirePick(emp);
   }
   drawForm(v);
@@ -1012,7 +1020,7 @@ function drawForm(v, errors) {
   const sum = formSummary(f);
   const pi = sum.rating != null ? `Monthly rating${f.submitted ? '' : ' (preview until submitted)'}: <b>${pc(sum.rating)}</b>` : `Monthly rating: shows once every self and manager rating is in`;
   v.innerHTML = head('Monthly review form', `PMS › ${e.id === S.me.id ? 'My Review' : esc(e.name)} › ${esc(monthLabel(S.month))}`) +
-    `<div class="row">${fyPick(S.month, '<option value="annual">Annual review</option>')}${p.copyKras ? '<button class="btn kcopy" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+    `<div class="row">${fyPick(S.month)}${p.copyKras ? '<button class="btn kcopy" id="copyk">Copy KRAs from last month</button>' : ''}<button class="btn" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
@@ -2127,8 +2135,8 @@ const apFilled = f => [f.recap.some(r => (r.expectation + r.achievements + r.imp
 const apPct = f => Math.round(apFilled(f) / 7 * 100);
 const apWhen = iso => new Date(iso).toLocaleString('en-GB');
 
-async function drawAppraisal(v, emp) {
-  AP = await api('/appraisal?emp=' + emp); apStep = 1;
+async function drawAppraisal(v, emp, fy) {
+  AP = await api('/appraisal?emp=' + emp + (fy ? '&fy=' + fy : '')); apStep = 1;
   paintAppraisal(v);
 }
 
@@ -2168,18 +2176,18 @@ function paintAppraisal(v) {
   ];
   const [title, desc, body] = steps[apStep - 1];
   v.innerHTML = head('Appraisal form ' + AP.fy, `${esc(e.name)} · annual review`) +
-    `<div class="row">${fyPick(S.month, '<option value="annual" selected>Annual review</option>')}${sub ? '<span class="badge b-green">Submitted</span>' : ''}</div>
+    `<div class="row">${fyPick(null, AP.fyStart)}${sub ? '<span class="badge b-green">Submitted</span>' : ''}</div>
     <div class="apcard"><div class="aphead"><i class="orb o1"></i><span class="aplogo"><img src="verve-advisory-logo.png" alt="Verve Advisory"></span><span><b>Appraisal ${AP.fy}</b><small>PERFORMANCE REVIEW FORM</small></span></div>
     <div class="apsteps">${AP_STEPS.map((s, i) => `<button class="apstep ${i + 1 < apStep ? 'done' : ''} ${i + 1 === apStep ? 'cur' : ''}" data-apgo="${i + 1}"><i>${i + 1 < apStep ? '✓' : i + 1}</i><span>${s}</span></button>`).join('')}</div>
     <div class="apbody"><h2 class="aptitle">${title.toUpperCase()}</h2>${desc ? `<p class="apdesc">${desc}</p>` : ''}${body}</div>
     <div class="apfoot"><button class="btn" data-apgo="${apStep - 1}" ${apStep === 1 ? 'disabled' : ''}>← Previous</button><span class="sp"></span>
       ${apStep === 6 ? '<button class="btn" id="apxls">Download Excel</button>' : `<button class="btn pri" data-apgo="${apStep + 1}">Next →</button>`}
-      ${ed ? `<button class="btn pri" id="apsub">${sub ? 'Edit and resubmit' : 'Submit'}</button>` : ''}</div></div>`;
+      ${ed && apStep === 6 ? `<button class="btn pri" id="apsub">${sub ? 'Edit and resubmit' : 'Submit'}</button>` : ''}</div></div>`;
   wireAppraisal(v);
 }
 
 function wireAppraisal(v) {
-  const emp = AP.employee.id, saveAp = async submit => { AP = await api('/appraisal', { method: 'PUT', body: { empId: emp, form: AP.form, submit: !!submit } }); };
+  const emp = AP.employee.id, saveAp = async submit => { AP = await api('/appraisal', { method: 'PUT', body: { empId: emp, fy: AP.fyStart, form: AP.form, submit: !!submit } }); };
   wirePick(emp);
   v.oninput = e => {
     const t = e.target, f = AP.form;
