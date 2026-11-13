@@ -2022,9 +2022,9 @@ pages.teams = async v => {
   v.innerHTML = head('Teams', 'Add, rename or delete teams. The dashboard, reports and Employees page follow straight away.') + `
   <div class="row"><span class="small">${teams.length} team${teams.length === 1 ? '' : 's'}</span><span class="sp"></span><button class="btn pri" data-a="add">${ico('plus')}Add team</button></div>
   <div class="tablewrap"><table><tr><th>Team</th><th>Active members</th><th>Inactive</th><th>Review window</th><th>Actions</th></tr>${teams.map(t => `<tr>
-    <td>${teamIco(t.name)}<b>${esc(t.name)}</b>${t.locked ? ` <span class="badge b-grey" title="${esc(t.locked)}">Built in</span>` : ''}</td>
+    <td><b>${esc(t.name)}</b></td>
     <td><a href="#/employees/active" data-q="${esc(t.name)}">${t.active}</a></td><td>${t.inactive}</td><td>${dayTxt(t.window)}</td>
-    <td>${t.locked ? '<span class="small">Cannot be changed</span>' : `<span class="acts"><button class="btn sm" data-a="rename" data-t="${esc(t.name)}">${ico('pencil')}Rename</button><button class="btn sm dng" data-a="del" data-t="${esc(t.name)}" data-n="${t.active}">${ico('trash')}Delete</button></span>`}</td></tr>`).join('')}</table></div>`;
+    <td>${`<span class="acts"><button class="btn sm" data-a="rename" data-t="${esc(t.name)}">${ico('pencil')}Rename</button><button class="btn sm dng" data-a="del" data-t="${esc(t.name)}" data-n="${t.active}">${ico('trash')}Delete</button></span>`}</td></tr>`).join('')}</table></div>`;
   const nameForm = (title, val, okLabel) => modal(`<h2>${title}</h2><div id="er"></div><label class="f">Team name <i>*</i></label><input id="tn" maxlength="50" value="${esc(val)}" autocomplete="off"><div class="row"><button class="btn pri" id="ok">${okLabel}</button><button class="btn" id="no">Cancel</button></div>`);
   const ask = (m, run) => {
     const inp = m.querySelector('#tn'); inp.focus(); inp.select();

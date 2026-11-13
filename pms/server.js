@@ -1293,7 +1293,8 @@ function cleanTeamName(raw) {
 }
 route('GET', '/api/teams', ({ user }) => {
   adminOnly(user);
-  return { teams: teamNames().sort((a, b) => a.localeCompare(b)).map(t => {
+  // Directors is built in and not managed here, so it is left off the list
+  return { teams: teamNames().filter(t => !TEAM_LOCKED[t]).sort((a, b) => a.localeCompare(b)).map(t => {
     const w = config.windows[t] || { start: 25, end: 2 };
     return { name: t, active: teamMembers(t, true).length, inactive: teamMembers(t, false).length, window: w, locked: TEAM_LOCKED[t] || null };
   }) };
