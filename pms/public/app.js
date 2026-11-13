@@ -376,7 +376,7 @@ async function start() {
     ['All active employees', '#/employees/active', 'idcard'],
     ['All inactive employees', '#/employees/inactive', 'eyeoff'],
     ['Teams', '#/teams', 'team'],
-    { key: 'org', label: 'Reporting manager', icon: 'sitemap', kids: ORG_TABS.map(([, l, slug]) => [l, '#/reporting' + (slug ? '/' + slug : '')]) },
+    // who reports to whom is the Reporting flow, opened from the Employees page (the dashboard cards are the counts)
     { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['MIS report', '#/mis'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
     { key: 'qs', label: 'Questions', icon: 'question', kids: [['Parameters summary', '#/params'], ['Questionnaire', '#/params/questions']] },
     '--Admin',
@@ -439,7 +439,8 @@ function navOpen(g, open) {
 }
 // highlight the one link that best matches the address (exact, then same page and first argument, then same page)
 function markNav() {
-  const h = location.hash || '#/home', [, page, arg] = h.split('/');
+  // the Reporting flow belongs to the Employees pages (it has no menu item of its own)
+  const h0 = location.hash || '#/home', h = /^#\/reporting\b/.test(h0) ? '#/employees/active' : h0, [, page, arg] = h.split('/');
   let best = null, top = 0;
   document.querySelectorAll('.links a[data-h]').forEach(a => {
     const [, p2, a2] = a.dataset.h.split('/'), score = a.dataset.h === h ? 3 : p2 === page && a2 && a2 === arg ? 2 : p2 === page ? 1 : 0;
@@ -1216,7 +1217,7 @@ function wireForm(v) {
 // Each opens for the signed-in person, or for a manager under them (#/team/<id>, #/yearly/<id>; admins also #/mis/<id>, #/kpi/<id>).
 const monShort = () => esc(monthLabel(S.month).split(' ')[0]);
 const rateCls = x => x == null ? '' : x >= 80 ? 'g' : x >= 60 ? 'a' : 'r'; // percentage ratings
-// where a person's name leads back to: admins use the Reporting Manager page, everyone else My Team
+// where a person's name leads back to: admins use the Reporting flow, everyone else My Team
 const personHref = id => S.me.role === 'admin' ? `#/reporting/${id}` : `#/team/${id}`;
 const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Team report</a>${S.me.role === 'admin' ? `<a class="btn sm" href="#/mis/${r.id}" title="Month-by-month figures for ${esc(r.name)}'s team">${ico('grid')}MIS report</a>` : ''}` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
 const reportHead = (d, title, crumbLabel) => head(d.me ? `My ${title}` : `${title[0].toUpperCase() + title.slice(1)}: ${esc(d.person.name)}`,
@@ -1846,7 +1847,7 @@ pages.employees = async (v, arg) => {
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
-  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
+  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
@@ -1978,23 +1979,20 @@ pages.empforms = async (v, id) => {
   <tr><td><b>Annual review 2027</b></td><td>N/A</td><td>${badge(d.annual === 'Submitted' ? 'Completed and Submitted' : 'Not started')}</td><td>N/A</td><td><a class="btn sm pri" href="#/annual/${e.id}">Open form</a></td></tr></table></div>`;
 };
 
-// ---------- reporting hierarchy (admin) ----------
-// Five lists by designation (the admin menu's Reporting manager group), and a drill-down:
-// director -> their managers -> a manager's employees. #/reporting = directors, #/reporting/<slug> = a list,
-// #/reporting/<id> = who reports to that person. [server level, label, url slug, columns]
-const ORG_TABS = [['director', 'Directors', '', 'director'], ['srmanager', 'Senior managers', 'senior-managers', 'manager'], ['manager', 'Managers', 'managers', 'manager'],
-  ['srexec', 'Senior executives', 'senior-executives', 'employee'], ['other', 'Executives and others', 'executives', 'employee']];
+// ---------- Reporting flow (admin): who reports to whom ----------
+// Opened from the Employees page. #/reporting = the directors (no reporting manager), #/reporting/<id> = the people who
+// report to that person: director -> their managers -> a manager's employees. Counts by role are the dashboard cards,
+// and lists by role are the Employees page (its role filter), so this page has no lists by level of its own.
+// Older links (#/reporting/managers etc., the removed Reporting manager menu) open the directors.
 pages.reporting = async (v, arg) => {
   arg = String(arg || '').toLowerCase();
-  const slug = arg === 'employees' ? 'executives' : arg; // older link
-  const id = /^\d+$/.test(arg) ? arg : '', level = id ? '' : (ORG_TABS.find(t => t[2] && t[2] === slug) || ORG_TABS[0])[0];
-  const d = await api(`/org?month=${S.month}${id ? '&id=' + id : '&level=' + level}`), p = d.person, c = d.counts;
-  const mon = esc(monthLabel(S.month).split(' ')[0]), tabOf = k => ORG_TABS.find(t => t[0] === k);
-  const tabHref = k => '#/reporting' + (tabOf(k)[2] ? '/' + tabOf(k)[2] : '');
+  const id = /^\d+$/.test(arg) ? arg : '';
+  const d = await api(`/org?month=${S.month}${id ? '&id=' + id : ''}`), p = d.person, c = d.counts;
+  const mon = esc(monthLabel(S.month).split(' ')[0]);
   const pname = x => x ? `<a class="lk" href="#/reporting/${x.id}">${esc(x.name)}</a>` : '<span class="small">None</span>';
   const up = d.path.length ? `#/reporting/${d.path[d.path.length - 1].id}` : '#/reporting';
   const crumbs = p ? ['<a href="#/reporting">Directors</a>', ...d.path.map(x => `<a href="#/reporting/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ')
-    : `PMS › Reporting manager › ${tabOf(level)[1]}`;
+    : '<a href="#/employees/active">Employees</a> › Reporting flow';
   const prog = t => t.scheduled ? `<div style="min-width:150px">${stackBar(t)}</div>` : '<span class="small">No reviews</span>';
   const progCell = r => r.total ? prog(r.teamCounts) : '<span class="small">N/A</span>';
   const own = r => r ? `${badge(r.status)}${r.rating != null ? ` <b title="Monthly rating">${pc(r.rating)}</b>` : ''}` : '<span class="small">No form this month</span>';
@@ -2015,10 +2013,10 @@ pages.reporting = async (v, arg) => {
     drill: [['Team members', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)]],
     // a team with no managers in it: just the employees and their reviews
     team: [[`Review (${mon})`, r => own(r.review)], ['Review date', r => r.review && r.review.reviewDate ? fmtD(r.review.reviewDate) : '<span class="small">Not held yet</span>']],
-  }[p ? (d.rows.some(r => r.direct) ? 'drill' : 'team') : tabOf(level)[3]], ...tail];
-  const title = p ? `Reporting to ${esc(p.name)} (${d.rows.length})` : `${tabOf(level)[1]} (${d.rows.length})`;
-  const scope = p ? `${mon} reviews of everyone under ${esc(p.name)} (all levels)` : tabOf(level)[3] === 'employee' ? `${mon} reviews of the people in this list` : `${mon} reviews across the organisation`;
-  v.innerHTML = head('Reporting manager', crumbs) + `<div class="seg" role="tablist">${ORG_TABS.map(([k, l]) => `<a role="tab" href="${tabHref(k)}" class="${k === level ? 'on' : ''}" aria-selected="${k === level}">${l} <span class="cnt">${d.levelCounts[k]}</span></a>`).join('')}</div>
+  }[p ? (d.rows.some(r => r.direct) ? 'drill' : 'team') : 'director'], ...tail];
+  const title = p ? `Reporting to ${esc(p.name)} (${d.rows.length})` : `Directors (${d.rows.length})`;
+  const scope = p ? `${mon} reviews of everyone under ${esc(p.name)} (all levels)` : `${mon} reviews across the organisation`;
+  v.innerHTML = head('Reporting flow', crumbs) + `
   <div class="row">${monthSel()}${searchBox('orgq', 'Search name, team or email', S.orgq)}<span class="sp"></span>${p ? `<a class="btn" href="${up}">← Back</a>` : ''}<a class="btn" href="#/employees">Edit people on Employees</a></div>
   ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, p.team)}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div><div class="row" style="margin:0;flex-basis:100%;justify-content:flex-end">${reportLinks(p)}</div></div>` : ''}
   <div class="small" style="margin:0 0 12px">${scope}</div>

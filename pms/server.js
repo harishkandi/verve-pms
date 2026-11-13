@@ -1064,32 +1064,17 @@ function orgHelpers(month) {
 const byName = (a, b) => a.name.localeCompare(b.name);
 const leadsFirst = (a, b) => (b.role !== 'employee') - (a.role !== 'employee') || byName(a, b);
 
-// Reporting hierarchy (admin). Five lists by designation (the admin menu's Reporting manager group):
-//   level=director | srmanager | manager (and team leads) | srexec | other (everyone else: executives, analysts, ...)
-// Each person is in exactly one list (first match wins). And a drill-down: id=<person> lists the people who report
-// to that person, so the admin follows director -> their managers -> a manager's employees, with the path back up.
-const desigOf = e => String(e.designation || '').toLowerCase();
-const ORG_LEVELS = {
-  director: e => e.role === 'director' || /director/.test(desigOf(e)),
-  srmanager: e => /senior manager/.test(desigOf(e)),
-  manager: e => /manager/.test(desigOf(e)) || e.role === 'teamlead' || e.role === 'manager',
-  srexec: e => /senior executive/.test(desigOf(e)),
-  other: () => true,
-};
-const levelOf = e => Object.keys(ORG_LEVELS).find(k => ORG_LEVELS[k](e));
-const STAFF_LEVELS = ['srexec', 'other']; // their tiles count their own reviews; leader lists count the whole organisation
+// Reporting flow (admin, opened from the Employees page): who reports to whom, by the reporting line.
+// No id = the directors (people with no reporting manager); id=<person> = the people who report to that person, so the
+// admin follows director -> their managers -> a manager's employees, with the path back up. Counts by role are the
+// dashboard's All stats cards and lists by role are the Employees page, so there are no lists by designation here.
 route('GET', '/api/org', ({ user, q }) => {
   adminOnly(user);
   const month = q.month || config.currentMonth, H = orgHelpers(month);
-  const levelCounts = Object.fromEntries(Object.keys(ORG_LEVELS).map(k => [k, H.people.filter(e => levelOf(e) === k).length]));
-  if (!q.id) {
-    const level = ORG_LEVELS[q.level] ? q.level : 'director';
-    const list = H.people.filter(e => levelOf(e) === level).sort(byName);
-    return { month, level, levelCounts, person: null, path: [], counts: H.countsOf(STAFF_LEVELS.includes(level) ? list : H.people), rows: list.map(H.rowFor) };
-  }
+  if (!q.id) return { month, person: null, path: [], counts: H.countsOf(H.people), rows: H.people.filter(e => !e.managerId).sort(byName).map(H.rowFor) };
   const p = mustEmp(q.id);
   if (p.role === 'admin') throw notFound('Employee not found.');
-  return { month, level: null, levelCounts, person: { ...H.rowFor(p), active: p.active }, path: H.above(p).map(c => ({ id: c.id, name: c.name })),
+  return { month, person: { ...H.rowFor(p), active: p.active }, path: H.above(p).map(c => ({ id: c.id, name: c.name })),
     counts: H.countsOf(L.subordinates(p.id)), rows: H.direct(p.id).sort(leadsFirst).map(H.rowFor) };
 });
 

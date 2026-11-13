@@ -49,9 +49,12 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   hero + Work details card (code, email, designation, department, role, joining date, review window, reports) +
   Reporting line card (director down to the person), read-only, the admin keeps the details. Code and joining date from the list are placeholders (shown "Not set yet") until the
   admin sets them in Employees › Edit (`codeSet` / `joinedSet` flags). The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
-  removed it, 2026-11-12). Admins get a grouped menu (Reporting
-  manager / Reporting / Questions open as sub-menus); its Reporting manager lists come from `designation`
-  (`ORG_LEVELS` in `server.js`: directors, senior managers, managers + team leads, senior executives, everyone else).
+  removed it, 2026-11-12). Admins get a grouped menu (Reporting / Questions
+  open as sub-menus). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
+  duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
+  reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
+  click to drill down; opened from the Employees page button and names, highlights All active employees in the menu;
+  old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate).
   Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
   captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
   There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
