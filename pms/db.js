@@ -31,7 +31,15 @@ function hydrate(data) {
 
 async function init() {
   if (!URL && LOCAL_FILE) {
-    try { if (fs.existsSync(LOCAL_FILE)) { hydrate(JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8'))); lastSaved = snapshot(); console.log(`Loaded saved state from ${LOCAL_FILE} (delete the file to start fresh)`); } }
+    try {
+      if (fs.existsSync(LOCAL_FILE)) {
+        const saved = JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8'));
+        // a copy saved before this machine had the employee list has nobody in it: start from the list instead
+        const listNow = D.employees.some(e => e.src === 'list'), listSaved = (saved.employees || []).some(e => e.src === 'list');
+        if (listNow && !listSaved) console.log(`Saved state in ${LOCAL_FILE} has no employee list: starting from the list (the file is replaced on the next change)`);
+        else { hydrate(saved); lastSaved = snapshot(); console.log(`Loaded saved state from ${LOCAL_FILE} (delete the file to start fresh)`); }
+      }
+    }
     catch (e) { console.error('Could not read the saved state, starting fresh:', e.message); }
     return;
   }

@@ -5,10 +5,12 @@
   "description": "Verve HRMS - Performance Management System (Google sign-in for the org domain, Calendar invites; Postgres when DATABASE_URL is set)",
   "scripts": {
     "start": "node server.js",
+    "predev": "node setup-list.js",
     "dev": "node --env-file-if-exists=../.env.local --env-file-if-exists=.env server.js",
+    "prelocal": "node setup-list.js",
+    "local": "node --env-file-if-exists=.env server.js --local-state",
     "db:reset": "node --env-file-if-exists=../.env.local db.js --reset",
-    "employees": "node --env-file-if-exists=../.env.local employees.js",
-    "local": "node --env-file-if-exists=.env server.js --local-state"
+    "employees": "node --env-file-if-exists=../.env.local employees.js"
   },
   "engines": {
     "node": ">=20"
