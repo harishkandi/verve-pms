@@ -377,6 +377,7 @@ async function start() {
     ['Dashboard', '#/home', 'home'],
     ['All active employees', '#/employees/active', 'idcard'],
     ['All inactive employees', '#/employees/inactive', 'eyeoff'],
+    ['Teams', '#/teams', 'team'],
     { key: 'org', label: 'Reporting manager', icon: 'sitemap', kids: ORG_TABS.map(([, l, slug]) => [l, '#/reporting' + (slug ? '/' + slug : '')]) },
     { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['MIS report', '#/mis'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
     { key: 'qs', label: 'Questions', icon: 'question', kids: [['Parameters summary', '#/params'], ['Questionnaire', '#/params/questions']] },
@@ -489,68 +490,6 @@ function windowDialog(w, onSaved) {
     try { await api('/windows', { method: 'PUT', body: { ...(w.managerId ? { managerId: w.managerId } : { team: w.team }), start: +m.querySelector('#ws').value, end: +m.querySelector('#we').value } }); m.remove(); toast(`${w.label || w.team} review window saved`); onSaved(); }
     catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
   };
-}
-// admin: the list of teams (Employees page › Teams): add a team, rename one, delete an empty one; the window button
-// opens the same window dialog as the dashboard. onChange redraws the page behind the dialog.
-function teamsDialog(onChange) {
-  const m = modal(`<h2>Teams</h2><p class="small">Teams come from the employee sheet. A rename here is remembered, so the next import of the sheet keeps the new name. To move people between teams, change the Team column on the Employees page.</p>
-    <div id="er"></div><div id="tl" style="margin-top:12px"></div>
-    <h3 style="margin:20px 0 4px;font-size:14px">Add a team</h3>
-    <div class="row" style="align-items:flex-end;margin:0;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label class="f">Team name <i>*</i></label><input id="tn" style="width:100%" maxlength="40" autocomplete="off"></div>
-      <div><label class="f">Window from day</label><input class="num" type="number" min="1" max="31" id="ts" value="25"></div>
-      <div><label class="f">To day</label><input class="num" type="number" min="1" max="31" id="te" value="2"></div>
-      <button class="btn pri" id="tadd">${ico('plus')}Add team</button></div>
-    <p class="small">The review window is the day of the month, used for every month (25 to 2 ends in the next month).</p>
-    <div class="row"><button class="btn" id="no">Close</button></div>`);
-  m.querySelector('.box').classList.add('wide');
-  const er = x => { m.querySelector('#er').innerHTML = x ? errBox(x) : ''; };
-  let list = [];
-  const days = w => `Day ${w.start} to ${w.end}`;
-  const draw = async () => {
-    list = (await api('/employees')).teamInfo;
-    if (!list) throw new Error('The server is still running an older version without team management. Restart it (Ctrl+C, then npm run local) and try again.');
-    m.querySelector('#tl').innerHTML = `<div class="tablewrap"><table><tr><th>Team</th><th title="Active people in the team">Members</th><th>Review window</th><th>Actions</th></tr>${list.map((t, i) => `<tr>
-      <td data-name="${i}"><span style="display:inline-flex;align-items:center;gap:6px">${teamIco(t.name)}<b>${esc(t.name)}</b></span>${t.sheetName.length ? `<div class="small">Called ${t.sheetName.map(esc).join(', ')} in the sheet</div>` : t.added ? '<div class="small">Added in the app</div>' : ''}</td>
-      <td>${t.members}</td><td style="white-space:nowrap">${days(t.window)}</td>
-      <td><span class="acts"><button class="btn sm" data-t="win" data-i="${i}">Window</button>${t.fixed ? '<span class="small" title="Holds the top-level directors">Fixed</span>' : `<button class="btn sm" data-t="ren" data-i="${i}">Rename</button><button class="btn sm dng" data-t="del" data-i="${i}" ${t.members ? `disabled title="Move its ${t.members} active ${t.members === 1 ? 'person' : 'people'} to another team first"` : ''}>Delete</button>`}</span></td></tr>`).join('')}</table></div>`;
-  };
-  const changed = () => { er(''); onChange(); return draw(); };
-  const rename = async (t, to) => {
-    try {
-      const r = await api('/teams', { method: 'PUT', body: { from: t.name, to } });
-      if (S.eteam === t.name) S.eteam = r.name;
-      if (S.me.teams) S.me.teams = S.me.teams.map(x => x === t.name ? r.name : x).sort();
-      toast(r.name === t.name ? 'Name unchanged' : `${t.name} is now ${r.name}${r.moved ? ` (${r.moved} ${r.moved === 1 ? 'person' : 'people'})` : ''}`);
-      return changed();
-    } catch (x) { er(x); }
-  };
-  m.querySelector('#no').onclick = () => m.remove();
-  m.querySelector('#tadd').onclick = async () => {
-    const name = m.querySelector('#tn').value.trim();
-    try { await api('/teams', { method: 'POST', body: { name, start: +m.querySelector('#ts').value, end: +m.querySelector('#te').value } }); m.querySelector('#tn').value = ''; toast(`${name} team added`); changed(); }
-    catch (x) { er(x); }
-  };
-  m.querySelector('#tn').onkeydown = e => { if (e.key === 'Enter') m.querySelector('#tadd').click(); };
-  m.querySelector('#tl').onclick = async e => {
-    const b = e.target.closest('[data-t]'); if (!b) return;
-    const t = list[+b.dataset.i];
-    if (b.dataset.t === 'win') return windowDialog({ team: t.name, startDay: t.window.start, endDay: t.window.end }, changed);
-    if (b.dataset.t === 'ren') { // rename in place: the name cell becomes a text box
-      const td = m.querySelector(`[data-name="${b.dataset.i}"]`);
-      td.innerHTML = `<div class="row" style="margin:0;gap:6px;flex-wrap:nowrap"><input id="rn" maxlength="40" value="${esc(t.name)}" aria-label="New name for ${esc(t.name)}" style="min-width:140px"><button class="btn sm pri" data-t="rsave" data-i="${b.dataset.i}">Save</button><button class="btn sm" data-t="rcancel">Cancel</button></div>`;
-      const inp = td.querySelector('#rn'); inp.focus(); inp.select();
-      inp.onkeydown = ev => { if (ev.key === 'Enter') rename(t, inp.value.trim()); if (ev.key === 'Escape') { ev.stopPropagation(); draw(); } };
-      return;
-    }
-    if (b.dataset.t === 'rsave') return rename(t, m.querySelector('#rn').value.trim());
-    if (b.dataset.t === 'rcancel') return draw();
-    if (b.dataset.t === 'del') {
-      if (!await confirmBox(`Delete the ${t.name} team?`, 'Nobody active is in it. Its review window goes too. Inactive people who were in it keep the name on their past records.', { ok: 'Delete team', danger: true })) return;
-      try { await api('/teams/delete', { method: 'POST', body: { name: t.name } }); if (S.eteam === t.name) S.eteam = ''; toast(`${t.name} team deleted`); changed(); }
-      catch (x) { er(x); }
-    }
-  };
-  draw().catch(er);
 }
 function onMonth(fn) { $('#msel').onchange = e => { S.month = e.target.value; fn(); }; }
 // switch the review month from outside the page's own month picker (top-bar calendar, clickable month heading)
@@ -865,6 +804,7 @@ pages.home = async (v, opts = {}) => {
   const d = await api(`/home?month=${S.month}&team=${encodeURIComponent(mgr ? S.hteam || '' : '')}`);
   const c = d.counts, pct = pctOf(c.submitted, c.scheduled), month = d.label.split(' ')[0];
   lastHome = d;
+  if (mgr && S.hteam && !d.teams.some(t => t.team === S.hteam)) { S.hteam = ''; return pages.home(v, opts); } // the filtered team was renamed or deleted
   let html = null;
   if (mgr) {
     const q = d.quick, teams = d.teams, att = d.attention, SHOW = 8;
@@ -1904,7 +1844,7 @@ pages.employees = async (v, arg) => {
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
-  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn" data-a="teams" title="Add, rename or delete teams and set their review windows">${ico('grid')}Teams</button><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
+  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
@@ -1954,7 +1894,6 @@ pages.employees = async (v, arg) => {
       if (location.hash !== h) { location.hash = h; return; }
       return pages.employees(v);
     }
-    if (a === 'teams') return teamsDialog(() => pages.employees(v));
     if (a === 'add') {
       const m = modal(`<h2>Add new member</h2><div id="er"></div>${[['name', 'Full name', ''], ['code', 'Employee code', ''], ['email', 'Work email', 'name' + dom], ['designation', 'Designation', '']].map(([k, l, ph]) => `<label class="f">${l} <i>*</i></label><input id="n_${k}" style="width:100%" placeholder="${esc(ph)}" ${k === 'email' ? 'type="email" autocomplete="off"' : ''}>`).join('')}
       <div class="small">They sign in with this Google account. It must end with ${esc(dom)}.</div>
@@ -2096,6 +2035,64 @@ pages.reporting = async (v, arg) => {
   };
   $('#orgq').oninput = e => { S.orgq = e.target.value; filter(); showResults(v, S.orgq); };
   filter();
+};
+
+// ---------- teams (admin menu › Teams): add, rename, delete an empty one, review window ----------
+// the only place teams are managed. A rename is remembered (config.teamRenames), so the next import of the sheet keeps it.
+pages.teams = async v => {
+  const list = (await api('/teams')).teams;
+  const days = w => `Day ${w.start} to ${w.end}`;
+  v.innerHTML = head('Teams', 'Add, rename or delete teams and set their review windows. The dashboard, reports and Employees page follow straight away.') + `
+  <div id="er"></div>
+  <div class="tablewrap"><table><tr><th>Team</th><th title="Active people in the team">Members</th><th>Review window</th><th>Actions</th></tr>${list.map((t, i) => `<tr>
+    <td data-name="${i}"><span style="display:inline-flex;align-items:center;gap:6px">${teamIco(t.name)}<b>${esc(t.name)}</b></span>${t.sheetName.length ? `<div class="small">Called ${t.sheetName.map(esc).join(', ')} in the sheet</div>` : t.added ? '<div class="small">Added in the app</div>' : ''}</td>
+    <td>${t.members ? `<a href="#/employees/active" data-t="people" data-i="${i}" title="Show them on the Employees page">${t.members}</a>` : 0}</td><td style="white-space:nowrap">${days(t.window)}</td>
+    <td><span class="acts"><button class="btn sm" data-t="win" data-i="${i}">Window</button>${t.fixed ? '<span class="small" title="Holds the top-level directors">Fixed</span>' : `<button class="btn sm" data-t="ren" data-i="${i}">Rename</button><button class="btn sm dng" data-t="del" data-i="${i}" ${t.members ? `disabled title="Move its ${t.members} active ${t.members === 1 ? 'person' : 'people'} to another team first"` : ''}>Delete</button>`}</span></td></tr>`).join('')}</table></div>
+  <h2>Add a team</h2>
+  <div class="card"><div class="row" style="align-items:flex-end;margin:0;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label class="f">Team name <i>*</i></label><input id="tn" style="width:100%" maxlength="40" autocomplete="off"></div>
+    <div><label class="f">Window from day</label><input class="num" type="number" min="1" max="31" id="ts" value="25"></div>
+    <div><label class="f">To day</label><input class="num" type="number" min="1" max="31" id="te" value="2"></div>
+    <button class="btn pri" id="tadd">${ico('plus')}Add team</button></div>
+  <p class="small">The review window is the day of the month, used for every month (25 to 2 ends in the next month).</p></div>
+  <p class="small">Teams come from the employee sheet. A rename here is remembered, so the next import of the sheet keeps the new name. To move people between teams, change the Team column on the Employees page.</p>`;
+  const er = x => { v.querySelector('#er').innerHTML = x ? errBox(x) : ''; };
+  const redraw = () => pages.teams(v);
+  const rename = async (t, to) => {
+    try {
+      const r = await api('/teams', { method: 'PUT', body: { from: t.name, to } });
+      if (S.eteam === t.name) S.eteam = r.name;
+      if (S.hteam === t.name) S.hteam = r.name; // keep the dashboard's team filter on the renamed team
+      if (S.me.teams) S.me.teams = S.me.teams.map(x => x === t.name ? r.name : x).sort();
+      toast(r.name === t.name ? 'Name unchanged' : `${t.name} is now ${r.name}${r.moved ? ` (${r.moved} ${r.moved === 1 ? 'person' : 'people'})` : ''}`);
+      return redraw();
+    } catch (x) { er(x); }
+  };
+  v.querySelector('#tadd').onclick = async () => {
+    const name = v.querySelector('#tn').value.trim();
+    try { await api('/teams', { method: 'POST', body: { name, start: +v.querySelector('#ts').value, end: +v.querySelector('#te').value } }); toast(`${name} team added`); redraw(); }
+    catch (x) { er(x); }
+  };
+  v.querySelector('#tn').onkeydown = e => { if (e.key === 'Enter') v.querySelector('#tadd').click(); };
+  v.onclick = async e => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    const t = list[+b.dataset.i];
+    if (b.dataset.t === 'people') { S.eteam = t.name; return; } // the link opens the Employees page filtered on this team
+    if (b.dataset.t === 'win') return windowDialog({ team: t.name, startDay: t.window.start, endDay: t.window.end }, redraw);
+    if (b.dataset.t === 'ren') { // rename in place: the name cell becomes a text box
+      const td = v.querySelector(`[data-name="${b.dataset.i}"]`);
+      td.innerHTML = `<div class="row" style="margin:0;gap:6px;flex-wrap:nowrap"><input id="rn" maxlength="40" value="${esc(t.name)}" aria-label="New name for ${esc(t.name)}" style="min-width:140px"><button class="btn sm pri" data-t="rsave" data-i="${b.dataset.i}">Save</button><button class="btn sm" data-t="rcancel">Cancel</button></div>`;
+      const inp = td.querySelector('#rn'); inp.focus(); inp.select();
+      inp.onkeydown = ev => { if (ev.key === 'Enter') rename(t, inp.value.trim()); if (ev.key === 'Escape') redraw(); };
+      return;
+    }
+    if (b.dataset.t === 'rsave') return rename(t, v.querySelector('#rn').value.trim());
+    if (b.dataset.t === 'rcancel') return redraw();
+    if (b.dataset.t === 'del') {
+      if (!await confirmBox(`Delete the ${t.name} team?`, 'Nobody active is in it. Its review window goes too. Inactive people who were in it keep the name on their past records.', { ok: 'Delete team', danger: true })) return;
+      try { await api('/teams/delete', { method: 'POST', body: { name: t.name } }); if (S.eteam === t.name) S.eteam = ''; if (S.hteam === t.name) S.hteam = ''; toast(`${t.name} team deleted`); redraw(); }
+      catch (x) { er(x); }
+    }
+  };
 };
 
 // ---------- audit ----------

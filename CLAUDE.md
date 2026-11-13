@@ -72,8 +72,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   top-level director keeps the person's own team (directors lead several departments); no manager = "Directors"; a team
   the admin picks by hand in the same save wins. The Edit dialog fills the Team field as soon as a manager is picked.
 - Teams (2026-11-13): a team = the `team` name on each person + its window in `config.windows`. Admins add / rename /
-  delete (only when nobody active is in it) teams in Employees › Teams (`teamsDialog()` in `app.js`; `POST|PUT /api/teams`,
-  `POST /api/teams/delete` in `server.js`; the Window button reuses `windowDialog`). "Directors" is fixed. Because the sheet
+  delete (only when nobody active is in it) teams on the Teams page in the admin menu (`#/teams`, `pages.teams` in `app.js`;
+  `GET|POST|PUT /api/teams`, `POST /api/teams/delete` in `server.js`; the Window button reuses `windowDialog`). Vidya and
+  Harish each built a Teams screen; they were merged into this one page (no Teams button on Employees). "Directors" is fixed. Because the sheet
   is master, a rename is stored in `config.teamRenames` (sheet name -> app name) and `importList` maps through it; teams
   added in the app (`config.teamsAdded`) are not dropped while empty. A team changed by hand (`moveTeam` sets
   `e.teamSetInApp`) is put back by the next import and listed with the replaced reporting changes.

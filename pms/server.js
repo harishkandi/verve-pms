@@ -285,6 +285,12 @@ route('GET', '/api/home', ({ user, q }) => {
     const tr = g.rows;
     return { key: g.key, team: g.team, label: g.label, managerId: g.managerId, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: g.window, startDay: g.days.start, endDay: g.days.end, ...windowState(g.window) };
   });
+  // an admin sees every team on the dashboard, including ones just added that nobody has joined yet
+  if (user.role === 'admin') for (const t of Object.keys(config.windows).sort()) if (!teams.some(x => x.team === t)) {
+    const w = D.windowFor(t, month), days = config.windows[t];
+    teams.push({ key: 't:' + t, team: t, label: t, managerId: null, ...L.counts([]), collected: 0, total: 0, window: w, startDay: days.start, endDay: days.end, ...windowState(w) });
+  }
+  teams.sort((a, b) => a.label.localeCompare(b.label));
   const counts = L.counts(rows);
   // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
   const rated = rows.filter(r => r.rating != null);
@@ -1351,6 +1357,8 @@ const teamInfo = () => teamNames().map(t => {
   return { name: t, members: employees.filter(e => e.active && e.role !== 'admin' && e.team === t).length, window: config.windows[t] || D.DEFAULT_WINDOW,
     fixed: t === DIRECTORS, added: (config.teamsAdded || []).includes(t), sheetName: Object.keys(R).filter(k => R[k] === t) };
 });
+// the Teams page (admin menu): every team with its active members, window and sheet name
+route('GET', '/api/teams', ({ user }) => { adminOnly(user); return { teams: teamInfo() }; });
 route('POST', '/api/teams', ({ user, body }) => {
   adminOnly(user);
   const name = teamName(body.name), w = windowDays(body);
