@@ -16,7 +16,7 @@ const clean = s => String(s ?? '').replace(/\s+/g, ' ').trim();
 const key = s => clean(s).toLowerCase();
 
 const COLS = { name: /^(employee )?name$/, manager: /^(reporting )?manager$/, email: /e-?mail/, designation: /designation|title/,
-  team: /^(team|department)$/, joined: /join|doj/, code: /code|emp(loyee)? ?id/, director: /^director$/ };
+  team: /^(team|department)$/, joined: /join|doj/, code: /code|emp(loyee)? ?id/, director: /^director$/, window: /window|cycle/ };
 
 function splitLine(line, sep) {
   if (sep === '\t') return line.split('\t');
@@ -33,7 +33,7 @@ function parse(text) {
   if (idx.name < 0 || idx.manager < 0) throw new Error('The first row must have the headers "Name" and "Reporting Manager".');
   return lines.slice(1).map(l => {
     const c = splitLine(l, sep), get = k => idx[k] < 0 ? '' : clean(c[idx[k]]);
-    return { name: get('name'), manager: get('manager'), email: get('email').toLowerCase(), designation: get('designation'), team: get('team'), joined: get('joined'), code: get('code'), director: get('director') };
+    return { name: get('name'), manager: get('manager'), email: get('email').toLowerCase(), designation: get('designation'), team: get('team'), joined: get('joined'), code: get('code'), director: get('director'), window: get('window') };
   }).filter(r => r.name);
 }
 
@@ -111,7 +111,13 @@ function importList(S, text, { who = 'System', today } = {}) {
   // review windows: drop teams nobody is in any more (the demo teams), give new departments the default window
   const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
   for (const t of Object.keys(config.windows)) if (!teams.has(t)) delete config.windows[t];
-  for (const t of teams) config.windows[t] ||= { start: 25, end: 31 };
+  for (const t of teams) config.windows[t] ||= { start: 25, end: 2 };
+  // a "Review window" like 10-15 on a manager's row is the window for that manager's whole team
+  config.managerWindows ||= {};
+  for (const r of p.people) {
+    const m = /^(\d{1,2})\s*[-–to]+\s*(\d{1,2})$/i.exec(r.window || '');
+    if (m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 31) config.managerWindows[byName.get(key(r.name)).id] = { start: +m[1], end: +m[2] };
+  }
   const listed = new Set(p.people.map(r => key(r.name)));
   const gone = employees.filter(e => e.src === 'list' && e.active && !listed.has(key(e.name)));
   gone.forEach(e => Object.assign(e, { active: false, inactiveFrom: today || config.today, reason: 'Not on the employee list' }));

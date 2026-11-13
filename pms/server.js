@@ -236,13 +236,25 @@ const windowState = w => config.today < w.start ? { state: 'upcoming', days: day
   : config.today > w.end ? { state: 'closed', days: daysBetween(w.end, config.today) } : { state: 'open', days: daysBetween(config.today, w.end) };
 const fmtDay = iso => { const [, m, d] = iso.split('-').map(Number); return `${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
 const joinNames = a => a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+// report rows grouped by review window: a team follows its department's window unless a manager above it has its own
+function windowGroups(rows, month) {
+  const groups = new Map();
+  for (const r of rows) {
+    if (!groups.has(r.winKey)) {
+      const e = L.emp(r.empId), src = D.windowSource(e), mgr = src.managerId ? L.emp(src.managerId) : null;
+      groups.set(r.winKey, { key: r.winKey, team: r.team, managerId: src.managerId, label: mgr ? `${r.team} · ${mgr.name}'s team` : r.team, days: src.w, window: D.windowOf(e, month), rows: [] });
+    }
+    groups.get(r.winKey).rows.push(r);
+  }
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 // one short line for the hero banner: scheduled count, then the most useful window fact
 function homeSummary(teams, counts) {
   const bits = [`${plural(counts.scheduled, 'review')} scheduled`];
   const open = teams.filter(t => t.state === 'open'), up = teams.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
-  if (open.length) { const last = open.map(t => t.window.end).sort().pop(); bits.push(open.length === 1 ? `${open[0].team} window open until ${fmtDay(last)}` : `${open.length} windows open until ${fmtDay(last)}`); }
-  else if (up.length) bits.push(`Next window: ${up[0].team}, ${fmtDay(up[0].window.start)}`);
+  if (open.length) { const last = open.map(t => t.window.end).sort().pop(); bits.push(open.length === 1 ? `${open[0].label} window open until ${fmtDay(last)}` : `${open.length} windows open until ${fmtDay(last)}`); }
+  else if (up.length) bits.push(`Next window: ${up[0].label}, ${fmtDay(up[0].window.start)}`);
   else if (teams.length) bits.push('All windows closed');
   if (counts.pending) bits.push(`${plural(counts.pending, 'review')} past due`);
   return bits.join(' · ');
@@ -250,15 +262,15 @@ function homeSummary(teams, counts) {
 function homeTips(teams, counts, emails) {
   const tips = [];
   const up = teams.filter(t => t.state === 'upcoming' && t.collected < t.total);
-  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; const [y, m, d] = first.split('-').map(Number); const by = new Date(y, m - 1, d - 3); tips.push(`Collect ${joinNames(up.map(t => t.team))} review dates before ${fmtDay(by.toISOString().slice(0, 10))} to avoid overdue reviews.`); }
-  teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.team} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
-  teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.team} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
+  if (up.length) { const first = up.map(t => t.window.start).sort()[0]; tips.push(`Collect ${joinNames(up.map(t => t.label))} review dates before ${fmtDay(D.addDays(first, -3))} to avoid overdue reviews.`); }
+  teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.label} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
+  teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.label} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
   if (emails && counts.scheduled && counts.submitted === counts.scheduled && !emails.drafts && !emails.sent) tips.push('All reviews are submitted. Generate the manager emails from Manager Emails.');
   return tips.slice(0, 2);
 }
 const emailStates = (user, month) => {
   const mgrs = employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && L.canView(user, e.id) && e.role !== 'admin');
-  const allowed = mgrs.filter(m => user.role === 'admin' || user.role === 'director' || m.id === user.id || L.isAncestor(user.id, m.id));
+  const allowed = mgrs.filter(m => user.role === 'admin' || m.id === user.id || L.isAncestor(user.id, m.id));
   return allowed.map(m => ({ managerId: m.id, name: m.name, team: m.team, state: (emailsOutbox.find(x => x.managerId === m.id && x.month === month) || {}).state || 'not generated' }));
 };
 
@@ -267,10 +279,9 @@ route('GET', '/api/home', ({ user, q }) => {
   const mgr = user.role !== 'employee';
   const all = L.reportRows(user, month);
   const rows = q.team ? all.filter(r => r.team === q.team) : all;
-  const teams = [...new Set(all.map(r => r.team))].map(t => {
-    const tr = all.filter(r => r.team === t), w = D.windowFor(t, month);
-    const days = config.windows[t] || { start: 25, end: 31 };
-    return { team: t, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: w, startDay: days.start, endDay: days.end, ...windowState(w) };
+  const teams = windowGroups(all, month).map(g => {
+    const tr = g.rows;
+    return { key: g.key, team: g.team, label: g.label, managerId: g.managerId, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: g.window, startDay: g.days.start, endDay: g.days.end, ...windowState(g.window) };
   });
   const counts = L.counts(rows);
   // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
@@ -282,7 +293,7 @@ route('GET', '/api/home', ({ user, q }) => {
   };
   const attention = rows.filter(r => r.status !== 'Completed and Submitted' || r.flags.length)
     .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.status === 'Pending' ? 'Review pending' : r.status), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
-  const win = D.windowFor(user.team, month);
+  const win = D.windowOf(user, month);
   const scoped = q.team ? teams.filter(t => t.team === q.team) : teams; // hero text and tips follow the team filter
   const out = { month, label: D.monthLabel(month), today: config.today, counts, health, teams, attention, canEditWindows: user.role === 'admin', window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };
   const openT = scoped.filter(t => t.state === 'open'), upT = scoped.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
@@ -521,13 +532,7 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const all = L.reportRows(user, month, { team: q.team }), directOnly = ['admin', 'director'].includes(user.role);
   const rows = directOnly ? all.filter(r => r.managerId === user.id) : all;
   // admins keep every team's window here, because they set the windows
-  const teams = [...new Set((user.role === 'admin' ? all : rows).map(r => r.team))];
-  const windows = teams.map(t => {
-    const w = D.windowFor(t, month), tr = (user.role === 'admin' ? all : rows).filter(r => r.team === t);
-    const [y, m, d] = w.start.split('-').map(Number); const c = new Date(y, m - 1, d - 3);
-    const days = config.windows[t] || { start: 25, end: 31 };
-    return { team: t, start: w.start, end: w.end, startDay: days.start, endDay: days.end, collectedOn: c.toISOString().slice(0, 10), collected: tr.filter(r => r.scheduled).length, total: tr.length };
-  });
+  const windows = windowGroups(user.role === 'admin' ? all : rows, month).map(g => ({ key: g.key, team: g.team, label: g.label, managerId: g.managerId, start: g.window.start, end: g.window.end, startDay: g.days.start, endDay: g.days.end, collectedOn: D.addDays(g.window.start, -3), collected: g.rows.filter(r => r.scheduled).length, total: g.rows.length }));
   // admins (also while viewing as someone) only watch the schedule: the reporting managers book the reviews
   const adminView = realUser.role === 'admin';
   return { windows, canEditWindows: user.role === 'admin', adminView, directOnly, calendar: calendarState(realUser), rows: rows.map(r => {
@@ -654,7 +659,7 @@ route('GET', '/api/report', ({ user, q }) => {
   return {
     view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers,
     teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, ...L.counts(rs) })),
-    scope: user.role === 'director' || user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
+    scope: user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
   };
 });
 route('GET', '/api/report.csv', ({ user, q }) => {
@@ -670,7 +675,7 @@ route('GET', '/api/emails', ({ user, q }) => { adminOnly(user); return emailStat
 route('GET', '/api/email', ({ user, q }) => {
   adminOnly(user);
   const id = mustEmp(q.manager).id;
-  if (user.role !== 'admin' && user.role !== 'director' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
+  if (user.role !== 'admin' && id !== user.id && !L.isAncestor(user.id, id)) throw forbid();
   const month = q.month || config.currentMonth;
   const e = emailsOutbox.find(x => x.managerId === id && x.month === month);
   return { ...L.buildEmail(id, month), state: e ? e.state : 'not generated', sentAt: e && e.sentAt };
@@ -679,7 +684,7 @@ route('POST', '/api/emails/generate', ({ user, body }) => {
   adminOnly(user);
   const month = body.month || config.currentMonth; let n = 0;
   employees.filter(e => e.active && employees.some(x => x.managerId === e.id && x.active) && e.role !== 'admin').forEach(m => {
-    if (user.role !== 'admin' && user.role !== 'director' && m.id !== user.id && !L.isAncestor(user.id, m.id)) return;
+    if (user.role !== 'admin' && m.id !== user.id && !L.isAncestor(user.id, m.id)) return;
     if (!emailsOutbox.find(x => x.managerId === m.id && x.month === month)) { emailsOutbox.push({ managerId: m.id, month, state: 'draft' }); n++; }
   });
   audit(user.name, 'generate emails', `${n} drafts for ${month}`);
@@ -688,7 +693,7 @@ route('POST', '/api/emails/generate', ({ user, body }) => {
 route('POST', '/api/emails/send', ({ user, body }) => {
   adminOnly(user);
   const mgr = mustEmp(body.managerId);
-  if (user.role !== 'admin' && user.role !== 'director' && mgr.id !== user.id && !L.isAncestor(user.id, mgr.id)) throw forbid();
+  if (user.role !== 'admin' && mgr.id !== user.id && !L.isAncestor(user.id, mgr.id)) throw forbid();
   const month = body.month || config.currentMonth;
   let e = emailsOutbox.find(x => x.managerId === +body.managerId && x.month === month);
   if (!e) emailsOutbox.push(e = { managerId: +body.managerId, month });
@@ -1084,7 +1089,7 @@ route('GET', '/api/myteam', ({ user, q }) => {
 // MIS report: month by month for the root's whole team, and each person's monthly rating
 // whose reviews the MIS report covers: everyone under the root; admins and directors without an id get the whole organisation
 const misScope = (user, q) => {
-  const org = !q.id && (user.role === 'admin' || user.role === 'director');
+  const org = !q.id && user.role === 'admin';
   const root = scopeRoot(user, q.id);
   const people = (org ? L.visibleEmployees(user) : L.subordinates(root.id)).filter(e => e.role !== 'admin' && e.managerId).sort(byName);
   return { org, root, people };
@@ -1137,7 +1142,7 @@ const avg2 = list => list.length ? round2(list.reduce((a, b) => a + b, 0) / list
 route('GET', '/api/yearly', ({ user, q }) => {
   const curFy = +fyLabel(config.currentMonth).slice(3, 7), firstFy = +config.fyStartMonth.slice(0, 4);
   const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy), months = D.fyMonths(fy);
-  const org = !q.id && !q.self && (user.role === 'admin' || user.role === 'director');
+  const org = !q.id && !q.self && user.role === 'admin';
   const root = org ? null : scopeRoot(user, q.id);
   // Team report: only the people under the root (their own table is My report, so it is not shown twice);
   // someone with nobody under them gets their own table
@@ -1273,10 +1278,17 @@ route('PUT', '/api/config', ({ user, body }) => {
 // one team's review window (day of month, same every month), edited from the Scheduling page
 route('PUT', '/api/windows', ({ user, body }) => {
   adminOnly(user);
-  const team = String(body.team || '').trim(), start = Number(body.start), end = Number(body.end);
-  if (!team) throw bad('Team is required.');
+  const start = Number(body.start), end = Number(body.end);
   if (![start, end].every(n => Number.isInteger(n) && n >= 1 && n <= 31)) throw bad('Days must be whole numbers from 1 to 31.');
-  if (start > end) throw bad('The window must start on or before the day it ends.');
+  // an end day before the start day means the window runs into the next month (25 to 2)
+  if (body.managerId) {
+    const m = mustEmp(body.managerId);
+    config.managerWindows[m.id] = { start, end };
+    audit(user.name, 'review window updated', `${m.name}'s team: day ${start} to ${end}`);
+    return config.managerWindows[m.id];
+  }
+  const team = String(body.team || '').trim();
+  if (!team) throw bad('Team is required.');
   config.windows[team] = { start, end };
   audit(user.name, 'review window updated', `${team}: day ${start} to ${end}`);
   { const w = D.windowFor(team, config.currentMonth), people = employees.filter(e => e.active && e.team === team && e.role !== 'admin');

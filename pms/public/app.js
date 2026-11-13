@@ -188,6 +188,13 @@ const spinner = text => `<div class="loading"><span class="spin" style="display:
 // the scrolling area: the main column inside the app shell (the window itself does not scroll)
 const SC = () => document.getElementById('main') || document.scrollingElement;
 // search box with the leading magnifier
+// while typing in a search box, bring the results into view; Enter moves the cursor to the first result so it can be opened
+const showResults = (v, term) => { const t = v.querySelector('.tablewrap'); if (t && (term || '').trim()) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.closest || !e.target.closest('.search')) return;
+  const a = [...document.querySelectorAll('.tablewrap tr:not([hidden]) td a')].find(x => x.offsetParent);
+  if (a) { e.preventDefault(); a.focus(); a.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+});
 const searchBox = (id, ph, val, w) => `<span class="search">${ico('search')}<input id="${id}" type="search" placeholder="${esc(ph)}" value="${esc(val || '')}"${w ? ` style="width:${w}px"` : ''}></span>`;
 // sidebar wordmark: "verve", a thin rule, "ADVISORY" right-aligned
 // sidebar: the product name; the company logo sits at the right end of the top bar
@@ -472,15 +479,15 @@ function ddSelect(id, val, opts, o = {}) {
 }
 // admin: change a team's review window (day of month, applies to every month); w = { team, startDay, endDay }
 function windowDialog(w, onSaved) {
-  const m = modal(`<h2>Edit review window: ${esc(w.team)}</h2><div id="er"></div>
+  const m = modal(`<h2>Edit review window: ${esc(w.label || w.team)}</h2><div id="er"></div>
     <div class="row" style="align-items:flex-end;margin:0"><div><label class="f">From day <i>*</i></label><input class="num" type="number" min="1" max="31" id="ws" value="${w.startDay}"></div>
     <div><label class="f">To day <i>*</i></label><input class="num" type="number" min="1" max="31" id="we" value="${w.endDay}"></div></div>
-    <p class="small">Day of the month, used for every month. In shorter months the window ends on the last day. Dates are collected 3 days before the window opens.</p>
+    <p class="small">Day of the month, used for every month. If the end day is before the start day (25 to 2) the window ends in the next month. Dates are collected 3 days before the window opens.</p>
     <div class="row"><button class="btn pri" id="ok">Save window</button><button class="btn" id="no">Cancel</button></div>`);
   m.querySelector('#no').onclick = () => m.remove();
   m.querySelector('#ws').focus();
   m.querySelector('#ok').onclick = async () => {
-    try { await api('/windows', { method: 'PUT', body: { team: w.team, start: +m.querySelector('#ws').value, end: +m.querySelector('#we').value } }); m.remove(); toast(`${w.team} review window saved`); onSaved(); }
+    try { await api('/windows', { method: 'PUT', body: { ...(w.managerId ? { managerId: w.managerId } : { team: w.team }), start: +m.querySelector('#ws').value, end: +m.querySelector('#we').value } }); m.remove(); toast(`${w.label || w.team} review window saved`); onSaved(); }
     catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
   };
 }
@@ -826,7 +833,7 @@ pages.home = async (v, opts = {}) => {
     <div class="wgrid">
       ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(a.team)} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
       <div class="m bare">
-             ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => d.canEditWindows ? `<button type="button" class="win ed" data-win="${esc(t.team)}" title="Edit the ${esc(t.team)} review window"><b>${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</span>${winBadge(t)}</button>` : `<div class="win"><b title="${esc(t.team)}">${esc(t.team)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
+             ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => d.canEditWindows ? `<button type="button" class="win ed" data-win="${esc(t.key)}" title="Edit the ${esc(t.label)} review window"><b>${esc(t.label)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</span>${winBadge(t)}</button>` : `<div class="win"><b title="${esc(t.label)}">${esc(t.label)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
       </div>
     </div>`;
     if (v.querySelector('#hShell') && opts.partial) {
@@ -856,7 +863,7 @@ pages.home = async (v, opts = {}) => {
         <div class="facts"><div><small>Reporting manager</small><b>${esc(o && o.manager || 'Not assigned')}</b></div>
           <div><small>Review window</small><b>${fmtD(w.start)} to ${fmtD(w.end)}</b></div>
           <div><small>My part</small><b>${!o ? 'No form' : finished ? 'Done' : pr ? `${done} of ${total} filled in` : 'Not started'}</b></div></div></div>
-      <div class="acts">${o && o.zoom ? `<a class="btn" href="${esc(o.zoom)}" target="_blank" rel="noopener">${ico('video')}Join Zoom</a>` : ''}${o ? `<a class="btn yel" href="#/form/${S.me.id}/${S.month}">${o.submitted ? 'View my review' : 'Open my review'}</a>` : ''}</div></div>`;
+      <div class="acts">${o ? `<a class="btn yel" href="#/form/${S.me.id}/${S.month}">${o.submitted ? 'View my review' : 'Open my review'}</a>` : ''}</div></div>`;
     // four plain cards, one fact each: review status, review meeting, review date, monthly rating
     const kcard = (cls, icon, label, value, note, href) => `<${href ? `a href="${href}"` : 'div'} class="stat ${cls} ed-k"><small>${label}</small><b>${value}</b><span>${note}</span><i class="wm">${ico(icon)}</i></${href ? 'a' : 'div'}>`;
     const stText = !o ? 'No form' : o.submitted ? 'Submitted' : o.selfSubmitted ? 'Sent to manager' : o.status === 'Pending' ? 'Overdue' : issues.length ? 'Form incomplete' : 'Ready to send';
@@ -922,7 +929,7 @@ pages.home = async (v, opts = {}) => {
       S.hteam = b.dataset.team; return pages.home(v, { partial: true, dir: to > from ? 1 : -1 });
     }
     const w = e.target.closest('[data-win]');
-    if (w) { const t = (lastHome.teams || []).find(x => x.team === w.dataset.win); if (t) windowDialog(t, () => pages.home(v, { partial: true })); return; }
+    if (w) { const t = (lastHome.teams || []).find(x => x.key === w.dataset.win); if (t) windowDialog(t, () => pages.home(v, { partial: true })); return; }
     const s = e.target.closest('[data-st]'); if (s) openReport(s.dataset.st);
   };
   v.onkeydown = e => { const s = e.target.closest?.('.stat[data-st]'); if (s && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openReport(s.dataset.st); } };
@@ -1214,7 +1221,7 @@ pages.team = async (v, arg) => {
   const crumbs = d.me ? `PMS › My team${list ? ' › Reporting manager list' : ''}`
     : ['<a href="#/team">My team</a>', ...d.path.filter(x => x.id !== S.me.id).map(x => `<a href="#/team/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ');
   const up = d.path.filter(x => x.id !== S.me.id), back = up.length ? `#/team/${up[up.length - 1].id}` : '#/team';
-  const review = r => r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form</span>';
+  const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}<a class="btn sm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${ico('file')}Open form</a></span>`;
   const count = r => r.direct ? `<a class="btn sm" href="#/team/${r.id}" title="Open ${esc(r.name)}'s team">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
   const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${r.direct ? `<a class="nm" href="#/team/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`}<div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
   const rows = list ? d.managers : d.members;
@@ -1240,7 +1247,7 @@ pages.team = async (v, arg) => {
     v.querySelectorAll('tr[data-s]').forEach(tr => { const hit = !s || tr.dataset.s.includes(s); tr.hidden = !hit; n += hit; });
     $('#tnone').hidden = !(s && rows.length && !n);
   };
-  $('#tq').oninput = e => { S.tq = e.target.value; filter(); };
+  $('#tq').oninput = e => { S.tq = e.target.value; filter(); showResults(v, S.tq); };
   filter();
 };
 
@@ -1371,7 +1378,6 @@ pages.yearly = async (v, id) => {
     ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
     <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
-    ${mgrView || d.org ? `<div class="small" style="margin:0 0 12px">${esc(monthLabel(d.cardMonth))} reviews of ${d.org ? 'everyone in the organisation' : 'the people in this report'} (pick another month in the calendar at the top)</div>${countTiles(d.counts)}` : ''}
     ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
   $('#yfy').onchange = e => { S.yfy = +e.target.value; pages.yearly(v, id); };
@@ -1456,8 +1462,8 @@ pages.scheduling = async v => {
   // admins only watch the schedule (no booking, no calendar): the reporting managers schedule the reviews
   const calCard = d.adminView ? `<div class="info">Reporting managers schedule the reviews. As admin you set the review windows and rules here; the team list shows only the people who report to ${S.me.viewingAs ? esc(S.me.name) : 'you'} directly. Use Review status report for everyone.</div>`
     : !cal.google ? `<div class="info">Calendar invites are off on this server: Google sign-in is not set up yet. Reviews can still be scheduled here.</div>`
-    : cal.connected ? `<div class="calcard on">${ico('calendar')}<div><b>Google Calendar connected</b><span>Invites go out from ${esc(cal.email)}, with the Zoom link you add. Google emails the employee, and their manager if someone else schedules.</span></div><span class="sp"></span><button class="btn sm" id="caloff">Disconnect</button></div>`
-    : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar with the Zoom link you add.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
+    : cal.connected ? `<div class="calcard on">${ico('calendar')}<div><b>Google Calendar connected</b><span>Invites go out from ${esc(cal.email)}, Google emails the employee, and their manager if someone else schedules.</span></div><span class="sp"></span><button class="btn sm" id="caloff">Disconnect</button></div>`
+    : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
     : `<div class="info">To send calendar invites, sign in with your @${esc(S.me.domain)} Google account${S.me.viewingAs ? ' (invites always come from your own calendar, not the person you are viewing as)' : ''}.</div>`;
   const inviteCell = r => r.invite
     ? `<span class="badge b-green" title="Sent by ${esc(r.invite.owner)} to ${esc(r.invite.guests.join(', '))}">Invite sent</span><div class="small">${r.invite.link ? `<a href="${esc(r.invite.link)}" target="_blank" rel="noopener">Event</a>` : ''}${r.canManage ? ` · <a href="#" data-cancel="${r.empId}">Cancel</a>` : ''}</div>`
@@ -1465,19 +1471,19 @@ pages.scheduling = async v => {
     : r.scheduled && r.canManage && cal.connected ? `<button class="btn sm" data-inv="${r.empId}">${ico('send')}Send invite</button>` : `<span class="small">${d.adminView ? 'Not sent' : 'N/A'}</span>`;
   v.innerHTML = head('Review scheduling', d.adminView ? 'Review windows, review rules and where each review stands' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
   ${calCard}
-  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.team)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.team)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
+  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
   ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
   <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
   <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
   ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${esc(r.team)}</td>
-  <td>${r.scheduled ? `<b>${fmtD(r.scheduled)}</b>${r.time ? ` <span class="small">${fmtT(r.time)}</span>` : ''}${r.canManage ? ` <button class="btn sm" data-resch="${r.empId}">Reschedule</button>` : ''}${r.zoom ? `<div class="small"><a href="${esc(r.zoom)}" target="_blank" rel="noopener">Zoom link</a></div>` : ''}` : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
+  <td>${r.scheduled ? `<b>${fmtD(r.scheduled)}</b>${r.time ? ` <span class="small">${fmtT(r.time)}</span>` : ''}${r.canManage ? ` <button class="btn sm" data-resch="${r.empId}">Reschedule</button>` : ''}` : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="rcount" title="Counted once per new date">${r.reschedules}</span> <span class="small">time${r.reschedules === 1 ? '' : 's'}</span><div class="small">${reschedDates(r).map(fmtD).join(' → ')}</div>` : '<span class="rcount z">0</span>'}</td>
   <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}</table></div>
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
-  const win = r => d.windows.find(w => w.team === r.team);
+  const win = r => d.windows.find(w => w.key === r.winKey);
   // one dialog for schedule, reschedule and send-invite
   const slotDialog = (r, mode) => {
     const w = win(r), inv = r.invite, canInvite = cal.connected && r.hasEmail && !inv;
@@ -1487,7 +1493,6 @@ pages.scheduling = async v => {
       <div class="row" style="align-items:flex-end;margin:0"><div><label class="f">Date <i>*</i></label><input type="date" id="sd" value="${esc(date || '')}" ${mode === 'invite' ? 'disabled' : ''}></div>
       <div><label class="f">Time <i>*</i></label><input type="time" id="st" value="${esc(time)}" step="900"></div>
       <div><label class="f">Length</label><select id="sl">${[15, 30, 45, 60, 90].map(n => `<option value="${n}" ${n === dur ? 'selected' : ''}>${n} min</option>`).join('')}</select></div></div>
-      <label class="f" style="margin-top:12px">Zoom meeting link</label><input type="url" id="sz" value="${esc(r.zoom || '')}" placeholder="https://zoom.us/j/123456789" style="width:100%">
       ${inv ? `<div class="info">The Google Calendar invite moves too; ${esc(inv.guests.join(' and '))} ${inv.guests.length > 1 ? 'are' : 'is'} told by Google.</div>`
         : canInvite ? `<label class="chk"><input type="checkbox" id="si" checked ${mode === 'invite' ? 'disabled' : ''}> Send a Google Calendar invite to ${esc(r.name)}</label>`
         : !r.hasEmail ? `<div class="info">No calendar invite: ${esc(r.name)} has no @${esc(S.me.domain)} email in PMS yet.</div>`
@@ -1497,7 +1502,7 @@ pages.scheduling = async v => {
     const ok = m.querySelector('#ok');
     ok.onclick = async () => {
       const send = m.querySelector('#si') ? m.querySelector('#si').checked : false;
-      const body = { empId: r.empId, month: S.month, date: m.querySelector('#sd').value, time: m.querySelector('#st').value, duration: +m.querySelector('#sl').value, invite: send, zoom: m.querySelector('#sz').value.trim(), origin: location.origin };
+      const body = { empId: r.empId, month: S.month, date: m.querySelector('#sd').value, time: m.querySelector('#st').value, duration: +m.querySelector('#sl').value, invite: send, origin: location.origin };
       ok.disabled = true; ok.textContent = send || inv ? 'Talking to Google…' : 'Saving…';
       try {
         const res = await api('/scheduling/' + (mode === 'invite' ? 'invite' : mode), { method: 'POST', body });
@@ -1508,7 +1513,7 @@ pages.scheduling = async v => {
   v.onclick = async e => {
     const t = e.target.closest('button, a'); if (!t) return;
     try {
-      if (t.dataset.win) windowDialog(d.windows.find(w => w.team === t.dataset.win), () => pages.scheduling(v));
+      if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
       else if (t.id === 'sc') {
         const b = {};
         v.querySelectorAll('[data-c]').forEach(i => { const k = i.dataset.c; b[k] = k === 'operationalRange' ? i.value.split(',').map(Number) : Number(i.value); });
@@ -1798,7 +1803,7 @@ pages.employees = async (v, arg) => {
     return r;
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
-  v.innerHTML = head('Employees', 'Change team, designation or manager right in the table') + `
+  v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
   <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
@@ -1812,7 +1817,7 @@ pages.employees = async (v, arg) => {
   <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
   <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a><button class="btn sm" data-a="edit" data-id="${e.id}">Edit</button></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
   <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Roles follow the reporting line: someone who gets a first report becomes a manager by themselves. The employee sheet is the master copy: a reporting change made here is replaced at the next import of the sheet unless the sheet has it too. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
-  v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); }); } };
+  v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); showResults(v, S.eq); }); } };
   const emailOk = s => !s || s.toLowerCase().endsWith(dom.toLowerCase()) && /^[^@\s]+@[^@\s]+$/.test(s);
   const LABEL = { team: 'team', designation: 'designation', managerId: 'reporting manager' };
   // a new designation typed in when "Other…" is picked
@@ -1986,7 +1991,7 @@ pages.reporting = async (v, arg) => {
     v.querySelectorAll('tr[data-s]').forEach(tr => { const hit = !s || tr.dataset.s.includes(s); tr.hidden = !hit; n += hit; });
     $('#orgnone').hidden = !(s && d.rows.length && !n);
   };
-  $('#orgq').oninput = e => { S.orgq = e.target.value; filter(); };
+  $('#orgq').oninput = e => { S.orgq = e.target.value; filter(); showResults(v, S.orgq); };
   filter();
 };
 

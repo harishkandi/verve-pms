@@ -10,6 +10,10 @@ const ROW_ID = 1;
 // pg 8 already treats sslmode=require as verify-full; say so explicitly to keep that behaviour and silence its warning
 const URL = process.env.DATABASE_URL && process.env.DATABASE_URL.replace(/sslmode=(prefer|require|verify-ca)\b/, 'sslmode=verify-full');
 
+// `npm run local` keeps the state in a file (git-ignored) so changes such as moving someone to inactive survive a restart
+const fs = require('fs'), path = require('path');
+const LOCAL_FILE = process.argv.includes('--local-state') && !URL ? path.join(__dirname, 'private', 'state.json') : null;
+
 let pool = null;
 let lastSaved = null;         // JSON of the last snapshot written, so unchanged state is not written again
 let queue = Promise.resolve(); // writes run one at a time, in order
@@ -26,6 +30,11 @@ function hydrate(data) {
 }
 
 async function init() {
+  if (!URL && LOCAL_FILE) {
+    try { if (fs.existsSync(LOCAL_FILE)) { hydrate(JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8'))); lastSaved = snapshot(); console.log(`Loaded saved state from ${LOCAL_FILE} (delete the file to start fresh)`); } }
+    catch (e) { console.error('Could not read the saved state, starting fresh:', e.message); }
+    return;
+  }
   if (!URL) { console.log('DATABASE_URL not set: running in memory, data resets on restart'); return; }
   const { Pool } = require('pg');
   pool = new Pool({ connectionString: URL, max: 3 });
@@ -45,6 +54,11 @@ async function write(json) {
 
 // save the current state if it changed since the last write; resolves once it is stored
 function save() {
+  if (LOCAL_FILE) {
+    const json = snapshot();
+    if (json !== lastSaved) { fs.mkdirSync(path.dirname(LOCAL_FILE), { recursive: true }); fs.writeFileSync(LOCAL_FILE, json); lastSaved = json; }
+    return Promise.resolve();
+  }
   if (!pool) return Promise.resolve();
   const json = snapshot();
   if (json === lastSaved) return queue;

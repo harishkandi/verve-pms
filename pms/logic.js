@@ -18,12 +18,11 @@ function subordinates(id) {
 const isAncestor = (viewerId, targetId) => subordinates(viewerId).some(e => e.id === targetId);
 function canView(viewer, targetId) {
   if (!emp(targetId)) return false;
-  if (viewer.role === 'admin' || viewer.role === 'director') return true;
+  if (viewer.role === 'admin') return true; // everyone else, directors included, sees themselves and the people under them
   return viewer.id === targetId || isAncestor(viewer.id, targetId);
 }
 // A reviewer can enter manager ratings and submit; admin can do everything
-const canManage = (viewer, targetId) => viewer.role === 'admin' || isAncestor(viewer.id, targetId) ||
-  (viewer.role === 'director' && viewer.id !== targetId);
+const canManage = (viewer, targetId) => viewer.role === 'admin' || isAncestor(viewer.id, targetId);
 const canSelfEdit = (viewer, targetId) => viewer.id === targetId || viewer.role === 'admin';
 // The role follows the reporting line (same rule as the employee-list import): no manager = director, "Team lead" in the
 // designation = team lead, active people reporting to them = manager, otherwise employee. Admin accounts are left alone.
@@ -53,7 +52,6 @@ function getForm(empId, month) {
   if (!e || !D.fyMonths().includes(month) || month < e.joined.slice(0, 7)) return null;
   // a new month starts with no KRAs; the person chooses whether to copy last month's (Copy KRAs from last month)
   const kras = D.emptyKras();
-  const win = D.windowFor(e.team, month);
   return forms[k] = { empId, month, reviewDate: '', scheduledDate: null, actualDate: null, reschedules: [], selfSubmitted: false, selfSubmittedAt: null, submitted: false, locked: false, kras, qa: {}, qSnapshot: null };
 }
 
@@ -241,7 +239,7 @@ function reviewStatus(f) {
 // the actual review date is the Review Date entered on the monthly form
 const actualDate = f => f.reviewDate || null;
 function dueInfo(f) {
-  const e = emp(f.empId), w = D.windowFor(e.team, f.month);
+  const e = emp(f.empId), w = D.windowOf(e, f.month);
   const actual = actualDate(f), due = actual ? (actual <= w.end ? 'Within due date' : 'After due date') : 'Pending';
   return { windowStart: w.start, dueDate: w.end, due };
 }
@@ -261,7 +259,7 @@ function reportRows(viewer, month, filters = {}) {
     const v = validate(f);
     const di = dueInfo(f);
     rows.push({
-      empId: e.id, name: e.name, team: e.team, designation: e.designation, managerId: e.managerId, manager: mgr ? mgr.name : '',
+      empId: e.id, name: e.name, team: e.team, winKey: D.windowSource(e).key, designation: e.designation, managerId: e.managerId, manager: mgr ? mgr.name : '',
       scheduled: f.scheduledDate, due: di.dueDate, actual: actualDate(f), dueStatus: di.due,
       reschedules: rescheduleCount(f), status: reviewStatus(f), rating: f.submitted ? monthlyRating(f) : null,
       flags: [...new Set(v.filter(x => x.level !== 'info').map(x => x.short))], allFlags: v,
