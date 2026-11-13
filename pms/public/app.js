@@ -94,6 +94,13 @@ const pc = x => x == null ? 'N/A' : `${x}%`;
 const errBox = e => `<div class="warn">${(e.data?.errors || [e.message]).map(esc).join('<br>')}</div>`;
 function askNote(title, label, optional) { return new Promise(res => { const m = modal(`<h3>${title}</h3><label class="f">${label}</label><textarea id="nt" rows="4" style="width:100%"></textarea><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="nc">Cancel</button><button class="btn pri" id="no">Send</button></div>`); const done = v => { m.remove(); res(v); }; m.querySelector('#nc').onclick = () => done(null); m.querySelector('#no').onclick = () => { const v = m.querySelector('#nt').value.trim(); if (!v && !optional) return toast('Please write a short note', 'err'); done(v); }; m.querySelector('#nt').focus(); }); }
 function modal(html) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.addEventListener('mousedown', ev => { if (ev.target === m) m.remove(); }); const esc = ev => { if (ev.key === 'Escape') { m.remove(); document.removeEventListener('keydown', esc); } }; document.addEventListener('keydown', esc); document.body.appendChild(m); return m; }
+// after a reporting change or a new member: the master employee list needs the same change
+function masterAlertBox(a) {
+  const what = a.notListed ? `<p><b>${esc(a.name)}</b> is not on the master employee list yet. Add them there, so PMS and the list stay the same.</p>`
+    : `<p>The master employee list does not match what you just saved for <b>${esc(a.name)}</b>:</p><ul class="mdl">${a.diffs.map(d => `<li><b>${esc(d.label)}</b>: PMS now says <b>${esc(d.pms)}</b>, the master list says <b>${esc(d.master)}</b>.</li>`).join('')}</ul><p>Please update the master employee list too, so both places show the same.</p>`;
+  const m = modal(`<div class="ask danger"><i>${ico('alert')}</i><div><h2>Update the master data too</h2>${what}</div></div><div class="row"><button class="btn pri" id="mdok">OK, I will update it</button></div>`);
+  m.querySelector('.box').classList.add('sm'); m.querySelector('#mdok').onclick = () => m.remove();
+}
 // the app's own yes/no popup, used instead of the browser's confirm box; resolves true when confirmed
 function confirmBox(title, text, { ok = 'OK', danger = false } = {}) {
   return new Promise(resolve => {
@@ -182,8 +189,10 @@ function teamLook(t) {
   const [icon, color] = TEAM_SPARE[i % TEAM_SPARE.length];
   return { icon, color };
 }
-const teamOpt = t => { const l = teamLook(t); return [t, t, l.color, l.icon]; }; // for ddSelect lists
-const teamIco = t => { const l = teamLook(t); return `<span class="tico" style="color:var(${l.color})">${ico(l.icon)}</span>`; };
+// teams are shown as "Team <name>" (a team named after a person uses the first name); the stored team name is unchanged
+const tl = n => (S.me && S.me.teamLabels && S.me.teamLabels[n]) || n;
+const teamOpt = t => [t, tl(t)]; // for ddSelect lists
+const teamIco = () => ''; // team names are shown without a symbol in front
 const spinner = text => `<div class="loading"><span class="spin" style="display:inline-flex">${ico('loader')}</span>${text ? esc(text) : '<span class="ld-msg">Loading…</span>'}</div>`;
 // the scrolling area: the main column inside the app shell (the window itself does not scroll)
 const SC = () => document.getElementById('main') || document.scrollingElement;
@@ -828,25 +837,25 @@ pages.home = async (v, opts = {}) => {
       S.me.role !== 'admin' ? ['chart', 'g', 'Team report', '#/yearly', 'KRA scores month by month'] : ['mail', 'g', 'Manager emails', '#/emails', q.emails.sent ? `${q.emails.sent} sent · ${q.emails.drafts} draft${q.emails.drafts === 1 ? '' : 's'}` : q.emails.drafts ? `${q.emails.drafts} draft${q.emails.drafts === 1 ? '' : 's'} ready` : 'No drafts yet'],
       S.me.role === 'admin' ? ['idcard', 'r', 'Employees', '#/employees', `${q.employees.active} active · ${q.employees.inactive} inactive`] : ['team', 'r', 'My team', '#/team', `${q.teamReviews} review${q.teamReviews === 1 ? '' : 's'} in your scope`],
     ];
-    const nw = d.nextWindow, windowFact = nw.state === 'open' ? `${esc(nw.team)} · closes ${fmtD(nw.date)}` : nw.state === 'upcoming' ? `${esc(nw.team)} · opens ${fmtD(nw.date)}` : 'All windows closed';
+    const nw = d.nextWindow, windowFact = nw.state === 'open' ? `${esc(tl(nw.team))} · closes ${fmtD(nw.date)}` : nw.state === 'upcoming' ? `${esc(tl(nw.team))} · opens ${fmtD(nw.date)}` : 'All windows closed';
     const hero = `<div class="hero">${ORBS}${HALO}<div class="ring">${ringSvg(pct)}<b>${c.submitted}<small>OF ${c.scheduled} DONE</small></b></div>
-      <div><div class="hm">Review progress · ${esc(S.hteam || 'All teams')}</div><div class="ht">${pct}% of ${esc(month)} reviews submitted</div><div class="facts">
+      <div><div class="hm">Review progress · ${esc(S.hteam ? tl(S.hteam) : 'All teams')}</div><div class="ht">${pct}% of ${esc(month)} reviews submitted</div><div class="facts">
         <div><small>Review window</small><b>${windowFact}</b></div>
         <div><small>Dates collected</small><b>${q.datesCollected} / ${q.datesTotal}</b></div>
         <div><small>Past due</small><b>${c.pending}</b></div>
         <div><small>Manager emails</small><b>${q.emails.sent} of ${q.emails.total} sent</b></div></div></div></div>`;
-    const chips = `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(t.team)}</button>`).join('')}</div></div>`;
+    const chips = `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(tl(t.team))}</button>`).join('')}</div></div>`;
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
     const share = n => `${pctOf(n, c.scheduled)}% of scheduled`;
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}${r.movedFrom ? ` · first sent to ${esc(r.movedFrom)}` : ''}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
     const body = `<div class="stats">${kpi('n', '', 'calendar', 'Scheduled', c.scheduled, `Across ${S.hteam ? '1 team' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}`)}${kpi('g', 'Completed and Submitted', 'check', 'Submitted', c.submitted, share(c.submitted))}${kpi('a', 'Completed but Not Submitted', 'draft', 'Not submitted', c.notSubmitted, share(c.notSubmitted))}${kpi('r', 'Review Not Completed', 'alert', 'Not completed', c.notCompleted, share(c.notCompleted))}${kpi('b', 'Pending', 'hourglass', 'Pending', c.pending, share(c.pending))}</div>
     <div class="wgrid">
       ${widget('award', 'Review quality', '<a class="more" href="#/report">Report</a>', qualityBody(d.health, c))}
-      ${widget('chart', 'Team-wise progress', '<a class="more" href="#/report">Team view</a>', `<div class="mb">${teams.length ? teams.map(t => t.scheduled ? stackBar(t, t.team) : `<div class="tbar"><span class="n" title="${esc(t.team)}">${esc(t.team)}</span><div class="tr"></div><b>0/0</b></div>`).join('') + statusLegend() : '<div class="empty">No teams in your scope.</div>'}</div>`)}
+      ${widget('chart', 'Team-wise progress', '<a class="more" href="#/report">Team view</a>', `<div class="mb">${teams.length ? teams.map(t => t.scheduled ? stackBar(t, tl(t.team)) : `<div class="tbar"><span class="n" title="${esc(tl(t.team))}">${esc(tl(t.team))}</span><div class="tr"></div><b>0/0</b></div>`).join('') + statusLegend() : '<div class="empty">No teams in your scope.</div>'}</div>`)}
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>
     <div class="wgrid">
-      ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(a.team)} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
+      ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(tl(a.team))} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
       <div class="m bare">
              ${widget('calendar', 'Review windows', '', `<div class="mb" style="padding-top:6px">${teams.map(t => d.canEditWindows ? `<button type="button" class="win ed" data-win="${esc(t.key)}" title="Edit the ${esc(t.label)} review window"><b>${esc(t.label)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}${ico('pencil')}</span>${winBadge(t)}</button>` : `<div class="win"><b title="${esc(t.label)}">${esc(t.label)}</b><span>${fmtD(t.window.start)} to ${fmtD(t.window.end)}</span>${winBadge(t)}</div>`).join('') || '<div class="empty">No review windows.</div>'}${d.tips.map(t => `<div class="tip"><b>Tip</b> ${esc(t)}</div>`).join('')}</div>`, 'w12')}
       </div>
@@ -914,7 +923,7 @@ pages.home = async (v, opts = {}) => {
     const recent = yr && yr.people[0] ? yr.months.map((m, i) => ({ m, t: yr.people[0].cells[i] && yr.people[0].cells[i].total })).filter(x => x.t != null).slice(-5).reverse() : [];
     const recentBody = recent.length ? `<div class="mb">${recent.map(x => `<div class="ed-rate"><span>${esc(x.m.label.split(' ')[0].slice(0, 3))} ${x.m.label.split(' ')[1].slice(2)}</span><div class="ed-bar"><i class="${rateCls(x.t)}" style="width:${x.t}%"></i></div><b class="rt ${rateCls(x.t)}">${x.t.toFixed(1)}%</b></div>`).join('')}
       <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a></div>` : '<div class="mb"><div class="empty">No submitted reviews yet this year.</div></div>';
-    html = `${head(`My ${monthSel('msel', { heading: true })} review`, `Welcome back, ${esc(S.me.name.split(' ')[0])} · ${esc(S.me.designation || ROLE_LABEL[S.me.role])}${S.me.team ? ` · ${esc(S.me.team)} team` : ''}`)}
+    html = `${head(`My ${monthSel('msel', { heading: true })} review`, `Welcome back, ${esc(S.me.name.split(' ')[0])} · ${esc(S.me.designation || ROLE_LABEL[S.me.role])}${S.me.team ? ` · ${esc(tl(S.me.team))}` : ''}`)}
     ${hero}${stats}
     ${kraAccessCard(o)}
     <div class="wgrid">
@@ -1255,7 +1264,7 @@ pages.team = async (v, arg) => {
         || `<tr><td colspan="6" class="small">Nobody reports to ${d.me ? 'you' : esc(p.name)}.</td></tr>`}`;
   v.innerHTML = head('My team', crumbs) + `<div class="seg" role="tablist"><a role="tab" href="#/team" class="${d.me && !list ? 'on' : ''}">My team <span class="cnt">${d.members.length}</span></a><a role="tab" href="#/team/managers" class="${list ? 'on' : ''}">Reporting Manager <span class="cnt">${d.managers.length}</span></a></div>
   <div class="row">${monthSel()}${searchBox('tq', 'Search name, team or email', S.tq)}<span class="sp"></span>${d.me ? '' : `<a class="btn" href="${back}">← Back</a>`}</div>
-  ${d.me ? '' : `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, p.team)}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? esc(p.manager.name) : 'nobody'} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span>${reportLinks(p)}</div>`}
+  ${d.me ? '' : `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? esc(p.manager.name) : 'nobody'} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span>${reportLinks(p)}</div>`}
   <div class="small" style="margin:0 0 12px">${mon} reviews of everyone under ${d.me ? 'you' : esc(p.name)} (all levels)</div>
   ${countTiles(c)}
   <h2>${list ? `Reporting Manager (${rows.length})` : `${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})`}</h2>
@@ -1356,7 +1365,7 @@ pages.kpi = async (v, id) => {
   <p class="small">Each KRA score is 30% self + 70% manager rating, weighted by sub-KRA. The monthly rating combines the three KRAs by their weight and shows once the review is submitted.</p>`;
 };
 const reportTable = rows => `<div class="tablewrap"><table><tr><th>Manager / team</th><th>Employee</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
-  ${rows.map(r => `<tr><td>${esc(r.manager)} / ${esc(r.team)}</td><td>${nameLink(r.empId, r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}${r.actual ? `<br>${badge(r.dueStatus)}` : ''}</td><td>${badge(r.status)}</td><td>${pc(r.rating)}</td>${flagCell(r.flags)}</tr>`).join('') || '<tr><td colspan="8">No reviews in your access for this month.</td></tr>'}</table></div>`;
+  ${rows.map(r => `<tr><td>${esc(r.manager)} / ${esc(tl(r.team))}</td><td>${nameLink(r.empId, r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}${r.actual ? `<br>${badge(r.dueStatus)}` : ''}</td><td>${badge(r.status)}</td><td>${pc(r.rating)}</td>${flagCell(r.flags)}</tr>`).join('') || '<tr><td colspan="8">No reviews in your access for this month.</td></tr>'}</table></div>`;
 // a review's flags: the first one, the rest behind "+N more" (click to open), so one row stays one line tall
 const flagCell = flags => !flags.length ? '<td class="small">None</td>'
   : flags.length === 1 ? `<td class="flag">${esc(flags[0])}</td>`
@@ -1381,7 +1390,7 @@ pages.yearly = async (v, id) => {
   // the months shown: the whole year, or the three months of the chosen quarter (Quarter I = Apr-Jun)
   const qi = YF.q === '' ? null : +YF.q, cols = qi == null ? d.months.map((_, i) => i) : [qi * 3, qi * 3 + 1, qi * 3 + 2];
   const pick = arr => cols.map(i => arr[i]);
-  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, p.team)}${p.manager ? ` · reports to ${esc(p.manager)}` : ''}</span></div>
+  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · reports to ${esc(p.manager)}` : ''}</span></div>
       ${S.me.role === 'admin' ? `<a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a>` : ''}<span class="sp"></span>
       ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}">${ico('team')}Their team</a>` : ''}</div>
     <div class="tablewrap"><table class="ytab"><tr><th>KRA name</th>${pick(d.months).map(m => `<th class="nr ${m.open ? '' : 'off'}">${mh(m)}</th>`).join('')}</tr>
@@ -1392,7 +1401,7 @@ pages.yearly = async (v, id) => {
   const root = d.person, mgrView = root && d.teamView;
   v.innerHTML = head(d.me ? (mgrView ? 'Team report' : 'My report') : root ? (mgrView ? `Team report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team report',
       root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
-    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(teamOpt)], { icon: 'sitemap' }) : ''}
+    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(teamOpt)]) : ''}
     ${d.people.length > 1 ? ddSelect('yper', YF.person, [['', 'All people'], ...pool.map(p => [String(p.id), p.name])], { icon: 'team' }) : ''}
     ${ddSelect('yq', YF.q, [['', 'All'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']], { icon: 'filter' })}
     ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
@@ -1416,7 +1425,7 @@ const exportMenu = () => `<div class="dd" data-dd="list"><button type="button" c
   <select id="fexp" hidden aria-hidden="true"><option value="" selected></option><option value="csv"></option><option value="pdf"></option></select></div>`;
 // PDF: the report laid out for print in a hidden frame; the browser's print dialog saves it as PDF
 function reportPdf(d, c) {
-  const filt = [RF.view === 'org' ? 'Organisation-wise' : `Team-wise · ${RF.team || 'All teams'}`, RF.manager && (d.managers.find(m => String(m.id) === String(RF.manager)) || {}).name, RF.status && (REPORT_STATUSES.find(x => x[0] === RF.status) || [])[1]].filter(Boolean).join(' · ');
+  const filt = [RF.view === 'org' ? 'Organisation-wise' : `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}`, RF.manager && (d.managers.find(m => String(m.id) === String(RF.manager)) || {}).name, RF.status && (REPORT_STATUSES.find(x => x[0] === RF.status) || [])[1]].filter(Boolean).join(' · ');
   const st = r => STATUS_TEXT[r.status] || r.status;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>PMS review status ${esc(monthLabel(S.month))}</title><style>
     body{font:12px/1.4 system-ui,sans-serif;color:#232b3b;margin:24px}h1{font-size:18px;margin:0 0 2px}p{margin:0 0 14px;color:#5a6475}
@@ -1426,7 +1435,7 @@ function reportPdf(d, c) {
     <h1>Review status report · ${esc(monthLabel(S.month))}</h1><p>${esc(d.scope)} · ${esc(filt)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
     <div class="k">${[['Scheduled', c.scheduled], ['Submitted', c.submitted], ['Completed, not submitted', c.notSubmitted], ['Form incomplete', c.notCompleted], ['Overdue', c.pending]].map(([l, n]) => `<div><small>${l}</small><b>${n}</b></div>`).join('')}</div>
     <table><tr><th>Manager / team</th><th>Employee</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
-    ${d.rows.map(r => `<tr><td>${esc(r.manager)} / ${esc(r.team)}</td><td>${esc(r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map(esc).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="9">No reviews.</td></tr>'}</table>
+    ${d.rows.map(r => `<tr><td>${esc(r.manager)} / ${esc(tl(r.team))}</td><td>${esc(r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map(esc).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="9">No reviews.</td></tr>'}</table>
     <footer>Verve Advisory · Performance Management System</footer></body></html>`;
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
   document.body.appendChild(f);
@@ -1442,7 +1451,7 @@ pages.report = async v => {
   v.innerHTML = head('Review status report', 'One report, two views · ' + d.scope) +
     `<div class="row">${monthSel()}
     ${full ? `<button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}Organisation-wise</button>` : ''}
-    ${ddSelect('fteam', RF.view === 'team' ? RF.team : null, [['', 'All teams'], ...d.teams.map(teamOpt)], { icon: 'team', ph: 'Team-wise', btn: RF.view === 'team' ? `Team-wise · ${RF.team || 'All teams'}` : 'Team-wise', on: RF.view === 'team' })}
+    ${ddSelect('fteam', RF.view === 'team' ? RF.team : null, [['', 'All teams'], ...d.teams.map(teamOpt)], { ph: 'Team-wise', btn: RF.view === 'team' ? `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}` : 'Team-wise', on: RF.view === 'team' })}
     ${ddSelect('fmgr', RF.manager, [['', 'All managers'], ...d.managers.map(m => [String(m.id), m.name])], { icon: 'idcard' })}
     ${ddSelect('fst', RF.status, REPORT_STATUSES)}
     <span class="sp"></span>${exportMenu()}</div>
@@ -1495,7 +1504,7 @@ pages.scheduling = async v => {
   ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
   <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
   <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
-  ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${esc(r.team)}</td>
+  ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${esc(tl(r.team))}</td>
   <td>${r.scheduled ? `<b>${fmtD(r.scheduled)}</b>${r.time ? ` <span class="small">${fmtT(r.time)}</span>` : ''}${r.canManage ? ` <button class="btn sm" data-resch="${r.empId}">Reschedule</button>` : ''}` : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="rcount" title="Counted once per new date">${r.reschedules}</span> <span class="small">time${r.reschedules === 1 ? '' : 's'}</span><div class="small">${reschedDates(r).map(fmtD).join(' → ')}</div>` : '<span class="rcount z">0</span>'}</td>
@@ -1509,7 +1518,7 @@ pages.scheduling = async v => {
     const w = win(r), inv = r.invite, canInvite = cal.connected && r.hasEmail && !inv;
     const date = mode === 'schedule' ? (w ? w.start : '') : r.scheduled, time = r.time || (inv && inv.time) || '11:00', dur = (inv && inv.duration) || 30;
     const title = mode === 'schedule' ? 'Schedule review' : mode === 'invite' ? 'Send calendar invite' : 'Reschedule review';
-    const m = modal(`<h2>${title}</h2><p class="small">${esc(r.name)} · ${esc(r.team)}${w ? ` · review window ${fmtD(w.start)} to ${fmtD(w.end)}` : ''}</p><div id="er"></div>
+    const m = modal(`<h2>${title}</h2><p class="small">${esc(r.name)} · ${esc(tl(r.team))}${w ? ` · review window ${fmtD(w.start)} to ${fmtD(w.end)}` : ''}</p><div id="er"></div>
       <div class="row" style="align-items:flex-end;margin:0"><div><label class="f">Date <i>*</i></label><input type="date" id="sd" value="${esc(date || '')}" ${mode === 'invite' ? 'disabled' : ''}></div>
       <div><label class="f">Time <i>*</i></label><input type="time" id="st" value="${esc(time)}" step="900"></div>
       <div><label class="f">Length</label><select id="sl">${[15, 30, 45, 60, 90].map(n => `<option value="${n}" ${n === dur ? 'selected' : ''}>${n} min</option>`).join('')}</select></div></div>
@@ -1567,7 +1576,7 @@ pages.profile = async v => {
   const hero = `<div class="hero pf-hero">${ORBS}${HALO}
     <button type="button" class="pf-av" data-pf="pick" title="${p.photo ? 'Change' : 'Upload'} profile photo" aria-label="${p.photo ? 'Change' : 'Upload'} profile photo"><span class="avatar">${avatarIn(p.name, p.photo)}</span><i class="pf-cam">${ico('camera')}</i></button>
     <div class="pf-hx"><div class="ht">${esc(p.name)}<span class="pf-st ${p.active ? 'on' : ''}">${p.active ? 'Active' : 'Inactive'}</span></div>
-      <p>${esc(p.designation) || esc(role)}${p.team ? `<span class="pf-dot">·</span>${teamIco(p.team)}${esc(p.team)}` : ''}</p></div>
+      <p>${esc(p.designation) || esc(role)}${p.team ? `<span class="pf-dot">·</span>${teamIco(p.team)}${esc(tl(p.team))}` : ''}</p></div>
     <div class="acts"><button type="button" class="btn yel" data-pf="pick">${ico('camera')}${p.photo ? 'Change photo' : 'Upload photo'}</button>${p.photo ? `<button type="button" class="btn" data-pf="del">${ico('trash')}Remove</button>` : ''}</div></div>`;
   const work = widget('idcard', 'Work details', '', `<div class="mb"><div class="pf-grid">
     ${field('idcard', 'n', 'Employee code', esc(p.code))}${field('mail', 'b', 'Work email', esc(p.email))}
@@ -1777,7 +1786,7 @@ function allStats(st) {
 // ---------- employees (admin) ----------
 pages.employees = async (v, arg) => {
   if (arg === 'active' || arg === 'inactive') S.etab = arg;
-  const d = await api('/employees');
+  const [d, md] = await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
   const ROLEF = { director: ['director'], manager: ['manager', 'teamlead'], employee: ['employee'] };
   const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '', rf = tab === 'active' && ROLEF[S.erole] ? S.erole : '';
@@ -1786,7 +1795,7 @@ pages.employees = async (v, arg) => {
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
   const inScope = (tab === 'active' ? d.active : d.inactive).filter(e => !rf || ROLEF[rf].includes(e.role));
   const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
-  const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(t)}: ${teamN[t]}">${teamIco(t)}${esc(t)}</button>`).join('')}</div></div>`;
+  const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(tl(t))}: ${teamN[t]}">${teamIco(t)}${esc(tl(t))}</button>`).join('')}</div></div>`;
   const shown = { director: 'Directors', manager: 'Managers and team leads', employee: 'Executives and interns' }[rf] || ''; // role filter set by a dashboard card
   const opts = (list, cur) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option ${x === cur ? 'selected' : ''}>${esc(x)}</option>`).join('');
   // anyone active can be picked: people who already lead first, then everyone else (picking one makes them a manager)
@@ -1820,11 +1829,13 @@ pages.employees = async (v, arg) => {
     }
     (r.warnings || []).forEach(w => toast(w, 'err'));
     (r.notes || []).forEach(n => toast(n)); // e.g. the team that came with the new reporting manager
+    if (r.masterAlert) masterAlertBox(r.masterAlert);
     return r;
   };
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
-  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting${{ manager: '/managers', employee: '/employees' }[rf] || ''}" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a><button class="btn pri" data-a="add">${ico('plus')}Add new member</button></div>
+  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span></div>
+  ${md.diffs.length ? `<div class="warn" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
@@ -1835,7 +1846,7 @@ pages.employees = async (v, arg) => {
   <td>${cell(e, 'managerId', mgrOpts(e), e.manager || 'No manager')}${e.pending ? `<div class="small" title="Planned: the current manager finishes this month's review">Moves to ${esc(e.pending.to)} from ${esc(e.pending.from)}</div>` : ''}</td>
   ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
   <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
-  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a><button class="btn sm" data-a="edit" data-id="${e.id}">Edit</button></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
+  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
   <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Roles follow the reporting line: someone who gets a first report becomes a manager by themselves. The employee sheet is the master copy: a reporting change made here is replaced at the next import of the sheet unless the sheet has it too. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
   v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); showResults(v, S.eq); }); } };
   const emailOk = s => !s || s.toLowerCase().endsWith(dom.toLowerCase()) && /^[^@\s]+@[^@\s]+$/.test(s);
@@ -1866,6 +1877,11 @@ pages.employees = async (v, arg) => {
     const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
     if (e.target.closest('[data-clearrole]')) { S.erole = ''; return pages.employees(v); }
     const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
+    if (a === 'mdsync') {
+      try { const r = await api('/master/sync', { method: 'POST' }); toast(r.changes.length ? `${r.changes.length} change${r.changes.length === 1 ? '' : 's'} brought in from the list` : 'The list has no new changes'); pages.employees(v); }
+      catch (er) { toast(er.message, 'err'); }
+      return;
+    }
     if (t.dataset.stat) {
       const k = t.dataset.stat;
       if (k === 'questions') { location.hash = '#/params'; return; }
@@ -1886,7 +1902,7 @@ pages.employees = async (v, arg) => {
       m.querySelector('#ok').onclick = async () => {
         const b = {}; ['name', 'code', 'email', 'designation', 'team', 'managerId', 'joined', 'window'].forEach(k => b[k] = m.querySelector('#n_' + k).value.trim());
         if (b.email && !emailOk(b.email)) { m.querySelector('#er').innerHTML = `<div class="warn">Work email must end with ${esc(dom)}.</div>`; m.querySelector('#n_email').classList.add('err'); return; }
-        try { await api('/employees', { method: 'POST', body: b }); m.remove(); toast('Member added'); pages.employees(v); } catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
+        try { const nr = await api('/employees', { method: 'POST', body: b }); m.remove(); toast('Member added'); if (nr.masterAlert) masterAlertBox(nr.masterAlert); pages.employees(v); } catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
       };
     }
     if (a === 'edit') {
@@ -1949,7 +1965,7 @@ pages.employees = async (v, arg) => {
 
 pages.empforms = async (v, id) => {
   const d = await api('/employee-forms?emp=' + id), e = d.employee;
-  v.innerHTML = head('Monthly forms', `<a href="#/employees">Employees</a> › ${esc(e.name)}`) + `<div class="card"><b>${esc(e.name)}</b> (${esc(e.designation)}) · Code ${esc(e.code)} · Team ${esc(e.team)} · Manager ${esc(e.manager)} · Joined ${esc(e.joined)} <span class="badge ${e.active ? 'b-green' : 'b-grey'}">${e.active ? 'Active' : 'Inactive'}</span> · FY 2026-2027</div>
+  v.innerHTML = head('Monthly forms', `<a href="#/employees">Employees</a> › ${esc(e.name)}`) + `<div class="card"><b>${esc(e.name)}</b> (${esc(e.designation)}) · Code ${esc(e.code)} · ${esc(tl(e.team))} · Manager ${esc(e.manager)} · Joined ${esc(e.joined)} <span class="badge ${e.active ? 'b-green' : 'b-grey'}">${e.active ? 'Active' : 'Inactive'}</span> · FY 2026-2027</div>
   <div class="tablewrap"><table><tr><th>Month</th><th>Review date</th><th>Status</th><th>Manager rating</th><th>Form</th></tr>${d.rows.map(r => `<tr style="${r.open ? '' : 'opacity:.55'}"><td>${esc(r.label)}</td><td>${fmtD(r.reviewDate)}</td><td>${r.beforeJoining ? '<span class="small">Before joining</span>' : badge(r.status)}</td><td>${pc(r.rating)}</td><td>${r.open ? `<a class="btn sm pri" href="#/form/${e.id}/${r.month}">Open form</a>` : '<button class="btn sm" disabled title="No form: this month is before the joining date">Open form</button>'}</td></tr>`).join('')}
   <tr><td><b>Annual review 2027</b></td><td>N/A</td><td>${badge(d.annual === 'Submitted' ? 'Completed and Submitted' : 'Not started')}</td><td>N/A</td><td><a class="btn sm pri" href="#/annual/${e.id}">Open form</a></td></tr></table></div>`;
 };
@@ -1996,7 +2012,7 @@ pages.reporting = async (v, arg) => {
   const scope = p ? `${mon} reviews of everyone under ${esc(p.name)} (all levels)` : tabOf(level)[3] === 'employee' ? `${mon} reviews of the people in this list` : `${mon} reviews across the organisation`;
   v.innerHTML = head('Reporting manager', crumbs) + `<div class="seg" role="tablist">${ORG_TABS.map(([k, l]) => `<a role="tab" href="${tabHref(k)}" class="${k === level ? 'on' : ''}" aria-selected="${k === level}">${l} <span class="cnt">${d.levelCounts[k]}</span></a>`).join('')}</div>
   <div class="row">${monthSel()}${searchBox('orgq', 'Search name, team or email', S.orgq)}<span class="sp"></span>${p ? `<a class="btn" href="${up}">← Back</a>` : ''}<a class="btn" href="#/employees">Edit people on Employees</a></div>
-  ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, p.team)}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div><div class="row" style="margin:0;flex-basis:100%;justify-content:flex-end">${reportLinks(p)}</div></div>` : ''}
+  ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div><div class="row" style="margin:0;flex-basis:100%;justify-content:flex-end">${reportLinks(p)}</div></div>` : ''}
   <div class="small" style="margin:0 0 12px">${scope}</div>
   ${countTiles(c)}
   <h2>${title}</h2>
@@ -2022,7 +2038,7 @@ pages.teams = async v => {
   v.innerHTML = head('Teams', 'Add, rename or delete teams. The dashboard, reports and Employees page follow straight away.') + `
   <div class="row"><span class="small">${teams.length} team${teams.length === 1 ? '' : 's'}</span><span class="sp"></span><button class="btn pri" data-a="add">${ico('plus')}Add team</button></div>
   <div class="tablewrap"><table><tr><th>Team</th><th>Active members</th><th>Inactive</th><th>Review window</th><th>Actions</th></tr>${teams.map(t => `<tr>
-    <td><b>${esc(t.name)}</b></td>
+    <td><b>${esc(tl(t.name))}</b>${tl(t.name) !== t.name ? `<div class="small">Name in the employee list: ${esc(t.name)}</div>` : ''}</td>
     <td><a href="#/employees/active" data-q="${esc(t.name)}">${t.active}</a></td><td>${t.inactive}</td><td>${dayTxt(t.window)}</td>
     <td>${`<span class="acts"><button class="btn sm" data-a="rename" data-t="${esc(t.name)}">${ico('pencil')}Rename</button><button class="btn sm dng" data-a="del" data-t="${esc(t.name)}" data-n="${t.active}">${ico('trash')}Delete</button></span>`}</td></tr>`).join('')}</table></div>`;
   const nameForm = (title, val, okLabel) => modal(`<h2>${title}</h2><div id="er"></div><label class="f">Team name <i>*</i></label><input id="tn" maxlength="50" value="${esc(val)}" autocomplete="off"><div class="row"><button class="btn pri" id="ok">${okLabel}</button><button class="btn" id="no">Cancel</button></div>`);

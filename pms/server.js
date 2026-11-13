@@ -25,6 +25,12 @@ const mustEmp = id => { const e = L.emp(+id); if (!e) throw notFound('Employee n
 
 class Redirect { constructor(url) { this.url = url; } }
 
+// how a team is shown: "Team <name>", and a team named after a person uses their first name (only the label; stored names stay as in the list)
+function teamLabel(t) {
+  if (!t) return t;
+  const base = employees.some(e => e.name === t) ? t.split(' ')[0] : t;
+  return /^team(\s|$)/i.test(base) ? base : 'Team ' + base;
+}
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
 // managers, and the employee themself, may copy last month's KRAs (copying does not need approval)
@@ -195,7 +201,7 @@ ensureMonthForms();
 const calendarState = real => { const l = C.linked(real.id); return { google: A.google, connected: !!l, email: l ? l.email : '', canConnect: A.google && A.isOrgEmail(real.email) }; };
 route('GET', '/api/me', ({ user, realUser }) => (ensureMonthForms(), {
   ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(Boolean))].sort(),
-  months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, firstMonth: config.fyStartMonth, today: config.today, fy: fyLabel(config.currentMonth),
+  teamLabels: Object.fromEntries([...teamNames(), 'Directors'].map(t => [t, teamLabel(t)])), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, firstMonth: config.fyStartMonth, today: config.today, fy: fyLabel(config.currentMonth),
   photo: D.photos[user.id] || '', real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
 }));
 
@@ -242,7 +248,7 @@ function windowGroups(rows, month) {
   for (const r of rows) {
     if (!groups.has(r.winKey)) {
       const e = L.emp(r.empId), src = D.windowSource(e), mgr = src.managerId ? L.emp(src.managerId) : null;
-      groups.set(r.winKey, { key: r.winKey, team: r.team, managerId: src.managerId, label: mgr ? `${r.team} · ${mgr.name}'s team` : r.team, days: src.w, window: D.windowOf(e, month), rows: [] });
+      groups.set(r.winKey, { key: r.winKey, team: r.team, managerId: src.managerId, label: mgr ? `${teamLabel(r.team)} · ${mgr.name}'s team` : teamLabel(r.team), days: src.w, window: D.windowOf(e, month), rows: [] });
     }
     groups.get(r.winKey).rows.push(r);
   }
@@ -286,7 +292,7 @@ route('GET', '/api/home', ({ user, q }) => {
   // an admin sees every team on the dashboard, including ones just added that nobody has joined yet
   if (user.role === 'admin') for (const t of Object.keys(config.windows).sort()) if (!teams.some(x => x.team === t)) {
     const w = D.windowFor(t, month), days = config.windows[t];
-    teams.push({ key: 't:' + t, team: t, label: t, managerId: null, ...L.counts([]), collected: 0, total: 0, window: w, startDay: days.start, endDay: days.end, ...windowState(w) });
+    teams.push({ key: 't:' + t, team: t, label: teamLabel(t), managerId: null, ...L.counts([]), collected: 0, total: 0, window: w, startDay: days.start, endDay: days.end, ...windowState(w) });
   }
   teams.sort((a, b) => a.label.localeCompare(b.label));
   const counts = L.counts(rows);
@@ -804,7 +810,7 @@ route('POST', '/api/employees', ({ user, body }) => {
   audit(user.name, 'add member', `${body.name} (${body.code}), reports to ${m.name}`);
   notify(m.id, `${body.name} joined and reports to you. Set their KRAs once they are ready (new joiners start with the questionnaire only).`);
   syncRoles(user.name);
-  return { id };
+  return { id, masterAlert: masterAlertFor(e) };
 });
 // work emails are how people sign in, so they must be on the org domain and belong to one person only
 function checkEmail(raw, selfId, required) {
@@ -974,7 +980,7 @@ route('PUT', '/api/employees', async ({ user, body }) => {
     const w = D.windowFor(e.team, config.currentMonth);
     if (f.scheduledDate < w.start || f.scheduledDate > w.end) warnings.push(`The review meeting (${f.scheduledDate}) is outside the ${e.team} review window (${w.start} to ${w.end}). Reschedule it if needed.`);
   }
-  return { ok: true, warnings, notes, team: e.team, pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null };
+  return { ok: true, warnings, notes, team: e.team, pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null, masterAlert: masterAlertFor(e) };
 });
 route('POST', '/api/employees/inactive', async ({ user, body }) => {
   adminOnly(user);
@@ -1359,6 +1365,120 @@ route('PUT', '/api/windows', ({ user, body }) => {
   return config.windows[team];
 });
 
+
+// ---------- Master data (the employee list) ----------
+// The employee list (pms/private/employees.tsv) is the master copy of who reports to whom and which team they are in.
+// 1) A change made here is checked against it, and the admin is asked to update the list too, so both stay the same.
+// 2) A change made in the list (a new manager or team for someone) is carried into PMS by itself.
+const EMPLIST = require('./employees');
+const mkey = x => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
+let masterCache = { mtime: 0, rows: null };
+function masterRows() {
+  try {
+    const st = fs.statSync(EMPLIST.LIST_FILE);
+    if (st.mtimeMs !== masterCache.mtime) masterCache = { mtime: st.mtimeMs, rows: EMPLIST.parse(fs.readFileSync(EMPLIST.LIST_FILE, 'utf8')) };
+    return masterCache.rows;
+  } catch { return null; } // no list on this machine (staging), or it cannot be read
+}
+const masterRowOf = e => { const rows = masterRows(); return rows ? rows.find(r => mkey(r.name) === mkey(e.name)) || null : null; };
+// where PMS and the list disagree for one person: the manager (a planned move counts as the manager) and the team
+function masterDiffs(e) {
+  const r = masterRowOf(e); if (!r) return [];
+  const out = [], pmsMgr = e.pendingManager ? e.pendingManager.id : e.managerId, pmsName = pmsMgr ? nameOf(pmsMgr) : '';
+  if (mkey(pmsName) !== mkey(r.manager)) out.push({ id: e.id, name: e.name, field: 'manager', label: 'Reporting manager', pms: pmsName || 'No manager', master: r.manager || 'No manager' });
+  if (r.team && mkey(r.team) !== mkey(e.team)) out.push({ id: e.id, name: e.name, field: 'team', label: 'Team', pms: e.team || 'No team', master: r.team });
+  return out;
+}
+// shown to the admin right after a reporting change or a new member: the list needs the same change
+function masterAlertFor(e) {
+  const rows = masterRows(); if (!rows) return null;
+  if (!masterRowOf(e)) return { name: e.name, notListed: true, diffs: [] };
+  const diffs = masterDiffs(e);
+  return diffs.length ? { name: e.name, diffs } : null;
+}
+route('GET', '/api/master', ({ user }) => {
+  adminOnly(user);
+  const rows = masterRows();
+  if (!rows) return { available: false, diffs: [] };
+  return { available: true, checkedAt: masterCache.mtime, diffs: employees.filter(e => e.active && e.role !== 'admin').flatMap(masterDiffs) };
+});
+
+// list -> PMS: only what changed in the list since the last look is applied, so a change made here that the list does not
+// have yet is not undone. New people and people who left come in with a full list import (node employees.js).
+function syncFromMaster(who = 'Employee list') {
+  const rows = masterRows(); if (!rows) return null;
+  const was = config.masterSnapshot, now = Object.fromEntries(rows.map(r => [mkey(r.name), { manager: mkey(r.manager), team: r.team || '' }]));
+  config.masterSnapshot = now;
+  if (!was) return []; // first look: just remember the list as it is
+  const changes = [];
+  for (const r of rows) {
+    const k = mkey(r.name), before = was[k], after = now[k];
+    const e = employees.find(x => x.role !== 'admin' && mkey(x.name) === k);
+    if (!e || !before) continue;
+    if (before.manager !== after.manager) {
+      const target = r.manager ? employees.find(x => x.role !== 'admin' && mkey(x.name) === mkey(r.manager)) : null;
+      if (r.manager && !target) continue;
+      if (target && (target.id === e.id || L.subordinates(e.id).some(x => x.id === target.id))) { audit(who, 'manager change skipped', `${e.name}: ${r.manager} would create a reporting loop`); continue; }
+      if ((target ? target.id : null) !== e.managerId || e.pendingManager) {
+        const from = e.managerId ? nameOf(e.managerId) : 'no manager';
+        e.managerId = target ? target.id : null; delete e.pendingManager; delete e.managerSetInApp;
+        audit(who, 'manager changed from the list', `${e.name}: ${from} → ${r.manager || 'no manager'}`);
+        notify(e.id, `Your reporting manager is now ${r.manager || 'no one'} (updated from the employee list).`);
+        changes.push(`${e.name}: reports to ${r.manager || 'no one'} (was ${from})`);
+      }
+    }
+    if (after.team && before.team !== after.team && e.team !== after.team) {
+      const from = e.team; e.team = after.team; config.windows[after.team] ||= { start: 25, end: 2 };
+      audit(who, 'team changed from the list', `${e.name}: ${from} → ${after.team}`);
+      notify(e.id, `Your team is now ${after.team} (updated from the employee list).`);
+      changes.push(`${e.name}: team ${after.team} (was ${from})`);
+    }
+  }
+  // people on the list who are not in PMS yet are added (managers who are not on the list themselves come in as top-level people)
+  const known = name => employees.find(x => x.role !== 'admin' && mkey(x.name) === mkey(name));
+  const fyStart = `${config.fyStartMonth}-01`;
+  const make = (name, r, managerId) => {
+    const id = Math.max(0, ...employees.map(x => x.id)) + 1;
+    const e = { id, src: 'list', level: null, active: true, name, code: (r && r.code) || 'V' + String(id).padStart(3, '0'), email: (r && r.email) || '', designation: (r && r.designation) || '', team: (r && r.team) || (r ? 'Unassigned' : 'Directors'),
+      joined: (r && EMPLIST.normDate(r.joined)) || fyStart, managerId, role: 'employee', newJoiner: !!r, codeSet: !!(r && r.code), joinedSet: !!(r && EMPLIST.normDate(r.joined)) };
+    e.role = managerId ? 'employee' : 'director'; employees.push(e); config.windows[e.team] ||= { start: 25, end: 2 };
+    return e;
+  };
+  const added = [];
+  for (const r of [...rows, ...rows]) { // twice: a manager listed below their report is there by the second pass
+    if (known(r.name)) continue;
+    let mgr = null;
+    if (r.manager) { mgr = known(r.manager); if (!mgr && !rows.some(x => mkey(x.name) === mkey(r.manager))) mgr = make(r.manager, null, null), added.push(mgr); if (!mgr) continue; } // a manager listed further down comes first on the next pass
+    const e = make(r.name, r, mgr ? mgr.id : null); added.push(e);
+    audit(who, 'member added from the list', `${e.name} (${e.code})${mgr ? `, reports to ${mgr.name}` : ''}`);
+    if (mgr) notify(mgr.id, `${e.name} joined and reports to you (added from the employee list). Set their KRAs once they are ready.`);
+    changes.push(`${e.name} added${mgr ? `, reports to ${mgr.name}` : ''}`);
+  }
+  if (added.length) for (const e of added) e.role = L.deriveRole(e);
+  if (changes.length) {
+    syncRoles(who);
+    N.admins().forEach(a => N.push(a.id, { type: 'admin', link: '#/employees/active', text: `Employee list changes brought into PMS: ${changes.length} ${changes.length === 1 ? 'change' : 'changes'} (${changes.slice(0, 3).join('; ')}${changes.length > 3 ? '; …' : ''}).` }));
+  }
+  return changes;
+}
+route('POST', '/api/master/sync', ({ user }) => {
+  adminOnly(user);
+  if (!masterRows()) throw bad('There is no employee list on this server to check.');
+  const changes = syncFromMaster(`${user.name} (list check)`);
+  try { syncedMtime = fs.statSync(EMPLIST.LIST_FILE).mtimeMs; } catch {}
+  return { changes, diffs: employees.filter(e => e.active && e.role !== 'admin').flatMap(masterDiffs) };
+});
+// the list file is checked every half minute; a change in it is picked up without a restart
+let masterTimer = null, syncedMtime = 0;
+function watchMaster() {
+  const tick = () => {
+    let mt = 0; try { mt = fs.statSync(EMPLIST.LIST_FILE).mtimeMs; } catch { return; }
+    if (mt === syncedMtime && config.masterSnapshot) return;
+    try { syncFromMaster(); syncedMtime = mt; DB.save().catch(() => {}); } catch (e) { console.error('Employee list check failed:', e.message); }
+  };
+  tick(); masterTimer = setInterval(tick, 30000); masterTimer.unref();
+}
+
 // ---------- server ----------
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -1411,6 +1531,6 @@ const server = http.createServer((req, res) => {
     }
   });
 });
-DB.init().then(() => { D.migrate(); ensureAccounts(); moveOldNotices(); return DB.save(); }).then(
+DB.init().then(() => { D.migrate(); ensureAccounts(); moveOldNotices(); watchMaster(); return DB.save(); }).then(
   () => server.listen(PORT, () => console.log(`Verve PMS running at http://localhost:${PORT} · sign-in: ${[A.google && `Google (@${A.ORG_DOMAIN})`, A.demo && 'demo users'].filter(Boolean).join(' + ') || 'none'}`)),
   e => { console.error('Could not connect to Postgres:', e.message); process.exit(1); });

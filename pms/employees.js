@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const LIST_FILE = path.join(__dirname, 'private', 'employees.tsv');
+const LIST_FILE = process.env.PMS_EMPLOYEE_LIST || path.join(__dirname, 'private', 'employees.tsv'); // the override is for testing against a copy
 const clean = s => String(s ?? '').replace(/\s+/g, ' ').trim();
 const key = s => clean(s).toLowerCase();
 
@@ -132,7 +132,7 @@ function normDate(s) {
   return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
 }
 
-module.exports = { LIST_FILE, parse, plan, importList };
+module.exports = { LIST_FILE, parse, plan, importList, normDate };
 
 // ---------- command line ----------
 if (require.main === module) (async () => {
