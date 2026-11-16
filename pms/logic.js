@@ -217,6 +217,9 @@ function validate(f) {
 // KRA set-up (not assigned, too few sub-KRAs, weightage, SOP/learning) and review-date alerts are the manager's and are not listed here.
 function employeeTodo(f) {
   if (f.submitted || f.selfSubmitted) return [];
+  return todoItems(f);
+}
+function todoItems(f) {
   const out = [], cut = t => t.length > 70 ? t.slice(0, 67).trimEnd() + '…' : t;
   if (employeeKrasMissing(f)) out.push('Add your KRAs for this month (or copy last month\'s)');
   const qs = activeQuestions(f.month, f);
@@ -270,12 +273,15 @@ function managerActivity(f) {
   return !!f.actualDate || KRAS.some(([k]) => f.kras[k].rows.some(r => has(r.mgr))) ||
     Object.values(f.qa).some(a => a && typeof a === 'object' && has(a.mgr));
 }
+// two separate facts about a review (2026-11-16):
+//  - the form: 'Filled' once the employee has completed their part (self ratings and remarks, questionnaire, KRAs), else 'Not Filled'
+//  - the review: 'Review Completed' once the manager has saved every rating, else 'Review Pending'
+function formStatus(f) { return f.month <= config.currentMonth && !todoItems(f).length ? 'Filled' : 'Not Filled'; }
 function reviewStatus(f) {
   if (f.month > config.currentMonth) return 'Not started';
-  if (ratingsComplete(f)) return f.submitted ? 'Completed and Submitted' : 'Completed but Not Submitted';
-  // incomplete: Pending once the due date (end of the team's window) has passed, otherwise still in progress
-  return dueInfo(f).dueDate < config.today ? 'Pending' : 'Review Not Completed';
+  return f.submitted || ratingsComplete(f) ? 'Review Completed' : 'Review Pending';
 }
+const statusOf = f => ({ status: reviewStatus(f), form: formStatus(f) });
 // the actual review date is the Review Date entered on the monthly form
 const actualDate = f => f.reviewDate || null;
 function dueInfo(f) {
@@ -409,19 +415,19 @@ function reportRows(viewer, month, filters = {}, opts = {}) {
     rows.push({
       empId: e.id, name: e.name, team: e.team, winKey: D.windowSource(e).key, designation: e.designation, managerId: e.managerId, manager: mgr ? mgr.name : '',
       scheduled: f.scheduledDate, due: di.dueDate, actual: actualDate(f), dueStatus: di.due,
-      reschedules: rescheduleCount(f), status: reviewStatus(f), rating: f.submitted ? monthlyRating(f) : null,
+      reschedules: rescheduleCount(f), status: reviewStatus(f), form: formStatus(f), rating: f.submitted ? monthlyRating(f) : null,
       flags: [...new Set(v.filter(x => x.level !== 'info').map(x => x.short))], allFlags: v,
       ...(opts.detail && { detail: pmsDetail(f, e) }),
     });
   }
-  return rows.filter(r => (!filters.team || r.team === filters.team) && (!filters.manager || String(r.managerId) === String(filters.manager)) && (!filters.status || r.status === filters.status));
+  return rows.filter(r => (!filters.team || r.team === filters.team) && (!filters.manager || String(r.managerId) === String(filters.manager)) && (!filters.status || r.status === filters.status || r.form === filters.status));
 }
 const counts = rows => ({
   scheduled: rows.length,
-  submitted: rows.filter(r => r.status === 'Completed and Submitted').length,
-  notSubmitted: rows.filter(r => r.status === 'Completed but Not Submitted').length,
-  notCompleted: rows.filter(r => r.status === 'Review Not Completed').length,
-  pending: rows.filter(r => r.status === 'Pending').length,
+  filled: rows.filter(r => r.form === 'Filled').length,
+  notFilled: rows.filter(r => r.form !== 'Filled').length,
+  reviewCompleted: rows.filter(r => r.status === 'Review Completed').length,
+  reviewPending: rows.filter(r => r.status !== 'Review Completed').length,
 });
 
 // ---------- manager email ----------
@@ -457,4 +463,4 @@ function buildEmail(managerId, month) {
   return { to: m.name, subject: `PMS review summary, ${m.team}, ${D.monthLabel(month)}`, team: m.team, managerId, month, counts: counts(rows.map(r => ({ status: r.st }))), sections: sec, attachment: `PMS_${m.team}_${D.monthLabel(month).replace(' ', '')}.csv` };
 }
 
-module.exports = { emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
+module.exports = { statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
