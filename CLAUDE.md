@@ -39,7 +39,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   cross-checked against the reporting chain (warning on mismatch); the app takes the director from the chain.
   Review windows follow the departments (import drops windows of teams nobody is in, new ones get 25th to month end).
   Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Without emails nobody but
-  `ADMIN_EMAILS` can use Google sign-in (admins use "View as"). Admin dashboard starts with the "All stats" cards
+  `ADMIN_EMAILS` can use Google sign-in (admins use "View as"). Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
@@ -117,7 +117,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Domain rules: KRA ratings are percentages, 10-100 in steps of 10 (`KRA_SCALE`; were 0-5 until 2026-11-12, `migrate()`
   converts old saved data x20 and marks `config.ratingScale = 100`); questionnaire ratings stay 0-5; thresholds
   `clickupMin`/`learningMin` are % and the gap flags are percentage points. Employees' "What is left on my form" lists
-  only what they fill in (`employeeTodo` in `logic.js`); KRA set-up and review-date alerts are for managers only. The
+  only what they fill in (`employeeTodo` in `logic.js`); the employee dashboard is one navy bar (what to do now, days left in the window, the four review steps incl. meeting, review date and rating) above that list and My recent ratings (2026-11-13: ring, facts, four cards and the Review steps box removed as repeats); KRA set-up and review-date alerts are for managers only. The
   form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit; hidden from
   employees (`showSummary()` in `app.js`, Harish's call 2026-11-12), reviewers and admins see it.
   Monthly form is two steps: the employee clicks "Submit to manager" (`POST /api/form/self-submit`, blocked until

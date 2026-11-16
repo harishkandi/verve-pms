@@ -25,11 +25,12 @@ const mustEmp = id => { const e = L.emp(+id); if (!e) throw notFound('Employee n
 
 class Redirect { constructor(url) { this.url = url; } }
 
-// how a team is shown: "Team <name>", and a team named after a person uses their first name (only the label; stored names stay as in the list)
+// how a team is shown: its name with no "Team" in front (the page puts a team icon next to it), and a team named after
+// a person uses their first name (only the label; stored names stay as in the list)
 function teamLabel(t) {
   if (!t) return t;
   const base = employees.some(e => e.name === t) ? t.split(' ')[0] : t;
-  return /^team(\s|$)/i.test(base) ? base : 'Team ' + base;
+  return base.replace(/^team\s+/i, '') || base;
 }
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 

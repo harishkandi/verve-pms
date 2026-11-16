@@ -390,21 +390,26 @@ label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px
 .stat[data-st]:focus-visible,button.tile:focus-visible{outline:2px solid var(--vr-navy-600);outline-offset:1px}
 button.tile.on{border-color:var(--vr-navy-600);box-shadow:0 0 0 1px var(--vr-navy-600),var(--vr-shadow)}
 .empty{padding:24px 20px;text-align:center;font-size:14px;color:var(--vr-n-500)}
-/* All stats (admin): big cards, alternating tinted / plain like the old portal; each opens its list */
-.allstats{margin-bottom:24px}
-.allstats h2{margin:0 0 14px}
-.bigstats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
-@media (max-width:1100px){.bigstats{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:640px){.bigstats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.bstat{display:flex;flex-direction:column;min-width:0;padding:14px 16px;border:1px solid var(--vr-n-200);border-radius:12px;background:var(--vr-card);box-shadow:var(--vr-shadow);color:var(--vr-n-900);text-decoration:none;transition:border-color .15s,box-shadow .15s}
-.bstat:hover{border-color:var(--vr-navy-600);box-shadow:var(--vr-shadow-lg)}
-.bstat:focus-visible{outline:2px solid var(--vr-navy-600);outline-offset:2px}
-.bstat .bh{display:flex;align-items:center;gap:8px;min-width:0}
-.bstat .bi{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--vr-navy-50);color:var(--vr-brand-text)}
-.bstat .bi svg{width:16px;height:16px;stroke-width:1.8}
-.bstat .bl{overflow:hidden;font-size:13px;line-height:18px;font-weight:600;color:var(--vr-n-600);white-space:nowrap;text-overflow:ellipsis}
-.bstat .bn{margin-top:10px;font-size:26px;line-height:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--vr-brand-text)}
-.bstat .bs{margin-top:2px;overflow:hidden;font-size:12px;line-height:16px;color:var(--vr-n-500);white-space:nowrap;text-overflow:ellipsis}
+/* All stats (admin): the navy bar at the top of the dashboard; big numbers fading into each role's colour, a faint icon
+   in the corner that tilts on hover; each opens its list */
+.hero.allstats{flex-wrap:wrap;gap:0;padding:26px 12px}
+.bstat{--c:#fff;position:relative;flex:1 1 160px;display:flex;flex-direction:column;min-width:0;padding:6px 20px;overflow:hidden;border-left:1px solid rgba(255,255,255,.1);border-radius:12px;color:#fff;text-decoration:none;transition:background-color .15s}
+.bstat:first-of-type{border-left:0}
+.bstat.dir{--c:var(--vr-navy-100)}.bstat.mgr{--c:var(--vr-success-500)}.bstat.exe{--c:var(--vr-chart-wd)}.bstat.ina{--c:rgba(255,255,255,.4)}
+.bstat:hover{background:rgba(255,255,255,.06)}
+#view a.bstat:hover{text-decoration:none}
+.bstat:hover .bl{text-decoration:underline;text-underline-offset:3px}
+.bstat:focus-visible{outline:2px solid rgba(255,255,255,.8);outline-offset:2px}
+.bstat .wm{position:absolute;right:6px;bottom:-14px;color:var(--c);opacity:.09;pointer-events:none;transition:opacity .2s,transform .3s}
+.bstat .wm svg{width:84px;height:84px;stroke-width:1.6}
+.bstat:hover .wm{opacity:.2;transform:rotate(-8deg) scale(1.05)}
+.bstat .bl{display:flex;align-items:center;gap:8px;font-size:10px;line-height:14px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.62)}
+.bstat .bl::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--c)}
+.bstat .bn{margin:6px 0 2px;font-size:54px;line-height:56px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 30%,var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+.bstat.all .bn{background-image:linear-gradient(180deg,#fff 40%,var(--vr-success-200))}
+.bstat .bs{position:relative;font-size:11px;line-height:15px;color:rgba(255,255,255,.5)}
+@media (max-width:900px){.bstat{border-left:0}}
+@media (prefers-reduced-motion:reduce){.bstat .wm{transition:none}.bstat:hover .wm{transform:none}}
 .emptybox{max-width:512px;margin:64px auto 0;padding:48px 32px;border:1px dashed var(--vr-n-300);border-radius:12px;background:var(--vr-n-50);text-align:center;font-size:14px;color:var(--vr-n-500)}
 
 /* =====================================================================
@@ -476,6 +481,21 @@ td table tr:hover>td{background:transparent}
 .flags div{margin-top:3px}
 /* review status report, Full details: long remarks open in place */
 .pmsfull th{min-width:84px;white-space:normal;vertical-align:bottom}
+/* report tables (Summary + Full details): calm, one line per row; colour only for status, "No" and escalations */
+.rtab td{padding:11px 14px;white-space:nowrap;color:var(--vr-n-800)}
+.rtab th{padding:10px 14px}
+.rtab tr:nth-child(even)>td{background:color-mix(in srgb,var(--vr-n-50) 55%,transparent)}
+.rtab .mut{color:var(--vr-n-500)}
+.rtab .nil{color:var(--vr-n-400)}
+.rtab .due{margin-left:6px;font-size:11px;color:var(--vr-n-500)}.rtab .due.late{color:var(--vr-warn-800);font-weight:600}
+.rtab td.rflag{max-width:300px;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--vr-n-600)}
+.rtab td.rflag .flags summary{overflow:hidden;text-overflow:ellipsis}
+.rtab td.rflag .flags summary b{background:var(--vr-n-100);color:var(--vr-n-700)}
+.rtab td.rflag .flags summary:hover b,.rtab td.rflag .flags[open] summary b{background:var(--vr-n-200)}
+.rtab td.rflag .flags[open]{white-space:normal}
+.rtab td.yn{color:var(--vr-n-700)}.rtab td.yn.no{color:var(--vr-danger-600);font-weight:600}
+.rtab td.resc{min-width:200px;white-space:normal;font-size:12px;line-height:16px;color:var(--vr-warn-800)}
+.rtab td:has(.rmk){white-space:normal}
 .rmk{display:block;min-width:200px;max-width:320px;font-size:12px;line-height:16px;white-space:normal;overflow-wrap:anywhere}
 .rmk summary{list-style:none;cursor:pointer}.rmk summary::-webkit-details-marker{display:none}
 .rmk summary b{margin-left:4px;padding:1px 7px;border-radius:9999px;background:var(--vr-n-100);color:var(--vr-n-600);font-weight:600;white-space:nowrap}
@@ -500,6 +520,7 @@ td table tr:hover>td{background:transparent}
 .chip.on,.seg a.on,.tabs button.on{background:var(--vr-navy-800);font-weight:600;color:#fff}
 /* department icon (teamIco): its own colour; white on the selected (dark) chip */
 .tico{display:inline-flex;flex:none}.tico svg{width:14px;height:14px}
+.tnm{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .chip.on .tico{color:#fff!important}
 .seg .cnt{background:var(--vr-n-200);color:var(--vr-n-700)}
 .seg a.on .cnt,.seg .chip.on .cnt{background:rgba(255,255,255,.2);color:#fff}
@@ -539,24 +560,39 @@ td table tr:hover>td{background:transparent}
 .grip:hover,.grip:focus-visible{background:var(--vr-n-100);color:var(--vr-brand-text);outline:none}
 .grip:focus-visible{box-shadow:0 0 0 2px var(--vr-navy-600)}
 .grip svg{width:16px;height:16px}
-/* Employee dashboard (ed-): navy progress banner, progress cards, grouped to-do, review steps, recent ratings */
-.ed-hero .ed-hx{min-width:0;flex:1}
-.ed-hero p{max-width:720px}
-.ed-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
-@media(max-width:1100px){.ed-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.ed-stats{grid-template-columns:1fr}}
+/* Employee dashboard (ed-): navy bar (what to do now, time left, the four review steps), grouped to-do, recent ratings */
+.hero.eh{flex-wrap:wrap;align-items:center;gap:20px 32px;padding:24px 28px 0}
+.eh .ed-hx{min-width:0;flex:1 1 380px}
+.eh p{max-width:640px}
+.eh-cd{display:flex;flex-direction:column;align-items:flex-end;text-align:right}
+.eh-cd small{font-size:10px;line-height:14px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.eh-cd b{margin-top:2px;font-size:44px;line-height:46px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 35%,var(--vr-success-200));-webkit-background-clip:text;background-clip:text;color:transparent}
+.eh-cd.a b{background-image:linear-gradient(180deg,#fff 30%,var(--vr-warn-500))}
+.eh-cd.r b{background-image:linear-gradient(180deg,#fff 20%,var(--vr-danger-300))}
+.eh-cd.g b{background-image:linear-gradient(180deg,#fff 30%,var(--vr-success-500))}
+.eh-cd span{font-size:12px;line-height:16px;color:rgba(255,255,255,.55)}
+.eh .acts{margin-left:0}
+.eh-steps{flex:1 1 100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0 -28px;padding:18px 28px 20px;list-style:none;background:rgba(9,22,54,.45);border-top:1px solid rgba(255,255,255,.08)}
+.eh-steps li{position:relative;min-width:0;padding-right:20px}
+.eh-steps li:not(:last-child)::after{content:'';position:absolute;top:13px;left:40px;right:12px;height:2px;border-radius:2px;background:rgba(255,255,255,.12)}
+.eh-steps li.done:not(:last-child)::after{background:var(--vr-success-500)}
+.eh-steps li>i{display:grid;place-items:center;flex:none;width:28px;height:28px;border:2px solid rgba(255,255,255,.25);border-radius:9999px;background:var(--vr-sidebar);font-style:normal;font-size:12px;font-weight:700;color:rgba(255,255,255,.6)}
+.eh-steps li>i svg{width:14px;height:14px}
+.eh-steps li.done>i{border-color:var(--vr-success-500);background:var(--vr-success-500);color:#fff}
+.eh-steps li.now>i{border-color:#fff;background:#fff;color:var(--vr-navy-800);box-shadow:0 0 0 4px rgba(255,255,255,.14)}
+.eh-steps li>div{min-width:0;margin-top:10px}
+.eh-steps b{display:block;font-size:13px;line-height:18px;color:#fff}
+.eh-steps li:not(.done):not(.now) b{color:rgba(255,255,255,.6)}
+.eh-steps span{display:block;margin-top:2px;font-size:12px;line-height:16px;color:rgba(255,255,255,.55)}
+.eh-steps li.now span{color:rgba(255,255,255,.8)}
+.eh-pg{display:block;width:120px;max-width:100%;height:4px;margin-top:6px;overflow:hidden;border-radius:9999px;background:rgba(255,255,255,.14)}
+.eh-pg u{display:block;height:100%;border-radius:9999px;background:var(--vr-success-500)}
+@media(max-width:900px){.eh-steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 0}.eh-steps li::after{display:none}.eh-cd{align-items:flex-start;text-align:left}}
+@media(max-width:520px){.eh-steps{grid-template-columns:1fr}}
 /* each employee card has its own colour: meeting purple, review date blue (status and rating follow their state) */
-.stat.ed-mt{--c:var(--vr-purple-500);--v:var(--vr-purple-600)}
-.stat.ed-dt{--c:var(--vr-chart-ip);--v:var(--vr-chart-ip)}
-.ed-k .wm{opacity:.1}
-.ed-k b{font-size:26px;line-height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-a.ed-k{text-decoration:none!important;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
-a.ed-k:hover{border-color:var(--vr-n-300);box-shadow:var(--vr-shadow-lg);transform:translateY(-1px)}
-a.ed-k:hover .wm{opacity:.14}
 .ed-bar{display:block;height:4px;margin-top:12px;overflow:hidden;border-radius:9999px;background:var(--vr-n-100)}
 .ed-bar i{display:block;height:100%;border-radius:9999px;background:var(--c,var(--vr-accent-navy));transition:width .4s}
 .ed-bar i.g{background:var(--vr-success-500)}.ed-bar i.a{background:var(--vr-warn-500)}.ed-bar i.r{background:var(--vr-danger-500)}
-.ed-prog{display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;color:var(--vr-n-600)}.ed-prog b{color:var(--vr-n-900)}
 .ed-grp{margin-top:6px}.ed-grp+.ed-grp{margin-top:18px}
 .ed-grp h3{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:11px;line-height:16px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
 .ed-grp h3 svg{width:14px;height:14px;color:var(--vr-n-400)}
@@ -568,18 +604,6 @@ a.ed-k:hover .wm{opacity:.14}
 .ed-item svg{width:14px;height:14px;flex:none;color:var(--vr-n-300);transition:color .15s,transform .15s}
 .ed-item:hover svg{color:var(--vr-brand-text);transform:translateX(2px)}
 #view .ed-more{display:inline-block;margin-top:4px;font-size:12px;font-weight:600}
-.ed-steps{margin:0;padding:0;list-style:none}
-.ed-steps li{position:relative;display:flex;gap:12px;padding-bottom:18px}
-.ed-steps li:not(:last-child)::before{content:'';position:absolute;left:13px;top:28px;bottom:2px;width:2px;border-radius:2px;background:var(--vr-n-200)}
-.ed-steps li.done:not(:last-child)::before{background:var(--vr-success-200)}
-.ed-steps li>i{display:grid;place-items:center;flex:none;width:28px;height:28px;border:2px solid var(--vr-n-300);border-radius:9999px;background:var(--vr-card);font-style:normal;font-size:12px;font-weight:700;color:var(--vr-n-500)}
-.ed-steps li>i svg{width:14px;height:14px}
-.ed-steps li.done>i{border-color:var(--vr-success-500);background:var(--vr-success-500);color:#fff}
-.ed-steps li.now>i{border-color:var(--vr-accent-navy);color:var(--vr-brand-text);box-shadow:0 0 0 4px var(--vr-navy-50)}
-.ed-steps li>div{min-width:0;padding-top:3px}
-.ed-steps b{display:block;font-size:14px;line-height:20px;color:var(--vr-n-900)}
-.ed-steps li:not(.done):not(.now) b{color:var(--vr-n-600)}
-.ed-steps span{display:block;font-size:12px;line-height:18px;color:var(--vr-n-500)}
 .ed-note{margin:2px 0 0;padding-top:12px;border-top:1px solid var(--vr-n-100);font-size:12px;line-height:18px;color:var(--vr-n-500)}
 .ed-rate{display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:10px;padding:6px 0;font-size:13px}
 .ed-rate span{font-weight:600;color:var(--vr-n-600)}
@@ -653,9 +677,6 @@ a.ed-k:hover .wm{opacity:.14}
 .hero .facts div:last-child{margin-right:0;padding-right:0;border-right:0}
 .hero .facts small{display:block;font-size:10px;line-height:14px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.5)}
 .hero .facts b{display:block;margin-top:2px;font-size:14px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
-.ring{position:relative;width:112px;height:112px;flex:none}.ring svg{display:block;width:112px;height:112px}
-.ring b{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:24px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
-.ring b small{display:block;margin-top:4px;font-size:9px;font-weight:600;letter-spacing:.1em;color:rgba(255,255,255,.5);white-space:nowrap}
 .hero .acts{z-index:1;margin-left:auto;gap:8px}
 .hero .btn{border-color:transparent;background:rgba(255,255,255,.1);font-size:12px;line-height:16px;font-weight:500;color:#fff;padding:8px 12px}
 .hero .btn:hover:not(:disabled){background:rgba(255,255,255,.2)}
