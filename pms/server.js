@@ -1005,18 +1005,31 @@ route('POST', '/api/employees/inactive', async ({ user, body }) => {
   adminOnly(user);
   const e = mustEmp(body.id);
   body.date = body.date || config.today; body.reason = body.reason || 'Moved to inactive'; // the screen only asks for a confirmation
-  // people who report to this person must be moved under someone else first
+  // people who report to this person must be moved under someone else first, each to the manager the admin picks for
+  // them (Harish, 2026-11-16: split a team over several managers; one of them may be promoted to lead the others)
   const reports = employees.filter(x => x.active && x.managerId === e.id);
-  const team = new Set(L.subordinates(e.id).map(x => x.id));
-  const candidates = employees.filter(c => c.active && c.id !== e.id && c.role !== 'admin' && !team.has(c.id) && !(c.pendingManager && c.pendingManager.id === e.id))
+  // anyone active can take them, also people from this team; per person the screen hides them and the people under them
+  const candidates = employees.filter(c => c.active && c.id !== e.id && c.role !== 'admin' && !(c.pendingManager && c.pendingManager.id === e.id))
     .sort((a, b) => (a.role === 'employee') - (b.role === 'employee') || a.name.localeCompare(b.name))
-    .map(c => ({ id: c.id, name: c.name, designation: c.designation }));
-  if (body.check) return { reports: reports.map(r => ({ id: r.id, name: r.name, designation: r.designation })), candidates, suggested: candidates.some(c => c.id === e.managerId) ? e.managerId : null };
-  let newManager = null;
+    .map(c => ({ id: c.id, name: c.name, designation: c.designation, team: c.team, top: !c.managerId,
+      via: c.managerId === e.id ? null : (reports.find(r => L.subordinates(r.id).some(x => x.id === c.id)) || {}).id || null }));
+  if (body.check) return { reports: reports.map(r => ({ id: r.id, name: r.name, designation: r.designation, team: r.team, under: L.subordinates(r.id).map(x => x.id) })), candidates, suggested: candidates.some(c => c.id === e.managerId) ? e.managerId : null };
+  // moves: { [reportId]: newManagerId } (an older screen sends one newManagerId for everyone)
+  const moves = new Map(reports.map(r => [r.id, +((body.moves || {})[r.id] || body.newManagerId) || null]));
   if (reports.length) {
-    if (!body.newManagerId) throw bad(`${e.name} has ${reports.length} ${reports.length === 1 ? 'person' : 'people'} reporting to them. Choose who they should report to.`);
-    newManager = candidates.find(c => c.id === +body.newManagerId);
-    if (!newManager) throw bad('Choose an active person outside this team as the new reporting manager.');
+    const missing = reports.filter(r => !moves.get(r.id));
+    if (missing.length) throw bad(`Choose a new reporting manager for ${missing.map(r => r.name).join(', ')}.`);
+    for (const r of reports) {
+      const m = L.emp(moves.get(r.id));
+      if (!m || !candidates.some(c => c.id === m.id)) throw bad(`${r.name}: choose an active person as the new reporting manager.`);
+      if (m.id === r.id || L.subordinates(r.id).some(x => x.id === m.id)) throw bad(`${r.name} cannot report to ${m.id === r.id ? 'themselves' : `${m.name}, who reports to them`}.`);
+    }
+    // the whole plan at once: walking up from each person must never come back to them (A under B and B under A)
+    const up = id => moves.has(id) ? moves.get(id) : (L.emp(id) || {}).managerId || null;
+    for (const r of reports) {
+      const seen = new Set([r.id]);
+      for (let x = up(r.id); x; x = up(x)) { if (seen.has(x)) throw bad(`${r.name} and ${nameOf(x)} would report to each other. Choose someone else for one of them.`); seen.add(x); }
+    }
   }
   const f = L.peek(e.id, config.currentMonth);
   const warning = f && !['Completed and Submitted', 'Completed but Not Submitted'].includes(L.reviewStatus(f)) && body.date.slice(0, 7) === config.currentMonth
@@ -1025,7 +1038,10 @@ route('POST', '/api/employees/inactive', async ({ user, body }) => {
   // the person is leaving, so their team's reviews move now (same clean-up as any reporting change: invites, notes, roles)
   const warnings = [];
   const notes = [];
-  for (const r of reports) { const plan = { newId: newManager.id, choice: 'move', f: L.peek(r.id, config.currentMonth) }; warnings.push(...await applyMove(user, r, plan)); notes.push(...(plan.notes || [])); }
+  // someone promoted from this team moves first, so the people put under them join the team they end up in
+  const order = [], left = [...reports];
+  while (left.length) { const i = left.findIndex(r => !left.some(o => o.id === moves.get(r.id))); order.push(...left.splice(i, 1)); }
+  for (const r of order) { const plan = { newId: moves.get(r.id), choice: 'move', f: L.peek(r.id, config.currentMonth) }; warnings.push(...await applyMove(user, r, plan)); notes.push(...(plan.notes || [])); }
   // planned moves to or from this person no longer make sense
   for (const x of employees) if (x.pendingManager && x.pendingManager.id === e.id) { delete x.pendingManager; audit(user.name, 'planned reporting change dropped', `${x.name}: ${e.name} is now inactive`); }
   delete e.pendingManager;

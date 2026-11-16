@@ -384,8 +384,8 @@ async function start() {
   // menu: [label, href, icon] = link, { label, icon, key, kids: [[label, href], ...] } = a group that opens, '--X' = eyebrow
   const items = r === 'admin' ? [
     ['Dashboard', '#/home', 'home'],
-    ['All active employees', '#/employees/active', 'idcard'],
-    ['All inactive employees', '#/employees/inactive', 'eyeoff'],
+    // Employees opens like Reporting: Active and Inactive are the same Employees page, two tabs (Harish, 2026-11-16)
+    { key: 'emp', label: 'Employees', icon: 'idcard', kids: [['Active', '#/employees/active'], ['Inactive', '#/employees/inactive']] },
     ['Teams', '#/teams', 'team'],
     // who reports to whom is the Reporting flow, opened from the Employees page (the dashboard cards are the counts)
     { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
@@ -1961,7 +1961,7 @@ pages.employees = async (v, arg) => {
       };
     }
     if (a === 'off') {
-      // the inactive-from date is today and the person moves to All inactive employees; anyone reporting to them is moved to someone else first
+      // the inactive-from date is today and the person moves to Employees › Inactive; anyone reporting to them is moved to someone else first
       const id = t.dataset.id, name = t.dataset.n, done = r => { toast(`${name} moved to inactive`); ((r && r.warnings) || []).forEach(w => toast(w, 'err')); ((r && r.notes) || []).forEach(n => toast(n)); pages.employees(v); };
       try {
         const chk = await api('/employees/inactive', { method: 'POST', body: { id, check: true } });
@@ -1969,13 +1969,41 @@ pages.employees = async (v, arg) => {
           if (!await confirmBox(`Move ${name} to inactive?`, 'They are left out of review schedules, status counts, reports and manager emails from today. Past forms stay available.', { ok: 'Move to inactive', danger: true })) return;
           await api('/employees/inactive', { method: 'POST', body: { id, confirm: true } }); return done();
         }
+        // one new manager per person (a team can be split over several managers, or one of them promoted to lead the rest);
+        // "Set all to" fills every row that may take that person (not themselves or someone above them), then only the
+        // exceptions are changed; picking one of the team there puts the others under them, their own row stays as it was
+        const n = chk.reports.length, many = n > 1, cand = new Map(chk.candidates.map(c => [c.id, c]));
+        const opt = (c, sel) => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)} (${esc(c.designation)})</option>`;
+        const pickFor = r => `<select data-mv="${r.id}" style="width:100%" aria-label="New reporting manager for ${esc(r.name)}">${chk.suggested ? '' : '<option value="" selected>Choose a manager</option>'}${chk.candidates.filter(c => c.id !== r.id && !r.under.includes(c.id)).map(c => opt(c, chk.suggested)).join('')}</select>`;
         const m = modal(`<h2>Move ${esc(name)} to inactive?</h2><div id="er"></div>
-          <p class="small"><b>${chk.reports.length} ${chk.reports.length === 1 ? 'person reports' : 'people report'} to ${esc(name)}:</b> ${chk.reports.map(r => esc(r.name)).join(', ')}. Choose who they should report to from now on. Then ${esc(name)} is moved to inactive.</p>
-          <label class="f">New reporting manager <i>*</i></label><select id="nm">${chk.candidates.map(c => `<option value="${c.id}" ${c.id === chk.suggested ? 'selected' : ''}>${esc(c.name)} (${esc(c.designation)})</option>`).join('')}</select>
-          <div class="row"><button class="btn dng solid" id="ok">Shift and move to inactive</button><button class="btn" id="no">Cancel</button></div>`);
+          <p class="small"><b>${n} ${n === 1 ? 'person reports' : 'people report'} to ${esc(name)}.</b> Choose who ${n === 1 ? 'they' : 'each of them'} should report to from now on${many ? ': split them over several managers, or pick one of them to lead the others' : ''}. Then ${esc(name)} is moved to inactive.</p>
+          ${many ? `<div class="row" style="align-items:center;margin:0 0 12px"><label class="f" for="mvall" style="margin:0">Set all to</label><select id="mvall" style="flex:1;min-width:0"><option value="">Choose a manager</option>${chk.candidates.map(c => opt(c, chk.suggested)).join('')}</select></div>` : ''}
+          <div class="tablewrap"><table><tr><th>Person</th><th>New reporting manager</th></tr>
+          ${chk.reports.map(r => `<tr><td><b>${esc(r.name)}</b><div class="small">${esc(r.designation)} · ${esc(tl(r.team))}</div></td><td>${pickFor(r)}<div class="small" data-tn="${r.id}"></div></td></tr>`).join('')}</table></div>
+          <div class="row"><button class="btn dng solid" id="ok">${many ? `Move ${n} people and move ${esc(name)} to inactive` : 'Shift and move to inactive'}</button><button class="btn" id="no">Cancel</button></div>`);
+        m.querySelector('.box').classList.add('wide');
+        const pickOf = rid => +m.querySelector(`[data-mv="${rid}"]`).value || null;
+        // the team each person ends up in (same rule as the server: the team follows the manager; a top-level director
+        // leaves the person's own team; someone promoted from this team first moves to the team of their own new manager)
+        const isRep = id => chk.reports.find(r => r.id === id);
+        const finalTeam = (id, depth = 0) => {
+          if (depth > n) return null;
+          const rep = isRep(id); if (rep) return teamUnder(rep, pickOf(rep.id), depth + 1);
+          const c = cand.get(id); if (!c) return null;
+          const via = c.via && isRep(c.via); // under a moved person and in their team: moves along with them
+          return via && c.team === via.team ? finalTeam(via.id, depth + 1) : c.team;
+        };
+        const teamUnder = (r, mid, depth = 0) => { const c = mid && cand.get(mid); return !c ? null : c.top && !isRep(mid) ? r.team : finalTeam(mid, depth); };
+        const notes = () => chk.reports.forEach(r => { const t = teamUnder(r, pickOf(r.id)), el = m.querySelector(`[data-tn="${r.id}"]`); el.textContent = !t ? '' : t === r.team ? `Team stays ${tl(t)}` : `Team changes to ${tl(t)}`; });
+        notes();
+        m.querySelectorAll('[data-mv]').forEach(s => s.onchange = notes);
+        if (many) m.querySelector('#mvall').onchange = e => { if (!e.target.value) return; m.querySelectorAll('[data-mv]').forEach(s => { if ([...s.options].some(o => o.value === e.target.value)) s.value = e.target.value; }); notes(); };
         m.querySelector('#no').onclick = () => m.remove();
         m.querySelector('#ok').onclick = async () => {
-          try { const r = await api('/employees/inactive', { method: 'POST', body: { id, confirm: true, newManagerId: +m.querySelector('#nm').value } }); m.remove(); done(r); }
+          const moves = Object.fromEntries(chk.reports.map(r => [r.id, pickOf(r.id)]));
+          const miss = chk.reports.filter(r => !moves[r.id]);
+          if (miss.length) { m.querySelector('#er').innerHTML = `<div class="warn">Choose a new reporting manager for ${miss.map(r => esc(r.name)).join(', ')}.</div>`; return; }
+          try { const r = await api('/employees/inactive', { method: 'POST', body: { id, confirm: true, moves } }); m.remove(); done(r); }
           catch (er) { m.querySelector('#er').innerHTML = errBox(er); }
         };
       } catch (er) { toast(er.message, 'err'); }

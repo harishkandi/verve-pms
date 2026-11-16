@@ -53,7 +53,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   open as sub-menus). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
   duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
   reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
-  click to drill down; opened from the Employees page button and names, highlights All active employees in the menu;
+  click to drill down; opened from the Employees page button and names, highlights Employees › Active in the menu (Employees is a menu group with Active / Inactive, 2026-11-16);
   old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate).
   Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
   captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
@@ -64,7 +64,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
   member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
 - Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,
-  Move to inactive). Checks: new manager active, not the admin account, no loops; "No manager" asks first (top-level
+  Move to inactive). Move to inactive asks a new manager per direct report (2026-11-16: "Set all to" + one row each, so
+  a team can be split, or one of them promoted to lead the others; `body.moves` = {reportId: managerId}, checked as one plan
+  for loops, applied promoted-first). Checks: new manager active, not the admin account, no loops; "No manager" asks first (top-level
   director, not reviewed). If this month's review has started (`reviewProgress`: meeting set, sent to manager, manager
   ratings, KRA request) the admin picks "keep" (old manager finishes; `e.pendingManager` applies from next month via
   `applyPendingMoves()` on each request) or "move now" (old manager's invite cancelled, meeting date cleared, pending KRA
