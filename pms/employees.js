@@ -116,8 +116,12 @@ function importList(S, text, { who = 'System', today } = {}) {
     e.managerId = id; delete e.managerSetInApp; delete e.pendingManager;
   }
   overwritten.forEach(x => S.audit(who, 'change made in the app replaced by the list', x));
-  // review windows: drop teams nobody is in any more (the demo teams), give new departments the default window
-  const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
+  // people no longer on the list become inactive (before the windows below, so their teams are not kept for them)
+  const listed = new Set(p.people.map(r => key(r.name)));
+  const gone = employees.filter(e => e.src === 'list' && e.active && !listed.has(key(e.name)));
+  gone.forEach(e => Object.assign(e, { active: false, inactiveFrom: today || config.today, reason: 'Not on the employee list' }));
+  // review windows: drop teams no active person is in any more (demo teams, old department names), give new departments the default window
+  const teams = new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team));
   for (const t of Object.keys(config.windows)) if (!teams.has(t) && !(config.teamsAdded || []).includes(t)) delete config.windows[t]; // teams added in the app stay
   for (const t of teams) config.windows[t] ||= { start: 25, end: 2 };
   // a "Review window" like 10-15 on a manager's row is the window for that manager's whole team
@@ -126,9 +130,6 @@ function importList(S, text, { who = 'System', today } = {}) {
     const m = /^(\d{1,2})\s*[-–to]+\s*(\d{1,2})$/i.exec(r.window || '');
     if (m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 31) config.managerWindows[byName.get(key(r.name)).id] = { start: +m[1], end: +m[2] };
   }
-  const listed = new Set(p.people.map(r => key(r.name)));
-  const gone = employees.filter(e => e.src === 'list' && e.active && !listed.has(key(e.name)));
-  gone.forEach(e => Object.assign(e, { active: false, inactiveFrom: today || config.today, reason: 'Not on the employee list' }));
   S.audit(who, 'employee list imported', `${p.people.length} people (${added.length} added, ${first ? 0 : updated.length} updated, ${gone.length} made inactive)${first ? '; demo data removed' : ''}`);
   return { ...p, first, added, updated: first ? [] : updated, inactive: gone.map(e => e.name), overwritten };
 }

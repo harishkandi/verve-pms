@@ -190,9 +190,10 @@ function migrate() {
     for (const [t, w] of Object.entries(config.windows)) if (w.start === 25 && (w.end === 31 || w.end === 30)) config.windows[t] = { start: 25, end: 2 };
     config.windowsV2 = true;
   }
-  // once the real list is in, windows of teams nobody is in (the old demo teams) go
+  // once the real list is in, windows of teams no active person is in go (the old demo teams, and old department names
+  // like "HR & Admin" that only inactive people from the earlier list still carry)
   if (employees.some(e => e.src === 'list')) {
-    const teams = new Set(employees.filter(e => e.role !== 'admin').map(e => e.team));
+    const teams = new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team));
     for (const t of Object.keys(config.windows)) if (t !== 'Directors' && !teams.has(t) && !(config.teamsAdded || []).includes(t)) delete config.windows[t];
   }
 }
