@@ -786,9 +786,9 @@ route('PUT', '/api/annual', ({ user, body }) => {
 
 // organisation counts (admin): All stats cards on the dashboard and the tiles on the Employees page
 // the designation shown for a person is the master sheet's (PMS's own is only the fallback for someone not in the sheet, e.g. a director)
-const DESIG_GROUPS = ['Director', 'Senior Manager', 'Manager', 'Consultant', 'Senior Executive', 'Executive'];
+const DESIG_GROUPS = ['Director', 'Senior Manager', 'Manager', 'Senior Executive', 'Executive', 'Article/Intern']; // Consultant has no tile of its own (counted in Others)
 const masterDesignation = e => { const m = masterRowOf(e); return (m && m.designation) || e.designation || ''; };
-const desigGroup = e => { const d = masterDesignation(e).trim().toLowerCase(); return e.role === 'director' ? 'Director' : /manager/.test(d) ? (/senior/.test(d) ? 'Senior Manager' : 'Manager') : /team ?lead/.test(d) ? 'Manager' : DESIG_GROUPS.find(g => g.toLowerCase() === d) || (/executive/.test(d) ? (/senior/.test(d) ? 'Senior Executive' : 'Executive') : 'Other'); };
+const desigGroup = e => { const d = masterDesignation(e).trim().toLowerCase(); return e.role === 'director' ? 'Director' : /manager/.test(d) ? (/senior/.test(d) ? 'Senior Manager' : 'Manager') : /team ?lead/.test(d) ? 'Manager' : DESIG_GROUPS.find(g => g.toLowerCase() === d) || (/article|intern/.test(d) ? 'Article/Intern' : /executive/.test(d) ? (/senior/.test(d) ? 'Senior Executive' : 'Executive') : 'Other'); };
 function orgStats() {
   const rows = employees.filter(e => e.role !== 'admin'), active = rows.filter(e => e.active);
   const by = Object.fromEntries([...DESIG_GROUPS, 'Other'].map(g => [g, active.filter(e => desigGroup(e) === g).length]));

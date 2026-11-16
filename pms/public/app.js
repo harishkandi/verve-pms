@@ -1813,10 +1813,9 @@ function allStats(st) {
     ['dir', 'sitemap', 'Directors', st.byDesignation['Director'], '', ['active', 'Director']],
     ['smg', 'idcard', 'Senior Managers', st.byDesignation['Senior Manager'], '', ['active', 'Senior Manager']],
     ['mgr', 'idcard', 'Managers', st.byDesignation['Manager'], '', ['active', 'Manager']],
-    ['con', 'team', 'Consultants', st.byDesignation['Consultant'], '', ['active', 'Consultant']],
     ['sen', 'award', 'Senior Executives', st.byDesignation['Senior Executive'], '', ['active', 'Senior Executive']],
     ['exe', 'review', 'Executives', st.byDesignation['Executive'], '', ['active', 'Executive']],
-    ['ina', 'list', 'Others', st.byDesignation['Other'], '', ['active', 'Other']],
+    ['ina', 'list', 'Article / Intern', st.byDesignation['Article/Intern'], '', ['active', 'Article/Intern']],
   ];
   // big numbers fading into each role's colour, a faint icon in the corner (Harish picked this design, 2026-11-13)
   return `<section class="hero allstats" aria-label="All stats">${ORBS}${cards.map(([c, ic, label, n, sub, to]) =>
@@ -1830,7 +1829,7 @@ pages.employees = async (v, arg, grp) => {
   if (arg === 'active' || arg === 'inactive') { S.etab = arg; S.erole = grp ? decodeURIComponent(grp) : ''; S.eq = S.eteam = ''; } // the address carries the tile's group
   const [d, md] = await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
-  const GROUPS = ['Director', 'Senior Manager', 'Manager', 'Consultant', 'Senior Executive', 'Executive', 'Other']; // designation groups from the master sheet
+  const GROUPS = ['Director', 'Senior Manager', 'Manager', 'Senior Executive', 'Executive', 'Article/Intern', 'Other']; // designation groups from the master sheet
   const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '', rf = tab === 'active' && GROUPS.includes(S.erole) ? S.erole : '';
   const rows = (tab === 'active' ? d.active : d.inactive).filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && (!rf || e.desigGroup === rf));
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
