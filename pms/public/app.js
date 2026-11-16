@@ -386,7 +386,7 @@ async function start() {
     ['All inactive employees', '#/employees/inactive', 'eyeoff'],
     ['Teams', '#/teams', 'team'],
     // who reports to whom is the Reporting flow, opened from the Employees page (the dashboard cards are the counts)
-    { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['MIS report', '#/mis'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
+    { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['Scheduling', '#/scheduling'], ['Manager emails', '#/emails'], ['One pager document', `#/annual/${S.me.id}`]] },
     { key: 'qs', label: 'Questions', icon: 'question', kids: [['Parameters summary', '#/params'], ['Questionnaire', '#/params/questions']] },
     '--Admin',
     ['Audit log', '#/audit', 'clock'],
@@ -1038,7 +1038,7 @@ function drawForm(v, errors) {
     ${ratingBox(f)}
     <div class="kra qa" id="sec-questionnaire">Questionnaire<span>Text answers and rated questions</span></div>
     <div class="tablewrap"><table style="table-layout:fixed"><colgroup><col style="width:90px"><col style="width:38%"><col></colgroup><tr><th>Sr. no</th><th>Question</th><th>Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="row" style="margin:8px 0 0"><button class="btn pri sm" data-qsave="${q.id}">Save</button><button class="btn sm" data-qcancel="${q.id}">Cancel</button></div>`
-      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? `<button class="ibtn" data-qedit="${q.id}" title="Edit answer" aria-label="Edit answer" style="vertical-align:middle">${ico('pencil')}</button>` : ''}`}${shortAns(f.qa[q.id]) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
+      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? `<button class="ibtn" data-qedit="${q.id}" title="Edit answer" aria-label="Edit answer" style="vertical-align:middle">${ico('pencil')}</button>` : ''}`}${shortAns(f.qa[q.id], q.id) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)} (Rate out of 5)</td><td><table style="table-layout:fixed"><tr><th style="width:104px">Self rating</th><th style="width:118px">Manager rating</th><th>Remark</th></tr><tr>
         <td>${rateSel(a.self, `data-qr="${q.id}" data-f="self"`, p.editSelf, a.self != null ? 'filled' : '')}</td>
@@ -1055,7 +1055,7 @@ function drawForm(v, errors) {
 // same rules as the server (logic.js): a document link, and the word count of an answer without its links
 const HAS_LINK = /(https?:\/\/|www\.)\S+/i;
 const words = s => (String(s || '').replace(/(https?:\/\/|www\.)\S+/gi, ' ').match(/[\p{L}\p{N}]+/gu) || []).length;
-const shortAns = a => { const t = String(a || '').trim(); return !!t && !/^(n\/a|not added)$/i.test(t) && words(t) < ((FP.rules || {}).qMinWords || 0); };
+const shortAns = (a, id) => { if (['q2', 'q5'].includes(id)) return false; const t = String(a || '').trim(); return !!t && !/^(n\/a|not added)$/i.test(t) && words(t) < ((FP.rules || {}).qMinWords || 0); };
 // the monthly rating worked out KRA by KRA from the form as it is on screen (same sums as the server: 30% self + 70% manager,
 // weighted by sub-KRA, then by KRA weight)
 function formSummary(f) {
@@ -1254,7 +1254,7 @@ const monShort = () => esc(monthLabel(S.month).split(' ')[0]);
 const rateCls = x => x == null ? '' : x >= 80 ? 'g' : x >= 60 ? 'a' : 'r'; // percentage ratings
 // where a person's name leads back to: admins use the Reporting flow, everyone else My Team
 const personHref = id => S.me.role === 'admin' ? `#/reporting/${id}` : `#/team/${id}`;
-const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Team report</a>${S.me.role === 'admin' ? `<a class="btn sm" href="#/mis/${r.id}" title="Month-by-month figures for ${esc(r.name)}'s team">${ico('grid')}MIS report</a>` : ''}` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
+const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Team report</a>` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
 const reportHead = (d, title, crumbLabel) => head(d.me ? `My ${title}` : `${title[0].toUpperCase() + title.slice(1)}: ${esc(d.person.name)}`,
   d.me ? `PMS › My ${title}` : `PMS › <a href="${personHref(d.person.id)}">${esc(d.person.name)}</a> › ${crumbLabel || title}`);
 
@@ -1380,12 +1380,12 @@ pages.kpi = async (v, id) => {
     : `<tr><td><b>${esc(r.label)}</b></td><td>${kra(r.kra.operational)}</td><td>${kra(r.kra.process)}</td><td>${kra(r.kra.people)}</td><td>${r.rating != null ? `<b class="rt ${rateCls(r.rating)}" style="font-size:16px">${pc(r.rating)}</b>` : '<span class="small">After submit</span>'}</td><td>${badge(r.status)}</td><td>${fmtD(r.reviewDate)}</td><td><a class="btn sm" href="#/form/${d.person.id}/${r.month}">Open</a></td></tr>`).join('') || '<tr><td colspan="8" class="small">No months yet.</td></tr>'}</table></div>
   <p class="small">Each KRA score is 30% self + 70% manager rating, weighted by sub-KRA. The monthly rating combines the three KRAs by their weight and shows once the review is submitted.</p>`;
 };
-const reportTable = rows => `<div class="tablewrap"><table><tr><th>Manager</th><th>Team</th><th>Employee</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
-  ${rows.map(r => `<tr><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${nameLink(r.empId, r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}${r.actual ? `<br>${badge(r.dueStatus)}` : ''}</td><td>${badge(r.status)}</td><td>${pc(r.rating)}</td>${flagCell(r.flags)}</tr>`).join('') || '<tr><td colspan="9">No reviews in your access for this month.</td></tr>'}</table></div>`;
+const reportTable = rows => `<div class="tablewrap"><table><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
+  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}${r.actual ? `<br>${badge(r.dueStatus)}` : ''}</td><td>${badge(r.status)}</td><td>${pc(r.rating)}</td>${flagCell(r.flags)}</tr>`).join('') || '<tr><td colspan="9">No reviews in your access for this month.</td></tr>'}</table></div>`;
 // a review's flags: the first one, the rest behind "+N more" (click to open), so one row stays one line tall
 const flagCell = flags => !flags.length ? '<td class="small">None</td>'
   : flags.length === 1 ? `<td class="flag">${esc(flags[0])}</td>`
-  : `<td class="flag"><details class="flags"><summary title="Show all ${flags.length} flags">${esc(flags[0])} <b>+${flags.length - 1} more</b></summary>${flags.slice(1).map(x => `<div>${esc(x)}</div>`).join('')}</details></td>`;
+  : `<td class="flag"><details class="flags"><summary title="Show all ${flags.length} flags">1. ${esc(flags[0])} <b>+${flags.length - 1} more</b></summary>${flags.slice(1).map((x, i) => `<div>${i + 2}. ${esc(x)}</div>`).join('')}</details></td>`;
 
 // ---------- Team report / My report (KRA scores month by month for the year) ----------
 // #/yearly = me and everyone under me (admins and directors: everyone), #/yearly/me = only me, #/yearly/<id> = that person and their team
@@ -1406,7 +1406,7 @@ pages.yearly = async (v, id) => {
   // the months shown: the whole year, or the three months of the chosen quarter (Quarter I = Apr-Jun)
   const qi = YF.q === '' ? null : +YF.q, cols = qi == null ? d.months.map((_, i) => i) : [qi * 3, qi * 3 + 1, qi * 3 + 2];
   const pick = arr => cols.map(i => arr[i]);
-  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · reports to ${esc(p.manager)}` : ''}</span></div>
+  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · Reporting manager ${esc(p.manager)}` : ''}</span></div>
       ${S.me.role === 'admin' ? `<a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a>` : ''}<span class="sp"></span>
       ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}">${ico('team')}Their team</a>` : ''}</div>
     <div class="tablewrap"><table class="ytab"><tr><th>KRA name</th>${pick(d.months).map(m => `<th class="nr ${m.open ? '' : 'off'}">${mh(m)}</th>`).join('')}</tr>
@@ -1450,8 +1450,8 @@ function reportPdf(d, c) {
     footer{margin-top:16px;font-size:10px;color:#7a8494}@page{size:A4 landscape;margin:12mm}</style></head><body>
     <h1>Review status report · ${esc(monthLabel(S.month))}</h1><p>${esc(d.scope)} · ${esc(filt)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
     <div class="k">${[['Scheduled', c.scheduled], ['Submitted', c.submitted], ['Completed, not submitted', c.notSubmitted], ['Form incomplete', c.notCompleted], ['Overdue', c.pending]].map(([l, n]) => `<div><small>${l}</small><b>${n}</b></div>`).join('')}</div>
-    <table><tr><th>Manager</th><th>Team</th><th>Employee</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
-    ${d.rows.map(r => `<tr><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${esc(r.name)}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map(esc).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="10">No reviews.</td></tr>'}</table>
+    <table><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
+    ${d.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map((x, i) => (r.flags.length > 1 ? `${i + 1}. ` : '') + esc(x)).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="10">No reviews.</td></tr>'}</table>
     <footer>Verve Advisory · Performance Management System</footer></body></html>`;
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
   document.body.appendChild(f);

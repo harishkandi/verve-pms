@@ -1168,7 +1168,7 @@ route('GET', '/api/yearly', ({ user, q }) => {
   // status cards at the top of the Team report (this used to be the separate My team report): one month of reviews
   const cardMonth = q.month || config.currentMonth;
   const counts = L.counts(people.map(e => L.peek(e.id, cardMonth)).filter(Boolean).map(f => ({ status: L.reviewStatus(f) })));
-  const blocks = people.map(e => {
+  const blocks = people.slice().sort((a, b) => (L.subordinates(b.id).length > 0) - (L.subordinates(a.id).length > 0)).map(e => {
     const cells = months.map(m => {
       const f = L.peek(e.id, m);
       if (!f || !f.submitted || L.isNewJoiner(f)) return null;

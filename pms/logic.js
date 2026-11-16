@@ -16,7 +16,9 @@ const learnRows = f => f.kras.people.rows.filter(r => /learn/i.test(r.kpi));
 const noKras = f => KRAS.every(([k]) => !f.kras[k].rows.length);
 // a text answer that is there but shorter than the minimum (blank / N/A answers are reported as missing instead)
 const textAnswer = a => !blank(a) && !/^(n\/a|not added)$/i.test(String(a).trim());
-const shortAnswer = a => textAnswer(a) && wordCount(a) < config.qMinWords;
+// q2 (issues faced) and q5 (suggestions) can be answered briefly, e.g. "No", so they have no minimum
+const SHORT_OK = ['q2', 'q5'];
+const shortAnswer = (a, id) => !SHORT_OK.includes(id) && textAnswer(a) && wordCount(a) < config.qMinWords;
 const prevMonth = m => { let [y, mo] = m.split('-').map(Number); mo--; if (!mo) { mo = 12; y--; } return `${y}-${D.pad(mo)}`; };
 
 // ---------- hierarchy ----------
@@ -141,13 +143,15 @@ function validate(f) {
         // Rows not rated yet are caught at submit by "manager rating missing", so unstarted forms are not flagged twice.
         if (has(r.mgr) && blank(r.mgrRemark)) noRemark.push(r.kpi);
       });
-      if (miss.length) add('block', label, 'SELF_MISSING', `Self rating and self remark are mandatory. Missing in ${label}: ${miss.join(', ')}.`, `Self rating/remark missing in ${label}`);
-      if (noRemark.length) add('block', label, 'MGR_REMARK', `Manager remark is mandatory for every sub-KRA. Missing in ${label}: ${noRemark.join(', ')}.`, `Manager remark missing in ${label}`);
+      if (miss.length) add('block', label, 'SELF_MISSING', `Self rating and self remark are mandatory. Missing in ${label}: ${miss.join(', ')}.`, `Self rating/remark missing in ${label}: ${miss.join(', ')}`);
+      if (noRemark.length) add('block', label, 'MGR_REMARK', `Manager remark is mandatory for every sub-KRA. Missing in ${label}: ${noRemark.join(', ')}.`, `Manager remark missing in ${label}: ${noRemark.join(', ')}`);
       const sum = rows.reduce((a, r) => a + (+r.weight || 0), 0);
       if (rows.length && sum !== +weight) add('flag', label, 'SUBKRA_SUM', `The total weightage of Sub-KRAs under ${label} must be ${weight}%. The current total is ${sum}%.`);
-      const a = kraAvg(rows, 'self'), b = kraAvg(rows, 'mgr');
-      if (a !== null && b !== null && Math.abs(a - b) >= config.ratingGapFlag)
-        add('flag', label, 'RATING_GAP', `${label}: self avg ${Math.round(a)}% vs manager avg ${Math.round(b)}% (gap ${Math.round(Math.abs(a - b))} points)`, `Rating gap ${Math.round(Math.abs(a - b))} points (${label})`);
+      // the rating gap is flagged per sub-KRA, so the flag says which one
+      rows.forEach(r => {
+        if (has(r.self) && has(r.mgr) && Math.abs(r.self - r.mgr) >= config.ratingGapFlag)
+          add('flag', label, 'RATING_GAP', `${label} / ${r.kpi}: self ${r.self}% vs manager ${r.mgr}% (gap ${Math.abs(r.self - r.mgr)} points)`, `Rating gap ${Math.abs(r.self - r.mgr)} points (${label}: ${r.kpi})`);
+      });
     }
     const op = f.kras.operational;
     if (op.weight < config.operationalRange[0] || op.weight > config.operationalRange[1])
@@ -163,9 +167,9 @@ function validate(f) {
       add('flag', 'Process', 'SOP_MISSING', `SOP KRA not assigned (${n} consecutive month${n > 1 ? 's' : ''}).`, `SOP KRA not assigned (${n} month${n > 1 ? 's' : ''})`);
     }
     // the SOP and learning document links are mandatory before the review is submitted (2026-11-13)
-    sop.forEach(r => { if (!hasLink(r.selfRemark)) add('block', 'Process', 'SOP_LINK', `SOP link is mandatory: add the SOP document link in the self remark (${r.kpi}).`, 'SOP link not added'); });
+    sop.forEach(r => { if (!hasLink(r.selfRemark)) add('block', 'Process', 'SOP_LINK', `SOP link is mandatory: add the SOP document link in the self remark (${r.kpi}).`, `SOP link not added (${r.kpi})`); });
     pr.rows.filter(r => /clickup/i.test(r.kpi)).forEach(r => {
-      if (has(r.mgr) && r.mgr < config.clickupMin) add('flag', 'Process', 'CLICKUP', `ClickUp rating ${r.mgr}%: not managing ClickUp properly.`, `ClickUp below ${config.clickupMin}%`);
+      if (has(r.mgr) && r.mgr < config.clickupMin) add('flag', 'Process', 'CLICKUP', `ClickUp rating ${r.mgr}%: not managing ClickUp properly.`, `ClickUp below ${config.clickupMin}% (${r.kpi})`);
     });
 
     const pe = f.kras.people;
@@ -176,9 +180,8 @@ function validate(f) {
       const n = lookback(f.empId, f.month, g => g.kras.people.rows.length === 0);
       add('flag', 'People', 'LEARNING_MISSING', `Learning KRA not set (${n} consecutive month${n > 1 ? 's' : ''}).`, `Learning KRA not set (${n} month${n > 1 ? 's' : ''})`);
     } else {
-      if (pe.rows.length < 2) add('flag', 'People', 'PE_MIN', 'People KRA needs a minimum of 2 sub-KRAs.');
-      learnRows(f).forEach(r => { if (!hasLink(r.selfRemark)) add('block', 'People', 'LEARN_LINK', `Learning document link is mandatory: add it in the self remark (${r.kpi}).`, 'Learning link not added'); });
-      pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < config.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${config.learningMin}% (${r.kpi}: ${r.mgr}%).`, `Manager rating below ${config.learningMin}%`); });
+      learnRows(f).forEach(r => { if (!hasLink(r.selfRemark)) add('block', 'People', 'LEARN_LINK', `Learning document link is mandatory: add it in the self remark (${r.kpi}).`, `Learning link not added (${r.kpi})`); });
+      pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < config.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${config.learningMin}% (${r.kpi}: ${r.mgr}%).`, `Manager rating below ${config.learningMin}% (${r.kpi})`); });
       const lr = learnRows(f);
       if (lr.length && lr.every(r => has(r.mgr) && r.mgr >= 90 && hasLink(r.selfRemark))) add('info', 'People', 'LEARN_GOOD', 'Effective learning with document link.', 'Recognition: effective learning');
     }
@@ -188,7 +191,7 @@ function validate(f) {
   const qs = activeQuestions(f.month, f);
   let qComplete = true;
   const short = [];
-  qs.filter(q => q.type === 'text').forEach((q, i) => { if (shortAnswer(f.qa[q.id])) short.push(i + 1); });
+  qs.filter(q => q.type === 'text').forEach((q, i) => { if (shortAnswer(f.qa[q.id], q.id)) short.push(i + 1); });
   if (short.length) add('flag', 'Questionnaire', 'Q_SHORT', `Questionnaire not properly filled: answer${short.length > 1 ? 's to questions' : ' to question'} ${short.join(', ')} ${short.length > 1 ? 'are' : 'is'} under ${config.qMinWords} words.`, `Questionnaire answer under ${config.qMinWords} words`);
   for (const q of qs) {
     const a = f.qa[q.id];
@@ -197,7 +200,7 @@ function validate(f) {
     } else {
       const s = a && a.self, m = a && a.mgr;
       if (!has(s) || !has(m)) { qComplete = false; add('flag', 'Questionnaire', 'Q_INCOMPLETE', `${q.text}: self and manager ratings are both needed.`, 'Questionnaire rating missing'); }
-      else if (+s !== +m && blank(a.remark)) add('block', 'Questionnaire', 'Q_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${q.text})`, 'Questionnaire manager remark missing');
+      else if (+s !== +m && blank(a.remark)) add('block', 'Questionnaire', 'Q_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${q.text})`, `Questionnaire manager remark missing (${q.text})`);
     }
   }
   if (nj) {
@@ -221,7 +224,7 @@ function employeeTodo(f) {
     const a = f.qa[q.id];
     if (q.type === 'text') {
       if (q.mandatory && !textAnswer(a)) out.push(`Answer question ${i + 1}: ${cut(q.text)}`);
-      else if (shortAnswer(a)) out.push(`Answer question ${i + 1} in more detail (at least ${config.qMinWords} words)`);
+      else if (shortAnswer(a, q.id)) out.push(`Answer question ${i + 1} in more detail (at least ${config.qMinWords} words)`);
     }
     else if (!a || !has(a.self)) out.push(`Self rating for question ${i + 1}: ${cut(q.text)}`);
   });
@@ -384,7 +387,7 @@ function pmsDetail(f, e) {
     learning: nj ? 'N/A' : yn(learn.length),
     learningDone: !learn.length ? 'N/A' : !learnRated ? 'Not rated yet' : yn(learn.every(r => +r.mgr >= config.learningDoneMin)),
     learningLink: !learn.length ? 'N/A' : yn(learn.every(r => hasLink(r.selfRemark))),
-    questionnaire: !texts.length ? 'N/A' : yn(texts.every(q => textAnswer(f.qa[q.id]) && !shortAnswer(f.qa[q.id]))),
+    questionnaire: !texts.length ? 'N/A' : yn(texts.every(q => textAnswer(f.qa[q.id]) && !shortAnswer(f.qa[q.id], q.id))),
     percentage: monthlyRating(f),
     opRemark: kraRemarks(op.rows), processRemark: kraRemarks(f.kras.process.rows), peopleRemark: kraRemarks(f.kras.people.rows),
     escalations: escalations(f),
