@@ -1369,7 +1369,7 @@ const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>
 // a review's flags: the first one, the rest behind "+N" (click to open), so one row stays one line tall; numbered 1, 2, 3
 const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
   : flags.length === 1 ? `<td class="rflag">${esc(flags[0])}</td>`
-  : `<td class="rflag"><details class="flags"><summary title="Show all ${flags.length} flags">1. ${esc(flags[0])} <b>+${flags.length - 1}</b></summary>${flags.slice(1).map((x, i) => `<div>${i + 2}. ${esc(x)}</div>`).join('')}</details></td>`;
+  : `<td class="rflag"><details class="flags"><summary title="Show all ${flags.length} flags">1. ${esc(flags[0])} <b class="more">+${flags.length - 1}</b></summary>${flags.slice(1).map((x, i) => `<div>${i + 2}. ${esc(x)}</div>`).join('')}</details></td>`;
 
 // ---------- Team report / My report (KRA scores month by month for the year) ----------
 // #/yearly = me and everyone under me (admins and directors: everyone), #/yearly/me = only me, #/yearly/<id> = that person and their team
@@ -2052,17 +2052,12 @@ pages.teams = async v => {
   const list = (await api('/teams')).teams;
   const days = w => `Day ${w.start} to ${w.end}`;
   v.innerHTML = head('Teams', 'Add, rename or delete teams and set their review windows. The dashboard, reports and Employees page follow straight away.') + `
+  <div class="row"><button class="btn pri" id="tnew">${ico('plus')}Add team</button></div>
   <div id="er"></div>
   <div class="tablewrap"><table><tr><th>Team</th><th title="Active people in the team">Members</th><th>Review window</th><th>Actions</th></tr>${list.map((t, i) => `<tr>
     <td data-name="${i}"><span style="display:inline-flex;align-items:center;gap:6px">${teamIco(t.name)}<b>${esc(t.name)}</b></span>${t.sheetName.length ? `<div class="small">Called ${t.sheetName.map(esc).join(', ')} in the sheet</div>` : t.added ? '<div class="small">Added in the app</div>' : ''}</td>
     <td>${t.members ? `<a href="#/employees/active" data-t="people" data-i="${i}" title="Show them on the Employees page">${t.members}</a>` : 0}</td><td style="white-space:nowrap">${days(t.window)}</td>
     <td><span class="acts"><button class="btn sm" data-t="win" data-i="${i}">Window</button>${t.fixed ? '<span class="small" title="Holds the top-level directors">Fixed</span>' : `<button class="btn sm" data-t="ren" data-i="${i}">Rename</button><button class="btn sm dng" data-t="del" data-i="${i}" ${t.members ? `disabled title="Move its ${t.members} active ${t.members === 1 ? 'person' : 'people'} to another team first"` : ''}>Delete</button>`}</span></td></tr>`).join('')}</table></div>
-  <h2>Add a team</h2>
-  <div class="card"><div class="row" style="align-items:flex-end;margin:0;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label class="f">Team name <i>*</i></label><input id="tn" style="width:100%" maxlength="40" autocomplete="off"></div>
-    <div><label class="f">Window from day</label><input class="num" type="number" min="1" max="31" id="ts" value="25"></div>
-    <div><label class="f">To day</label><input class="num" type="number" min="1" max="31" id="te" value="2"></div>
-    <button class="btn pri" id="tadd">${ico('plus')}Add team</button></div>
-  <p class="small">The review window is the day of the month, used for every month (25 to 2 ends in the next month).</p></div>
   <p class="small">Teams come from the employee sheet. A rename here is remembered, so the next import of the sheet keeps the new name. To move people between teams, change the Team column on the Employees page.</p>`;
   const er = x => { v.querySelector('#er').innerHTML = x ? errBox(x) : ''; };
   const redraw = () => pages.teams(v);
@@ -2076,12 +2071,23 @@ pages.teams = async v => {
       return redraw();
     } catch (x) { er(x); }
   };
-  v.querySelector('#tadd').onclick = async () => {
-    const name = v.querySelector('#tn').value.trim();
-    try { await api('/teams', { method: 'POST', body: { name, start: +v.querySelector('#ts').value, end: +v.querySelector('#te').value } }); toast(`${name} team added`); redraw(); }
-    catch (x) { er(x); }
+  v.querySelector('#tnew').onclick = () => {
+    const m = modal(`<h2>Add a team</h2><div id="mer"></div>
+      <div><label class="f">Team name <i>*</i></label><input id="tn" style="width:100%" maxlength="40" autocomplete="off"></div>
+      <div class="row" style="align-items:flex-end;margin:8px 0 0"><div><label class="f">Window from day</label><input class="num" type="number" min="1" max="31" id="ts" value="25"></div>
+      <div><label class="f">To day</label><input class="num" type="number" min="1" max="31" id="te" value="2"></div></div>
+      <p class="small">The review window is the day of the month, used for every month (25 to 2 ends in the next month).</p>
+      <div class="row"><button class="btn pri" id="tadd">Add team</button><button class="btn" id="tno">Cancel</button></div>`);
+    m.querySelector('#tno').onclick = () => m.remove();
+    m.querySelector('#tn').focus();
+    const add = async () => {
+      const name = m.querySelector('#tn').value.trim();
+      try { await api('/teams', { method: 'POST', body: { name, start: +m.querySelector('#ts').value, end: +m.querySelector('#te').value } }); m.remove(); toast(`${name} team added`); redraw(); }
+      catch (x) { m.querySelector('#mer').innerHTML = errBox(x); }
+    };
+    m.querySelector('#tadd').onclick = add;
+    m.querySelector('#tn').onkeydown = e => { if (e.key === 'Enter') add(); };
   };
-  v.querySelector('#tn').onkeydown = e => { if (e.key === 'Enter') v.querySelector('#tadd').click(); };
   v.onclick = async e => {
     const b = e.target.closest('[data-t]'); if (!b) return;
     const t = list[+b.dataset.i];
