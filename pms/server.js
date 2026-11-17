@@ -114,16 +114,64 @@ route('GET', '/api/auth/status', ({ user }) => ({
   google: A.google, demo: A.demo, domain: A.ORG_DOMAIN, signedIn: !!user,
   ...(A.demo && A.DEMO_PASSWORD && { accounts: testAccounts().map(a => ({ email: a.email, label: a.label, name: a.emp.name })), ...(A.showPassword && { password: A.DEMO_PASSWORD }) }),
 }), true);
+// email + password: the person's own PMS password (set by the admin as a temporary one, then changed by them), or,
+// while DEMO_LOGIN is on, a shared test account
 route('POST', '/api/auth/password', ({ body, setCookie, secure }) => {
-  if (!A.demo) throw forbidMsg('Password sign-in is not switched on. Please use Sign in with Google.');
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = String(body.email || '').trim().toLowerCase(), pw = String(body.password || '');
   if (!A.isOrgEmail(email)) throw bad(`Use your @${A.ORG_DOMAIN} email.`);
-  const acc = testAccounts().find(a => a.email === email);
-  if (!acc || !A.checkPassword(body.password || '')) throw bad('Wrong email or password.');
-  setCookie(A.sessionCookie(acc.emp.id, null, secure, body.remember !== false));
-  audit(acc.emp.name, 'signed in', `${email} (password)`);
-  return { ok: true };
+  const wait = A.lockedFor(email);
+  if (wait) throw new HttpError(429, `Too many wrong passwords. Try again in ${wait} minute${wait === 1 ? '' : 's'}, or ask the PMS admin to set a new temporary password.`);
+  const keep = body.remember !== false;
+  const acc = A.demo && testAccounts().find(a => a.email === email);
+  if (acc && A.checkPassword(pw)) {
+    A.succeeded(email); setCookie(A.sessionCookie(acc.emp.id, null, secure, keep));
+    audit(acc.emp.name, 'signed in', `${email} (test account)`);
+    return { ok: true };
+  }
+  const e = findByEmail(email), rec = e && D.passwords[e.id];
+  // one message for every failure, so the page does not tell anyone which emails exist
+  if (!e || !e.active || !A.verifyPassword(rec, pw)) { A.failed(email); throw bad('Wrong email or password.'); }
+  A.succeeded(email);
+  setCookie(A.sessionCookie(e.id, null, secure, keep, rec.ver));
+  audit(e.name, 'signed in', `${email} (password)`);
+  return { ok: true, mustChange: !!rec.temp };
 }, true);
+// the person changes their own password (also the first sign-in with a temporary one); the session in this browser
+// stays signed in, every other password sign-in of theirs ends
+route('POST', '/api/password/change', ({ user, realUser, session, body, setCookie, secure }) => {
+  if (realUser.id !== user.id) throw forbidMsg('You are viewing PMS as someone else. Only they can change their password.');
+  const rec = D.passwords[user.id];
+  if (!rec) throw bad('You do not have a PMS password yet. Ask the PMS admin to set a temporary one.');
+  const key = 'change:' + user.id, wait = A.lockedFor(key);
+  if (wait) throw new HttpError(429, `Too many wrong passwords. Try again in ${wait} minute${wait === 1 ? '' : 's'}.`);
+  if (!A.verifyPassword(rec, body.current)) { A.failed(key); throw bad(rec.temp ? 'The temporary password is not right.' : 'Your current password is not right.', { field: 'current' }); }
+  A.succeeded(key);
+  const next = String(body.next || ''), problem = A.passwordProblem(next);
+  if (problem) throw bad(problem, { field: 'next' });
+  if (next === body.current) throw bad('Pick a password that is different from the current one.', { field: 'next' });
+  if (user.email && next.toLowerCase().includes(user.email.split('@')[0].toLowerCase())) throw bad('Do not use your email name in the password.', { field: 'next' });
+  Object.assign(rec, A.hashPassword(next), { temp: false, ver: (rec.ver || 0) + 1, setAt: new Date().toISOString(), setBy: user.id });
+  // keep this browser signed in: a password session moves to the new version, a Google session needs nothing
+  if (session.pv != null) setCookie(A.sessionCookie(user.id, null, secure, session.keep !== false, rec.ver));
+  audit(user.name, 'password changed', '');
+  return { ok: true };
+});
+// admin: give someone a temporary password (first one, or a reset when they forgot theirs). They must change it when
+// they first sign in with it; any password sign-in they still have open ends.
+route('POST', '/api/password/set', ({ user, realUser, body }) => {
+  if (user.role !== 'admin' || realUser.role !== 'admin') throw forbid();
+  const e = mustEmp(body.id);
+  if (!e.active) throw bad(`${e.name} is inactive and cannot sign in.`);
+  if (!e.email) throw bad(`${e.name} has no work email, which is their login name. Add it to the employee list first.`);
+  const temp = body.password ? String(body.password) : A.tempPassword(), problem = A.passwordProblem(temp);
+  if (problem) throw bad(problem);
+  const old = D.passwords[e.id];
+  D.passwords[e.id] = { ...A.hashPassword(temp), temp: true, ver: ((old && old.ver) || 0) + 1, setAt: new Date().toISOString(), setBy: realUser.id };
+  A.succeeded(e.email.toLowerCase()); // a reset also lifts a lock from wrong tries
+  audit(realUser.name, old ? 'temporary password reset' : 'temporary password set', `${e.name} (${e.email})`);
+  // the password goes back to the admin once, to hand over; it is not stored anywhere readable
+  return { ok: true, password: temp, email: e.email, reset: !!old };
+});
 const forbidMsg = msg => new HttpError(403, msg);
 // demo picker: dummy users, only when the server allows it (no Google sign-in set up, or DEMO_LOGIN=1)
 route('GET', '/api/users', () => {
@@ -196,7 +244,7 @@ route('POST', '/api/auth/view-as', ({ realUser, body, setCookie, secure, session
   if (realUser.role !== 'admin') throw forbid();
   const as = body.id ? mustEmp(body.id) : null;
   if (as && !as.active) throw bad('That employee is inactive.');
-  setCookie(A.sessionCookie(realUser.id, as && as.id !== realUser.id ? as.id : null, secure, session.keep !== false));
+  setCookie(A.sessionCookie(realUser.id, as && as.id !== realUser.id ? as.id : null, secure, session.keep !== false, session.pv));
   audit(realUser.name, as ? 'view as' : 'view as ended', as ? as.name : '');
   return { ok: true };
 });
@@ -205,7 +253,11 @@ route('POST', '/api/auth/view-as', ({ realUser, body, setCookie, secure, session
 const ensureMonthForms = () => employees.filter(e => e.active && e.managerId && e.role !== 'admin').forEach(e => L.getForm(e.id, config.currentMonth));
 ensureMonthForms();
 const calendarState = real => { const l = C.linked(real.id); return { google: A.google, connected: !!l, email: l ? l.email : '', canConnect: A.google && A.isOrgEmail(real.email) }; };
-route('GET', '/api/me', ({ user, realUser }) => (ensureMonthForms(), {
+// password: whether the signed-in person (the real one in View as) has a PMS password, and whether they signed in
+// with a temporary one and must pick their own now
+const passwordState = (real, session) => { const rec = D.passwords[real.id]; return { has: !!rec, mustChange: !!(rec && rec.temp && session && session.pv != null) }; };
+route('GET', '/api/me', ({ user, realUser, session }) => (ensureMonthForms(), {
+  password: passwordState(realUser, session),
   ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(Boolean))].sort(),
   teamLabels: Object.fromEntries([...teamNames(), 'Directors'].map(t => [t, teamLabel(t)])), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, firstMonth: config.fyStartMonth, today: config.today, fy: fyLabel(config.currentMonth),
   real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
@@ -861,7 +913,8 @@ route('GET', '/api/employees', ({ user, q }) => {
   adminOnly(user);
   const month = config.currentMonth;
   const rows = employees.filter(e => e.role !== 'admin').map(e => { const f = L.peek(e.id, month); const { notices, ...rest } = e;
-    return { ...rest, masterDesignation: masterDesignation(e), desigGroup: desigGroup(e), manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a',
+    const pw = D.passwords[e.id]; // only whether a password is set and since when, never the password itself
+    return { ...rest, password: pw ? { temp: !!pw.temp, setAt: pw.setAt } : null, masterDesignation: masterDesignation(e), desigGroup: desigGroup(e), manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a',
       pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null }; });
   const active = rows.filter(e => e.active);
   return { active, inactive: rows.filter(e => !e.active), stats: orgStats(),
@@ -1608,8 +1661,13 @@ const server = http.createServer((req, res) => {
       N.checks();          // date reminders (window open, closing soon, overdue, meeting tomorrow): at most once a minute
       // changes must come from the app itself (JSON), which a form on another site cannot send with our cookie
       if (req.method !== 'GET' && !/application\/json/.test(req.headers['content-type'] || '')) return send(415, { error: 'Send JSON.' });
-      const cookies = A.parseCookies(req.headers.cookie), s = A.session(cookies);
+      const cookies = A.parseCookies(req.headers.cookie), s0 = A.session(cookies);
+      // a password sign-in ends when that password is changed or reset (the cookie carries the version it was made with)
+      const s = s0 && s0.pv != null && (!D.passwords[s0.uid] || D.passwords[s0.uid].ver !== s0.pv) ? null : s0;
       const realUser = s ? L.emp(s.uid) : null, signedIn = realUser && realUser.active ? realUser : null;
+      // signed in with a temporary password: nothing else until the person picks their own
+      if (signedIn && s.pv != null && D.passwords[s.uid].temp && !r.open && !['/api/me', '/api/password/change'].includes(url.pathname))
+        return send(403, { error: 'Choose your own password first.', code: 'PASSWORD_CHANGE' });
       // an admin "viewing as" someone gets that person's permissions; realUser stays the admin
       const asUser = signedIn && s.as && signedIn.role === 'admin' ? L.emp(s.as) : null;
       const user = asUser && asUser.active ? asUser : signedIn;

@@ -49,7 +49,28 @@ const cookie = (name, value, maxAge, secure) => `${name}=${encodeURIComponent(va
 const SESSION = 'pms_session', OAUTH = 'pms_oauth';
 // as = the employee an admin is currently viewing the app as (testing other roles)
 // keep = "Keep me signed in": 7 days; otherwise until the browser closes (at most 12 hours)
-const sessionCookie = (uid, as, secure, keep = true) => cookie(SESSION, sign({ t: 'session', uid, as: as || null, keep, exp: Date.now() + (keep ? SESSION_DAYS * 864e5 : 12 * 36e5) }), keep ? SESSION_DAYS * 86400 : null, secure);
+// pv = the password version a password sign-in was made with; changing or resetting the password ends those sessions
+const sessionCookie = (uid, as, secure, keep = true, pv = null) => cookie(SESSION, sign({ t: 'session', uid, as: as || null, keep, ...(pv != null && { pv }), exp: Date.now() + (keep ? SESSION_DAYS * 864e5 : 12 * 36e5) }), keep ? SESSION_DAYS * 86400 : null, secure);
+
+// ---------- personal passwords (every employee; the admin sets a temporary one, the person then picks their own) ----------
+// stored as scrypt hashes in D.passwords (empId -> { salt, hash, temp, ver, setAt, setBy }), never sent to the browser
+const hashPassword = p => { const salt = crypto.randomBytes(16).toString('base64url'); return { salt, hash: crypto.scryptSync(String(p), salt, 64).toString('base64url') }; };
+const verifyPassword = (rec, p) => {
+  if (!rec || !rec.hash) return false;
+  const want = Buffer.from(rec.hash, 'base64url'), got = crypto.scryptSync(String(p || ''), rec.salt, 64);
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+};
+// the rule shown to people: at least 8 characters, with a letter and a number
+const passwordProblem = p => typeof p !== 'string' || p.length < 8 ? 'Use at least 8 characters.' : p.length > 128 ? 'Use at most 128 characters.'
+  : !/[a-z]/i.test(p) || !/\d/.test(p) ? 'Use at least one letter and one number.' : '';
+// a temporary password the admin can hand over: 10 characters, no look-alikes (0/O, 1/l/I)
+const tempPassword = () => { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ', d = '23456789', all = a + d, pick = s => s[crypto.randomInt(s.length)];
+  const c = [pick(a), pick(d), ...Array.from({ length: 8 }, () => pick(all))]; for (let i = c.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [c[i], c[j]] = [c[j], c[i]]; } return c.join(''); };
+// 5 wrong passwords in a row lock that login for 15 minutes (in memory: a restart clears it)
+const FAILS = new Map(), MAX_FAILS = 5, LOCK_MS = 15 * 60e3;
+const lockedFor = key => { const f = FAILS.get(key); return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 60e3) : 0; };
+const failed = key => { const f = FAILS.get(key) || { n: 0, until: 0 }; f.n = f.until && f.until <= Date.now() ? 1 : f.n + 1; f.until = f.n >= MAX_FAILS ? Date.now() + LOCK_MS : 0; if (f.n >= MAX_FAILS) f.n = 0; FAILS.set(key, f); };
+const succeeded = key => FAILS.delete(key);
 
 // ---------- test accounts (email + shared password), only while DEMO_LOGIN is on ----------
 // The app now holds the real employee list, so a deployed server (Render sets RENDER) never uses the default password
@@ -117,5 +138,6 @@ function unseal(s) {
   } catch { return null; }
 }
 
-module.exports = { ORG_DOMAIN, google, demo, ORIGINS, ADMIN_EMAILS, DEMO_PASSWORD, showPassword, pickById, checkPassword, isOrgEmail, okOrigin, parseCookies, sessionCookie, clearSession, session, isSecure,
+module.exports = { ORG_DOMAIN, google, demo, ORIGINS, ADMIN_EMAILS, DEMO_PASSWORD, showPassword, pickById, checkPassword, isOrgEmail,
+  hashPassword, verifyPassword, passwordProblem, tempPassword, lockedFor, failed, succeeded, okOrigin, parseCookies, sessionCookie, clearSession, session, isSecure,
   authStart, clearOauth, oauthState, exchange, refresh, revoke, identity, orgAccount, seal, unseal };

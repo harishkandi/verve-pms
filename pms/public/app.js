@@ -25,6 +25,8 @@ async function apiCall(path, opts) {
   });
   const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
   if (res.status === 401 && S.me) { S.me = null; S.month = null; boot(); }
+  // signed in with a temporary password: the server allows nothing else until the person picks their own
+  if (res.status === 403 && data.code === 'PASSWORD_CHANGE' && S.me) { start(); return new Promise(() => {}); }
   if (res.status === 409 && data.code === 'SESSION_CHANGED') {
     // someone else signed in (or "View as" changed) in another tab: reload this tab for the current account
     try { sessionStorage.setItem('pmsSwitched', '1'); } catch {}
@@ -149,6 +151,7 @@ const ICON = {
   hourglass: '<path d="M6 3h12M6 21h12M7 3v4a5 5 0 0 0 10 0V3M7 21v-4a5 5 0 0 1 10 0v4"/>',
   draft: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14h6"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.1 3.9M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   lock: '<rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
   shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
@@ -347,12 +350,11 @@ function loginPage(st, err) {
     fieldErr(pass, '#lpassh', okP ? '' : 'Enter your password.');
     if (!okE) return email.focus();
     if (!okP) return pass.focus();
-    if (!st.demo) { err$.innerHTML = alert('Password sign-in is not switched on. Please use Sign in with Google below.', 'info'); return; }
     err$.innerHTML = ''; submit.disabled = true; submit.textContent = 'Signing in…';
     try { await api('/auth/password', { method: 'POST', body: { email: email.value.trim(), password: pass.value, remember: $('#lrem').checked } }); await start(); }
     catch (er) { err$.innerHTML = alert(er.message); submit.disabled = false; submit.textContent = 'Sign in'; pass.select(); }
   };
-  $('#lforgot').onclick = e => { e.preventDefault(); err$.innerHTML = alert(st.demo && st.password ? `Test accounts all use the password ${st.password}. For your Google account, use Sign in with Google.` : 'Your password is managed by your Verve Google account. To reset it, contact HR or IT.', 'info'); };
+  $('#lforgot').onclick = e => { e.preventDefault(); err$.innerHTML = alert(`${st.demo && st.password ? `Test accounts all use the password ${st.password}. ` : ''}Forgot your PMS password? Ask the PMS admin for a new temporary password. With Sign in with Google you use your Google password, which IT manages.`, 'info'); };
   $('#gsign').onclick = () => { if (st.google) location.href = `/api/auth/google/start?origin=${encodeURIComponent(location.origin)}`; };
   // a test account fills in its email and password and signs straight in
   document.querySelectorAll('.adm-row').forEach(b => b.onclick = () => {
@@ -361,6 +363,80 @@ function loginPage(st, err) {
     pass.value = st.password; $('#lform').requestSubmit();
   });
   if (!err) email.focus({ preventScroll: true });
+}
+// ---------- passwords: one form for the first sign-in with a temporary password (full page) and Change password (dialog) ----------
+// Employees › Edit: where a person stands with their PMS password (the password itself never reaches the page)
+const pwStateText = pw => !pw ? 'Not set. Signs in with Google only.' : pw.temp ? `Temporary password given ${fmtD(pw.setAt.slice(0, 10))}, not changed yet.` : `Own password since ${fmtD(pw.setAt.slice(0, 10))}.`;
+const pwField = (id, label, ac) => `<label class="fl" for="${id}"><span>${label}</span><span class="ac-field"><input id="${id}" type="password" autocomplete="${ac}" maxlength="128"><button type="button" class="ac-eye" data-eye="${id}" aria-label="Show password" title="Show password">${ico('eye')}</button></span></label><div class="ac-hint" id="${id}h"></div>`;
+const pwFormHtml = first => `<form class="pwf" novalidate><input type="email" autocomplete="username" value="${esc(S.me.email || '')}" hidden><div class="pwerr"></div>
+  ${pwField('pwcur', first ? 'Temporary password' : 'Current password', 'current-password')}
+  ${pwField('pwnew', 'New password', 'new-password')}<div class="pwrule">At least 8 characters, with a letter and a number.</div>
+  ${pwField('pwrep', 'New password again', 'new-password')}
+  <button class="ac-submit" type="submit">${first ? 'Save and continue' : 'Change password'}</button></form>`;
+function pwWire(root, first, done) {
+  const q = s => root.querySelector(s), f = q('.pwf');
+  const hint = (id, msg) => { q('#' + id).closest('.ac-field').classList.toggle('bad', !!msg); q(`#${id}h`).textContent = msg || ''; };
+  root.querySelectorAll('[data-eye]').forEach(b => b.onclick = () => {
+    const i = q('#' + b.dataset.eye), show = i.type === 'password'; i.type = show ? 'text' : 'password';
+    b.innerHTML = ico(show ? 'eyeoff' : 'eye'); b.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); b.title = b.getAttribute('aria-label'); i.focus();
+  });
+  ['pwcur', 'pwnew', 'pwrep'].forEach(id => q('#' + id).addEventListener('input', () => hint(id, '')));
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const cur = q('#pwcur').value, nw = q('#pwnew').value, rep = q('#pwrep').value;
+    // same rule as the server (auth.js passwordProblem), checked here first so mistakes show at once
+    const pr = !nw ? 'Enter a new password.' : nw.length < 8 ? 'Use at least 8 characters.' : !/[a-z]/i.test(nw) || !/\d/.test(nw) ? 'Use at least one letter and one number.' : nw === cur ? 'Pick a password that is different from the current one.' : '';
+    hint('pwcur', cur ? '' : `Enter your ${first ? 'temporary' : 'current'} password.`); hint('pwnew', pr); hint('pwrep', !pr && rep !== nw ? 'The two new passwords are not the same.' : '');
+    const bad = root.querySelector('.ac-field.bad input'); if (bad) return bad.focus();
+    const btn = q('.ac-submit'); btn.disabled = true; q('.pwerr').innerHTML = '';
+    try { await api('/password/change', { method: 'POST', body: { current: cur, next: nw } }); done(); }
+    catch (er) {
+      btn.disabled = false;
+      const id = er.data && er.data.field === 'current' ? 'pwcur' : er.data && er.data.field === 'next' ? 'pwnew' : '';
+      if (id) { hint(id, er.message); q('#' + id).select(); }
+      else q('.pwerr').innerHTML = `<div class="ac-alert err" role="alert">${ico('alert')}<span>${esc(er.message)}</span></div>`;
+    }
+  };
+}
+// first sign-in with the temporary password the admin gave: pick your own before anything else
+function passwordFirstPage() {
+  $('#root').innerHTML = `<div class="auth">${authBrand()}<main class="auth-main">${themeBtn()}<div class="auth-form">
+    <img class="auth-logo" src="verve-advisory-logo.png" alt="Verve Advisory"><h1>Choose your password</h1>
+    <p class="auth-sub">Hi ${esc(S.me.name.split(' ')[0])}, you signed in with a temporary password from the PMS admin. Pick your own password to continue.</p>
+    ${pwFormHtml(true)}<p class="ac-note"><a href="#" id="pwout">Sign out</a></p></div></main></div>`;
+  authBrandRun();
+  pwWire($('#root'), true, () => { toast('Password saved. From now on, sign in with your new password.'); start(); });
+  $('#pwout').onclick = e => { e.preventDefault(); signOut(); };
+  $('#pwcur').focus();
+}
+// admin, Employees › Set / Reset password: the server makes a temporary password, shown here once to hand over;
+// the person picks their own at the first sign-in with it
+function passwordDialog(p, done) {
+  const first = esc(p.name.split(' ')[0]);
+  if (!p.email) return toast(`${p.name} has no work email, which is their login name. Add it to the employee list first.`, 'err');
+  const m = modal(`<h2>${p.password ? 'Reset' : 'Set'} password: ${esc(p.name)}</h2><p class="small">${esc(pwStateText(p.password))}</p><div id="pwo">
+    <p>PMS makes a temporary password for ${first} to sign in with ${esc(p.email)}. At that first sign-in ${first} must choose their own password.${p.password ? ` ${first} is signed out wherever they used the old password.` : ''}</p></div>
+    <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">${ico('key')}Make temporary password</button><button class="btn" id="no">Cancel</button></div>`);
+  m.querySelector('.box').classList.add('sm');
+  m.querySelector('#no').onclick = () => m.remove();
+  m.querySelector('#ok').onclick = async () => {
+    try {
+      const r = await api('/password/set', { method: 'POST', body: { id: p.id } });
+      m.querySelector('#pwo').innerHTML = `<div class="info pwgive">Temporary password: <code>${esc(r.password)}</code> <button type="button" class="btn sm" id="pwcopy">${ico('copy')}Copy</button>
+        <div class="small">Give it to ${first} in person or on chat. It is not shown again.</div></div>`;
+      m.querySelector('#pwcopy').onclick = async () => { try { await navigator.clipboard.writeText(r.password); toast('Copied'); } catch { toast('Copy did not work. Select the password and copy it.', 'err'); } };
+      m.querySelector('#ok').remove(); const no = m.querySelector('#no'); no.textContent = 'Done'; no.classList.add('pri');
+      no.onclick = () => { m.remove(); done(); };
+    } catch (er) { m.querySelector('#pwo').innerHTML = errBox(er); }
+  };
+}
+// top bar menu › Change password
+function changePassword() {
+  const m = modal(`<h2>Change password</h2><p class="small">Other browsers where you signed in with your PMS password are signed out. Sign in with Google is not affected.</p>
+    <div class="auth-form pwm">${pwFormHtml(false)}</div><div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn" id="pwno">Cancel</button></div>`);
+  m.querySelector('#pwno').onclick = () => m.remove();
+  pwWire(m, false, () => { m.remove(); toast('Password changed'); });
+  m.querySelector('#pwcur').focus();
 }
 async function signOut() { try { await api('/auth/logout', { method: 'POST' }); } catch {} S.me = null; S.month = null; location.hash = '#/home'; boot(); }
 async function viewAs(id) { await api('/auth/view-as', { method: 'POST', body: { id } }); S.month = null; S.hteam = ''; location.hash = '#/home'; await start(); }
@@ -376,6 +452,7 @@ async function pickViewAs() {
 async function start() {
   S.me = await api('/me');
   S.month = S.month || S.me.currentMonth;
+  if (S.me.password && S.me.password.mustChange) return passwordFirstPage();
   let switched = false; try { switched = sessionStorage.getItem('pmsSwitched'); sessionStorage.removeItem('pmsSwitched'); } catch {}
   if (switched) setTimeout(() => toast(`The sign-in changed in another tab, so this tab now shows ${S.me.name}.`), 300);
   if (REDIRECT && (REDIRECT.error || REDIRECT.calendar)) { const r = REDIRECT; REDIRECT = {}; setTimeout(() => r.error ? toast(authMsg(r.error, r.email, S.me.domain), 'err') : toast('Google Calendar connected. You can now send review invites.'), 300); }
@@ -415,12 +492,14 @@ async function start() {
       <span class="tb-div"></span>
       <span class="tbm"><button type="button" class="tb-user" id="tbuser" aria-haspopup="menu" aria-expanded="false" title="Profile and sign out"><span class="tb-who"><b>${esc(S.me.name)}</b><small>${(S.me.designation || '').toLowerCase() === ROLE_LABEL[S.me.role].toLowerCase() || !S.me.designation ? esc(ROLE_LABEL[S.me.role]) : dotJoin(S.me.designation, ROLE_LABEL[S.me.role])}</small></span><span class="avatar" id="tbav">${initials(S.me.name)}</span>${CHEV}</button>
       <div class="tb-menu" id="tbmenu" role="menu" hidden>
-        <button type="button" role="menuitem" data-um="profile">${ico('idcard')}Profile information</button><hr>
+        <button type="button" role="menuitem" data-um="profile">${ico('idcard')}Profile information</button>
+        ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
     <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
   $('#root').onclick = e => {
     const g = e.target.closest('.ngrp-btn'); if (g) navOpen(g.parentNode, !g.parentNode.classList.contains('open'));
     if (e.target.closest('[data-um="out"]')) { userMenu(false); signOut(); }
+    if (e.target.closest('[data-um="pw"]')) { userMenu(false); changePassword(); }
     if (e.target.closest('[data-um="profile"]')) { userMenu(false); if (location.hash === '#/profile') route(); else location.hash = '#/profile'; }
     if (e.target.closest('#asbtn')) pickViewAs().catch(er => toast(er.message, 'err'));
     if (e.target.closest('#asback')) viewAs(null).catch(er => toast(er.message, 'err'));
@@ -2029,7 +2108,7 @@ pages.employees = async (v, arg, grp) => {
   <td>${cell(e, 'managerId', mgrOpts(e), e.manager || 'No manager')}${e.pending ? `<div class="small" title="Planned: the current manager finishes this month's review">Moves to ${esc(e.pending.to)} from ${esc(e.pending.from)}</div>` : ''}</td>
   ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
   <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
-  <td><span class="acts"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a></span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
+  <td><span class="acts col"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a>${tab === 'active' ? `<button class="btn sm" data-a="pw" data-id="${e.id}" title="${e.password ? 'Reset' : 'Set'} ${esc(e.name.split(' ')[0])}'s PMS password. ${esc(pwStateText(e.password))}">${ico('key')}Password</button>` : ''}</span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
   <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Roles follow the reporting line: someone who gets a first report becomes a manager by themselves. The employee sheet is the master copy: a reporting change made here is replaced at the next import of the sheet unless the sheet has it too. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
   v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); showResults(v, S.eq); }); } };
   const emailOk = s => !s || s.toLowerCase().endsWith(dom.toLowerCase()) && /^[^@\s]+@[^@\s]+$/.test(s);
@@ -2082,6 +2161,7 @@ pages.employees = async (v, arg, grp) => {
       const m = modal(`<h2>Edit ${esc(p.name)}</h2><p class="small">These details show on ${esc(p.name.split(' ')[0])}'s Profile information.</p><div id="er"></div>
       <label class="f">Full name <i>*</i></label><input id="u_name" style="width:100%" value="${esc(p.name)}">
       <div class="row" style="margin:0;align-items:flex-end"><div><label class="f">Employee code</label><input id="u_code" placeholder="${esc(setK('code') ? '' : 'Not set yet')}" value="${esc(setK('code') ? p.code : '')}"></div>
+    if (a === 'pw') return passwordDialog(d.active.find(x => String(x.id) === t.dataset.id), () => pages.employees(v));
       <div><label class="f">Date of joining</label><input id="u_joined" type="date" value="${esc(setK('joined') ? p.joined : '')}"></div></div>
       <label class="f">Work email</label><input id="u_email" type="email" autocomplete="off" style="width:100%" placeholder="name${esc(dom)}" value="${esc(p.email || '')}">
       <div class="small">Used to sign in with Google and to receive review invites. Must end with ${esc(dom)}.</div>

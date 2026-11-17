@@ -16,6 +16,17 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   On Render (`RENDER` env, set by Render) the app holds real data, so: no sign-in by id (`/api/auth/demo` = 403), the
   test-account password is never shown, and it must come from a `DEMO_PASSWORD` env var (no default; unset = password
   sign-in off). Local runs keep the default `Verve@123` and the id picker.
+- Personal passwords (Harish, 2026-11-17): everyone can also sign in with work email + their own PMS password, next to
+  Google. The admin gives a temporary one from Employees › Active, "Password" button on the row (`passwordDialog`,
+  `POST /api/password/set`; server-made, shown once; needs a work email; a reset ends the person's password sessions);
+  the Edit dialog is unreachable since Vidya's clean-up (b8acc89), so it is not there. First sign-in with a temporary
+  password: the server answers 403 `PASSWORD_CHANGE` to everything but `/api/me` and `/api/password/change` until
+  the person picks their own (`passwordFirstPage`). Change password = top bar user menu (`changePassword`, not in View
+  as). One form for both (`pwFormHtml` / `pwWire`). Rule: 8+ characters, a letter and a number (`passwordProblem` in
+  `auth.js`, repeated in `pwWire`). Stored as scrypt hashes in `D.passwords` (own container in `KEYS`, never spread
+  into employee objects or sent to the page); the session cookie carries `pv` (password version), so a change or
+  reset signs out that person's other password sessions (Google sessions are not affected). 5 wrong tries lock that
+  email for 15 minutes (in memory). No email sending yet, so "Forgot password?" says to ask the PMS admin.
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules).
