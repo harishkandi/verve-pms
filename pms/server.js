@@ -283,7 +283,11 @@ route('GET', '/api/home', ({ user, q }) => {
   const mgr = user.role !== 'employee';
   const all = L.reportRows(user, month);
   const rows = q.team ? all.filter(r => r.team === q.team) : all;
-  const teams = windowGroups(all, month).map(g => {
+  // one entry per team on the dashboard: a team whose manager has their own review window forms a second window group
+  // (e.g. Accounts under Laxmi), which would otherwise show the team twice
+  const byTeam = new Map();
+  for (const g of windowGroups(all, month)) { const t = byTeam.get(g.team); if (!t) byTeam.set(g.team, { ...g, label: teamLabel(g.team), rows: [...g.rows] }); else t.rows.push(...g.rows); }
+  const teams = [...byTeam.values()].map(g => {
     const tr = g.rows;
     return { key: g.key, team: g.team, label: g.label, managerId: g.managerId, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: g.window, startDay: g.days.start, endDay: g.days.end, ...windowState(g.window) };
   });
