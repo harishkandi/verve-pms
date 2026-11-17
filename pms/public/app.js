@@ -1130,7 +1130,7 @@ function drawForm(v, errors) {
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="card opf-card"><div class="opf-band"><span>KRA · ${esc(FP.fy || '')}</span><b>${esc(monthLabel(S.month))}</b></div>
-    <div class="opf-emp"><div><small>Employee</small><b>${esc(e.name)}</b>${e.designation ? `<span>${esc(e.designation)}</span>` : ''}</div><div><small>Reporting manager</small><b>${m ? esc(m.name) : 'Not assigned yet'}</b></div>
+    <div class="opf-emp"><div><small>Employee</small><b>${esc(e.name)}</b>${e.designation ? `<span>${esc(e.designation)}</span>` : ''}</div>${m ? `<div><small>Reporting manager</small><b>${esc(m.name)}</b></div>` : '' /* top-level directors have nobody above them */}
       <div><small>Review date <i>*</i></small><input type="date" id="reviewDate" class="${noDate ? 'err' : ''}" value="${esc(f.reviewDate)}" ${p.editSelf || p.editManager ? '' : 'disabled'} aria-label="Review date (required)"></div>
       <div class="opf-ctl">${p.copyKras ? '<button type="button" class="btn sm" id="copyk">Copy KPI from last month</button>' : ''}<button type="button" class="btn sm" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button></div></div>
     ${noDate ? '<div class="warn">Review date is required. Enter it before submitting the form.</div>' : ''}
@@ -1372,9 +1372,9 @@ pages.team = async (v, arg) => {
   const crumbs = d.me ? `PMS › My team${list ? ' › Reporting Manager' : ''}`
     : ['<a href="#/team">My team</a>', ...d.path.filter(x => x.id !== S.me.id).map(x => `<a href="#/team/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ');
   const up = d.path.filter(x => x.id !== S.me.id), back = up.length ? `#/team/${up[up.length - 1].id}` : '#/team';
-  const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}<a class="btn sm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${ico('file')}Open form</a></span>`;
+  const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}</span>`;
   const count = r => r.direct ? `<a class="btn sm" href="#/team/${r.id}" title="Open ${esc(r.name)}'s team">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
-  const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${r.direct ? `<a class="nm" href="#/team/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`}<div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
+  const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${list ? (r.direct ? `<a class="nm" href="#/team/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`) : `<a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${esc(r.name)}</a>`}<div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
   const rows = list ? d.managers : d.members;
   const table = list
     ? `<tr><th>Sr. no</th><th>Name</th><th>Email</th><th>Designation</th><th>Reports to</th><th>Employees</th><th>Team report</th></tr>
@@ -1391,7 +1391,7 @@ pages.team = async (v, arg) => {
   ${countTiles(c)}
   <h2>${list ? `Reporting Manager (${rows.length})` : `${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})`}</h2>
   <div class="tablewrap"><table>${table}<tr id="tnone" hidden><td colspan="9" class="small">No one here matches your search.</td></tr></table></div>
-  <p class="small">${list ? 'Every manager and team lead under you, at every level. Click the Employees count to open their team.' : 'Click a name or the Employees count to open that person\'s team; click a review status to open the form.'}</p>`;
+  <p class="small">${list ? 'Every manager and team lead under you, at every level. Click the Employees count to open their team.' : 'Click a name or review status to open that person\'s form; click the Employees count to open their team.'}</p>`;
   onMonth(() => pages.team(v, arg));
   const filter = () => {
     const s = (S.tq || '').trim().toLowerCase(); let n = 0;
