@@ -351,8 +351,21 @@ label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px
 .sqbtn:focus-visible{outline:2px solid var(--vr-navy-600);outline-offset:2px}
 .sqbtn svg{width:16px;height:16px}
 /* Scheduling: how many times a review moved */
-.rcount{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:9999px;background:var(--vr-warn-50);font-size:12px;font-weight:700;color:var(--vr-warn-700);font-variant-numeric:tabular-nums}
-.rcount.z{background:var(--vr-n-100);color:var(--vr-n-500)}
+.slot{display:inline-flex;align-items:center;gap:7px;padding:3px 3px 3px 10px;border:1px solid var(--vr-pms-blue);border-radius:9999px;background:var(--vr-pms-blue-50);font-size:13px;line-height:20px;font-weight:600;color:var(--vr-navy-800);white-space:nowrap}
+.slot.np{padding-right:12px}
+.slot>svg{width:14px;height:14px}
+.slot i{font-style:normal;font-weight:400;color:var(--vr-n-500)}
+.slot em{font-style:normal;font-weight:400;color:var(--vr-n-600)}
+.slot button{display:grid;place-items:center;width:26px;height:26px;padding:0;border:0;border-radius:9999px;background:var(--vr-card);color:var(--vr-navy-800);cursor:pointer;transition:background-color .15s}
+.slot button:hover:not(:disabled){background:var(--vr-pms-blue)}
+.slot button:disabled{opacity:.5;cursor:default}
+.slot button svg{width:13px;height:13px}
+.calnote{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}.calnote>svg{width:16px;height:16px;flex:none}.calnote>span{flex:1;min-width:220px}
+.st{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:9999px;font-size:12px;line-height:18px;font-weight:600;white-space:nowrap}
+.st svg{width:12px;height:12px}
+.st.no{background:var(--vr-pms-field);color:var(--vr-n-600)}
+.st.ok{background:var(--vr-green-50);color:var(--vr-green-700)}
+.st.mv{background:var(--vr-warn-50);color:var(--vr-warn-700);cursor:help}
 .dd-head{position:sticky;top:-4px;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:6px;margin:-4px -4px 4px;padding:8px;border-bottom:1px solid var(--vr-n-200);background:var(--vr-card);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
 .dd-nav{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--vr-n-300);border-radius:6px;background:none;color:var(--vr-n-600);cursor:pointer}
 .dd-nav svg{width:12px;height:12px}.dd-nav:hover:not(:disabled){background:var(--vr-n-50)}.dd-nav:disabled{opacity:.35;cursor:default}
@@ -364,6 +377,7 @@ label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px}
 .sp{flex:1}
 .acts{display:flex;flex:none;gap:6px}
+.acts.col{flex-direction:column;align-items:stretch} /* Employees: Monthly report above Set password, so the table fits */
 .tiles,.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:20px}
 /* stat tile: stripe on top, uppercase label, big tabular value, optional sub line */
 .tile,.stat{--c:var(--vr-accent-navy);--v:var(--vr-brand-text);position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;padding:26px 20px 20px;border:1px solid var(--vr-n-200);border-radius:16px;background:var(--vr-card);box-shadow:var(--vr-shadow);text-align:left;font:inherit;color:inherit}
@@ -376,7 +390,6 @@ label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px
 .tile.a,.stat.a{--c:var(--vr-warn-500);--v:var(--vr-warn-500)}
 .tile.r,.stat.r{--c:var(--vr-danger-500);--v:var(--vr-danger-500)}
 /* the big faded corner icon was clipped by the card edge and ran under the text: not shown (classic look) */
-.acts.col{flex-direction:column;align-items:stretch} /* Employees: Monthly report above Set password, so the table fits */
 .tile .wm,.stat .wm{display:none;position:absolute;right:-6px;bottom:-10px;color:var(--c);opacity:.08;pointer-events:none;transition:opacity .15s}
 .tile .wm svg,.stat .wm svg{width:72px;height:72px;stroke-width:1.4}
 .tile:hover .wm,.stat:hover .wm{opacity:.16}
@@ -939,6 +952,12 @@ td table tr:hover>td{background:transparent}
 .ac-alert svg{width:16px;height:16px;margin-top:2px}
 .ac-alert.err{border-color:var(--vr-danger-200);background:var(--vr-danger-50);color:var(--vr-danger-700)}
 .ac-alert.info{border-color:var(--vr-navy-100);background:var(--vr-navy-50);color:var(--vr-info-text)}
+/* passwords: first sign-in page and the Change password dialog share one form; the admin's hand-over box in Employees › Edit */
+.pwrule{margin-top:4px;font-size:12px;color:var(--vr-n-500)}
+.auth-form.pwm{max-width:none}.pwm .fl:first-of-type{margin-top:8px}.pwm .ac-submit{margin-top:20px}
+.auth-form .ac-note a{font-weight:600;color:var(--vr-brand-text);text-decoration:none}.auth-form .ac-note a:hover{text-decoration:underline}
+.pwgive code{padding:2px 8px;border-radius:6px;background:var(--vr-card);font-size:14px;font-weight:700;letter-spacing:.04em;user-select:all}
+.pwgive .small{margin-top:6px}
 .auth-demo{margin-top:24px;padding:12px;border:1px dashed var(--vr-n-300);border-radius:12px;background:var(--vr-n-50)}
 .adm-h{display:flex;align-items:center;gap:8px;padding:0 4px 8px;font-size:12px;color:var(--vr-n-800)}
 .adm-h svg{width:14px;height:14px;color:var(--vr-warn-600)}
@@ -951,12 +970,6 @@ td table tr:hover>td{background:transparent}
 .adm-row svg{width:14px;height:14px;color:var(--vr-n-400)}
 .auth-demo p{margin:6px 4px 0;font-size:11px;color:var(--vr-n-500)}
 .auth-legal{margin-top:24px;text-align:center;font-size:12px;color:var(--vr-n-500)}
-/* passwords: first sign-in page and the Change password dialog share one form; the admin's hand-over box in Employees › Edit */
-.pwrule{margin-top:4px;font-size:12px;color:var(--vr-n-500)}
-.auth-form.pwm{max-width:none}.pwm .fl:first-of-type{margin-top:8px}.pwm .ac-submit{margin-top:20px}
-.auth-form .ac-note a{font-weight:600;color:var(--vr-brand-text);text-decoration:none}.auth-form .ac-note a:hover{text-decoration:underline}
-.pwgive code{padding:2px 8px;border-radius:6px;background:var(--vr-card);font-size:14px;font-weight:700;letter-spacing:.04em;user-select:all}
-.pwgive .small{margin-top:6px}
 .login{max-width:480px;margin:10vh auto;padding:0 16px}
 
 /* ---- login left panel: navy, drifting glows, dot grid, floating review preview ---- */
