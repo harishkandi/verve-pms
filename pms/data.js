@@ -33,6 +33,8 @@ const config = {
     Sales: { start: 25, end: 31 },
     HR: { start: 25, end: 30 },
     Directors: { start: 25, end: 30 },
+    Accounts: { start: 10, end: 15 },    // 2026-11-17: Accounts reviews run 10th to 15th, Infrabeat 15th to 20th
+    Infrabeat: { start: 15, end: 20 },
   },
   // a manager's whole team can have its own window: { <manager id>: { start, end } } (set from the employee list or the Scheduling page)
   managerWindows: {},
@@ -188,6 +190,12 @@ function migrate() {
   if (!config.windowsV2) {
     for (const [t, w] of Object.entries(config.windows)) if (w.start === 25 && (w.end === 31 || w.end === 30)) config.windows[t] = { start: 25, end: 2 };
     config.windowsV2 = true;
+  }
+  // one-off (2026-11-17): the whole Accounts team is reviewed 10th to 15th and Infrabeat 15th to 20th; a manager window set earlier for Laxmi / Ganesh is replaced
+  if (!config.windowsV3) {
+    config.windows.Accounts = { start: 10, end: 15 }; config.windows.Infrabeat = { start: 15, end: 20 };
+    for (const [id, w] of Object.entries(config.managerWindows)) { const m = employees.find(e => String(e.id) === id); if (m && ['Accounts', 'Infrabeat'].includes(m.team) && ((w.start === 10 && w.end === 15) || (w.start === 15 && w.end === 20))) delete config.managerWindows[id]; }
+    config.windowsV3 = true;
   }
   // once the real list is in, windows of teams no active person is in go (the old demo teams, and old department names
   // like "HR & Admin" that only inactive people from the earlier list still carry)
