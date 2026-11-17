@@ -39,8 +39,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   cross-checked against the reporting chain (warning on mismatch); the app takes the director from the chain.
   Review windows follow the departments (import and `migrate()` drop windows of teams no ACTIVE person is in, so old
   department names that only inactive people still carry, e.g. "HR & Admin" next to "HR", go; new ones get 25th to month end).
-  Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Without emails nobody but
-  `ADMIN_EMAILS` can use Google sign-in (admins use "View as"). Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
+  Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Work emails were filled in the app
+  on 2026-11-17 (Harish: firstname.lastname@verveadvisory.com, first + last word of the name; local data and staging),
+  except Harish's own employee record, whose address the separate admin record already owns. The import keeps an
+  existing email when the sheet has none. Admins use "View as". Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
   Dashboard card filters: Harish picked option A of the mock-ups (2026-11-17; he asked for "A + C", A first, C = a
   page-wide "Filters" drawer with removable chips is still to be decided). A "Filter · N" pill on Review status (small
@@ -205,8 +207,12 @@ read it back through Vercel, then restore it. Different values = Vercel is runni
 - Harish works on local `pms/harish` and deploys with `git push personal HEAD:main`.
 - Vidya works on `origin/feature/pms`. To take her changes: `git fetch origin && git merge origin/feature/pms`,
   test locally, then push to `personal`.
-- Push to `origin` only after Harish confirms staging is good: push `pms/harish` and open/update the PR into
-  `feature/pms` (PR #1). Never push directly to `feature/pms` again.
+- Every finished update goes to BOTH (Harish, 2026-11-17): `git push personal HEAD:main` (staging) and
+  `git push origin pms/harish` (updates PR #1 into `feature/pms`). Vidya also pushes to `origin/pms/harish`: fetch and
+  merge it first. Never push directly to `feature/pms`. Several Claude sessions may share this folder: check
+  `git status` before committing and tell the others.
+- Staging data changes (e.g. the work emails, 2026-11-17) can be written straight into the Neon `pms_state` row, but
+  Render keeps the state in memory and saves its whole copy back: restart/redeploy Render right after, or it is overwritten.
 - Vercel Hobby blocks deploys of non-owner commits from private repos, which is why staging runs from the personal repo.
   The org admin login (adminsoftware-1151) is not available.
 
