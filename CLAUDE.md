@@ -52,7 +52,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   department names that only inactive people still carry, e.g. "HR & Admin" next to "HR", go; new ones get 25th to month end).
   Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Work emails were filled in the app
   on 2026-11-17 (Harish: firstname.lastname@verveadvisory.com, first + last word of the name; local data and staging),
-  except Harish's own employee record, whose address the separate admin record already owns. The import keeps an
+  except Harish's own employee record, whose address the separate admin record already owned (local copy fixed
+  2026-11-17: address moved to V011, admin record A078 switched off, ADMIN_EMAILS emptied in `pms/.env`; locally admin work
+  uses the admin@ test login). Test logins manager@ / employee@ fall back to the first real manager / reviewed employee. The import keeps an
   existing email when the sheet has none. Admins use "View as". Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
   Dashboard card filters: Harish picked option A of the mock-ups (2026-11-17; he asked for "A + C", A first, C = a
