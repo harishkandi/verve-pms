@@ -420,7 +420,6 @@ table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;line-h
 th{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.15);background:var(--vr-thead);text-align:left;font-size:12px;line-height:16px;font-weight:600;color:var(--vr-thead-text);white-space:nowrap}
 th button:hover,th button:hover *{color:#fff}
 td{padding:8px 12px;border-bottom:1px solid var(--vr-n-100);vertical-align:middle}
-.krat td{vertical-align:top}
 /* notifications: bell + panel in the top bar */
 .tbn{position:relative;display:flex}
 .tb-bell{position:relative;padding:8px;border-radius:9999px}.tb-bell svg{width:20px;height:20px}
@@ -441,7 +440,6 @@ td{padding:8px 12px;border-bottom:1px solid var(--vr-n-100);vertical-align:middl
 .nt-t{flex:1;min-width:0}.nt-t small{display:block;margin-top:2px;color:var(--vr-n-500);font-size:11px}
 .nt-dot{flex:none;width:8px;height:8px;margin-top:6px;border-radius:9999px;background:var(--vr-navy-600)}
 .nt-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:28px 14px;color:var(--vr-n-500);font-size:13px}.nt-empty svg{width:22px;height:22px}
-.ratebox{width:100%;border-collapse:collapse}.ratebox td{padding:10px 14px;border-bottom:1px solid var(--vr-n-200)}.ratebox tr.mon td{background:var(--vr-danger-50);text-align:center;font-size:15px}.ratebox tr.mon td:first-child{text-align:left;font-size:inherit}
 tr:last-child>td{border-bottom:0}
 tbody tr:hover>td{background:color-mix(in srgb,var(--vr-n-50) 60%,transparent)}
 td.nr,th.nr{text-align:right}
@@ -451,7 +449,6 @@ td table{border:1px solid var(--vr-n-200);border-radius:8px;overflow:hidden}
 td table th{padding:6px 8px;border-bottom:1px solid var(--vr-n-200);background:var(--vr-n-50);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500);white-space:normal}
 td table td{padding:6px 8px}
 td table tr:hover>td{background:transparent}
-.krat{table-layout:fixed}.krat th{white-space:normal}
 
 /* =====================================================================
    Badges, alerts, avatars, switch
@@ -516,9 +513,9 @@ td table tr:hover>td{background:transparent}
    ===================================================================== */
 .seg{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:16px}
 .seg .seg-ind{display:none}
-.chip,.seg a,.tabs button{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:8px;background:none;font-size:12px;line-height:16px;font-weight:500;color:var(--vr-n-600);cursor:pointer;text-decoration:none!important;transition:background-color .15s,color .15s}
-.chip:hover,.seg a:hover,.tabs button:hover{background:var(--vr-n-100)}
-.chip.on,.seg a.on,.tabs button.on{background:var(--vr-navy-800);font-weight:600;color:#fff}
+.chip,.seg a{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:8px;background:none;font-size:12px;line-height:16px;font-weight:500;color:var(--vr-n-600);cursor:pointer;text-decoration:none!important;transition:background-color .15s,color .15s}
+.chip:hover,.seg a:hover{background:var(--vr-n-100)}
+.chip.on,.seg a.on{background:var(--vr-navy-800);font-weight:600;color:#fff}
 /* department icon (teamIco): its own colour; white on the selected (dark) chip */
 .tico{display:inline-flex;flex:none}.tico svg{width:14px;height:14px}
 .tnm{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -531,7 +528,6 @@ td table tr:hover>td{background:transparent}
 .seg.one{flex-wrap:nowrap;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:thin}
 .seg.one .chip{flex:none;white-space:nowrap}
 /* the monthly form's section tabs stay under the top bar while scrolling */
-.tabs{position:sticky;top:-24px;z-index:5;display:flex;gap:4px;margin:0 -24px;padding:12px 24px 8px;background:var(--vr-n-100)}
 
 /* =====================================================================
    Modal and toast
@@ -549,8 +545,6 @@ td table tr:hover>td{background:transparent}
 .fsum-big>div>b{font-size:14px;color:var(--vr-n-900)}
 .fsum .tablewrap{box-shadow:none}
 /* monthly form: employee and reporting manager, two plain lines with a rule under them */
-.empmeta{flex:1;min-width:0;padding-bottom:14px;border-bottom:1px solid var(--vr-n-200);font-size:16px;line-height:28px;color:var(--vr-n-700)}
-.empmeta b{font-weight:700;color:var(--vr-n-900)}
 /* Questionnaire: rows reorder by drag-and-drop from anywhere on the row; the grip is the visible handle and keyboard target */
 .qtab tr[data-q]{cursor:grab}
 .qtab tr[data-q] button:not(.grip),.qtab tr[data-q] a{cursor:pointer}
@@ -658,7 +652,7 @@ td table tr:hover>td{background:transparent}
 .ask.danger>i{background:var(--vr-danger-50);color:var(--vr-danger-600)}
 .ask p{margin:0;font-size:14px;color:var(--vr-n-600);overflow-wrap:anywhere}
 .toast{position:fixed;top:16px;left:50%;z-index:60;display:flex;align-items:center;gap:8px;max-width:min(560px,calc(100vw - 32px));padding:10px 14px;transform:translateX(-50%);border:1px solid;border-radius:12px;font-size:14px;font-weight:500;box-shadow:var(--vr-shadow-lg);transition:opacity .2s}
-.toast.t-ok{border-color:var(--vr-success-200);background:var(--vr-success-50);color:var(--vr-success-800)}
+.toast.t-ok{border-color:var(--vr-green-200);background:var(--vr-green-50);color:var(--vr-green-700)} /* green, Harish 2026-11-16 */
 .toast.t-err{border-color:var(--vr-danger-200);background:var(--vr-danger-50);color:var(--vr-danger-700)}
 .toast .ti{display:grid;place-items:center;width:18px;height:18px;flex:none;border-radius:9999px;background:currentColor;font-size:11px;font-weight:700}
 .toast .ti b{color:var(--vr-card)}
@@ -686,8 +680,6 @@ td table tr:hover>td{background:transparent}
 .kreq{background:var(--vr-purple-50);border:1px solid var(--vr-purple-100);border-left:5px solid var(--vr-purple-600);border-radius:12px;padding:14px 18px;margin-bottom:16px;box-shadow:var(--vr-shadow)}
 .kreq .kh{display:flex;align-items:center;gap:10px;color:var(--vr-purple-700);margin-bottom:6px}.kreq .kh small{color:var(--vr-n-600)}
 .kreq .kr{display:flex;align-items:center;gap:12px;background:var(--vr-card);border-radius:10px;padding:10px 14px;margin-top:8px;flex-wrap:wrap}
-.btn.kcopy{background:var(--vr-success-500);border-color:var(--vr-success-600);color:#fff}.btn.kcopy:hover{background:var(--vr-success-600)}
-.btn.kask{background:var(--vr-purple-600);border-color:var(--vr-purple-700);color:#fff}.btn.kask:hover{background:var(--vr-purple-700)}
 .kreq .kh svg{width:18px;height:18px;flex:none}.kreq .btn svg{width:14px;height:14px}
 .kreq .who{display:flex;flex-direction:column}.kreq .who small{color:var(--vr-n-600)}.kreq .sp{flex:1}
 .wgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;margin-bottom:16px}
@@ -787,10 +779,6 @@ td table tr:hover>td{background:transparent}
 /* =====================================================================
    Monthly form
    ===================================================================== */
-.formhead{padding:10px 16px;border-radius:12px;background:var(--vr-sidebar);text-align:center;font-size:14px;font-weight:600;letter-spacing:.02em;color:#fff}
-.kra{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:28px 0 8px;font-size:18px;line-height:28px;font-weight:700;color:var(--vr-n-900);scroll-margin-top:60px}
-.kra span{font-size:14px;font-weight:400;color:var(--vr-n-500)}
-.kra.qa{margin-bottom:12px}
 .mail{padding:20px;border:1px solid var(--vr-n-200);border-radius:16px;background:var(--vr-card);box-shadow:var(--vr-shadow)}
 .mail h4{margin:14px 0 4px;font-size:14px;font-weight:600;color:var(--vr-n-900)}
 .mail ul{margin:0;padding-left:20px}.mail li.hot{font-weight:600;color:var(--vr-danger-600)}
@@ -1010,7 +998,7 @@ td table tr:hover>td{background:transparent}
    Print
    ===================================================================== */
 @media print{
-  .side,.topbar,.ibtn,.tabs,.btn,.toast{display:none!important}
+  .side,.topbar,.ibtn,.btn,.toast{display:none!important}
   #app{display:block;height:auto;overflow:visible}#main{overflow:visible;padding:0}
   body{background:#fff}.tablewrap,.card,.m{box-shadow:none}
 }
@@ -1021,3 +1009,54 @@ td table tr:hover>td{background:transparent}
 <script src="app.js"></script>
 </body>
 </html>
+/* Monthly form (.opf): the old PMS portal's order of sections (managers' review, 2026-11-16) drawn in the app's own style
+   (Harish, 2026-11-17: "our app's style, same layout", compact). KRA ratings are tinted by value: 75+ green, 50-74
+   yellow, 25-49 orange, 24 and below red (yellow has its own tokens, the brief has none). */
+:root{--vr-rate-y-50:#fdf8dc;--vr-rate-y-200:#efe08a;--vr-rate-y-800:#6b5a06}
+.dark{--vr-rate-y-50:#2e2a12;--vr-rate-y-200:#5c5220;--vr-rate-y-800:#ede08f}
+.opf{font-size:14px;line-height:20px}
+.opf-top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--vr-n-200)}
+.opf-top h1{font-size:22px;line-height:28px}
+.opf-top .crumb{margin-top:2px;font-size:13px}
+.opf-bar{margin-bottom:12px}
+.opf-bar select{min-width:150px}
+.opf-card{padding:0;overflow:hidden}
+.opf-band{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 16px;padding:10px 18px;background:var(--vr-sidebar);font-size:13px;line-height:20px;color:var(--vr-thead-text)}
+.opf-band b{font-size:14px;font-weight:600;color:#fff}
+.opf-emp{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 32px;padding:14px 18px}
+.opf-emp>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.opf-emp small{font-size:11px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--vr-n-500)}
+.opf-emp small i{font-style:normal;color:var(--vr-danger-600)}
+.opf-emp b{font-size:14px;font-weight:600;color:var(--vr-n-900)}
+.opf-emp span{font-size:12px;line-height:16px;color:var(--vr-n-500)}
+.opf-emp input[type=date]{min-height:32px;padding-top:5px;padding-bottom:5px;font-size:13px}
+.opf-emp .opf-ctl{flex-direction:row;flex-wrap:wrap;gap:8px;margin-left:auto}
+.opf-card>.warn{margin:0 18px 14px}
+.opf-sec{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:22px 0 8px;scroll-margin-top:12px}
+.opf-sec h3{margin:0;font-size:16px;line-height:24px;font-weight:700;color:var(--vr-n-900)}
+.opf-desc{font-size:13px;color:var(--vr-n-500)}
+.opf-w{display:inline-flex;align-items:center;gap:6px;padding:2px 4px 2px 10px;border:1px solid var(--vr-n-200);border-radius:9999px;background:var(--vr-card);font-size:12px;line-height:20px;color:var(--vr-n-600)}
+.opf-w b{font-weight:700;color:var(--vr-n-900)}
+.opf-w .ibtn{padding:3px}.opf-w .ibtn svg{width:14px;height:14px}
+.opf-w input{width:64px;padding:1px 6px;font-size:12px;line-height:18px}
+.opf-fold svg{width:18px;height:18px;transition:transform .15s}
+.opf-sec.shut .opf-fold svg{transform:rotate(-90deg)}
+.opf-t{table-layout:fixed;font-size:13px;line-height:18px}
+.opf-t th{white-space:normal}
+.opf-t td{vertical-align:top}
+.opf-t tr.sub>td{white-space:nowrap}
+.opf-t.kt{min-width:960px}
+.opf-t textarea{min-height:36px;padding:6px 8px;font-size:13px;line-height:18px}
+.opf-t input.num,.opf-t select.num{width:100%;max-width:84px;padding-top:5px;padding-bottom:5px;font-size:13px}
+.opf-no{display:inline-flex;align-items:center;gap:2px}
+.opf-t select.num.r-g{border-color:var(--vr-green-200);background-color:var(--vr-green-50);color:var(--vr-green-700)}
+.opf-t select.num.r-y{border-color:var(--vr-rate-y-200);background-color:var(--vr-rate-y-50);color:var(--vr-rate-y-800)}
+.opf-t select.num.r-o{border-color:var(--vr-warn-200);background-color:var(--vr-warn-50);color:var(--vr-warn-700)}
+.opf-t select.num.r-r{border-color:var(--vr-danger-200);background-color:var(--vr-danger-50);color:var(--vr-danger-700)}
+.opf-t td table{table-layout:fixed}
+.opf-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.opf-rate table{font-size:13px}
+.opf-rate tr.mon>td{background:var(--vr-navy-50);color:var(--vr-n-900)}
+.opf-rate tr.mon td:last-child{text-align:center;font-size:14px}
+.opf-end{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:18px}
+@media (max-width:760px){.opf-emp{gap:12px 20px}.opf-emp .opf-ctl{margin-left:0}.opf-bar select{min-width:0;flex:1}}

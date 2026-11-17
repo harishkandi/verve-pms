@@ -37,13 +37,25 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Managers not on the list become top-level directors (not reviewed). Role is derived: no manager = director, has
   reports = manager, else employee (designation is shown, not used for permissions). The Director column is only
   cross-checked against the reporting chain (warning on mismatch); the app takes the director from the chain.
-  Review windows follow the departments (import drops windows of teams nobody is in, new ones get 25th to month end).
+  Review windows follow the departments (import and `migrate()` drop windows of teams no ACTIVE person is in, so old
+  department names that only inactive people still carry, e.g. "HR & Admin" next to "HR", go; new ones get 25th to month end).
   Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Without emails nobody but
   `ADMIN_EMAILS` can use Google sign-in (admins use "View as"). Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
-  and the chart "submitted" colour (Harish asked for green switches, 2026-11-12). Theme button and the user menu
+  and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"
+  etc., `.toast.t-ok`, 2026-11-16). The monthly form (`drawForm`, CSS `.opf*`) keeps the old PMS portal's ORDER
+  (managers' review meeting 2026-11-16) but since 2026-11-17 is drawn in the app's own style, compact (Harish: "our app's
+  style, same layout"; the copy of the old portal's colours/bars looked dated and too zoomed): title "Monthly Reporting" +
+  crumb, month / year / View Question-Answer, a card with a navy "KRA · FY | month" band and the employee details
+  (review date, Copy KPI / Export KPI), then Operational / Process / People (heading + description, "Weightage of KRA"
+  pill with pencil, fold arrow `folded`, table with Totals row, Add sub-KRA / Save; save asks "Are you sure? You want to
+  add all these KPI?", then "Added! Your KPI has been added."), the Rating table (`ratingBox`: reviewers/admins see it once
+  every rating is in, the employee only after submit), Question-Answers (Self/Manager/Remark heading only above the first
+  rated question), Back to top, "Save Final Reporting" (= Submit review). KRA ratings (self and manager) are tinted by
+  value (`rateCol`): 75+ green, 50-74 yellow (`--vr-rate-y-*`), 25-49 orange (warn), 24 and below red (danger). The
+  employee's "Request KRA change" button is titled "Allow to add new KPI" (managers: only the title changes). Theme button and the user menu
   live in the top bar: clicking the name/avatar opens a small menu (same look as the other dropdowns) with Profile
   information and Sign out. Profile information is a page, not a popup (`#/profile`, `pages.profile`, `GET /api/profile`):
   hero + Work details card (code, email, designation, department, role, joining date, review window, reports) +
