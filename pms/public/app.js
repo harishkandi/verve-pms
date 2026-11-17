@@ -785,14 +785,118 @@ let lastHome = {};
 // decorative half circle at the right end of the navy banner
 const HALO = '<i class="halo" aria-hidden="true"><i></i></i>';
 // Review quality widget: facts the status cards do not show
-function qualityBody(h, c) {
-  const row = (icon, cls, label, n, sub) => `<div class="qrow ${cls}">${ico(icon)}<span>${label}<small>${sub}</small></span><b>${n}</b></div>`;
-  return `<div class="mb quality"><div class="qbig"><b class="rt ${rateCls(h.avgRating)}">${pc(h.avgRating)}</b><span>Average monthly rating<small>${h.rated ? `${h.rated} submitted review${h.rated === 1 ? '' : 's'} · out of 100%` : 'Shows once reviews are submitted'}</small></span></div>
-    ${row('calcheck', 'g', 'Held on time', h.onTime, `${pctOf(h.onTime, h.held)}% of ${h.held} held`)}
-    ${row('clock', 'r', 'Held late', h.late, 'After the review window')}
-    ${row('calendar', 'a', 'Rescheduled', h.rescheduled, h.moves ? `${h.moves} date change${h.moves === 1 ? '' : 's'} in all` : 'No date changes')}
-    ${row('alert', 'b', 'Forms with flags', h.flagged, `of ${c.scheduled} scheduled`)}</div>`;
+// p = the period before (card filter "Compare"): its value shows small next to each number, e.g. "Oct 7"
+function qualityBody(h, c, p) {
+  const was = v => p ? `<em class="was" title="${esc(p.label)}">${esc(p.short)} ${v}</em>` : '';
+  const row = (icon, cls, label, n, sub, k) => `<div class="qrow ${cls}">${ico(icon)}<span>${label}<small>${sub}</small></span>${p ? was(p.health[k]) : ''}<b>${n}</b></div>`;
+  return `<div class="mb quality"><div class="qbig"><b class="rt ${rateCls(h.avgRating)}">${pc(h.avgRating)}</b><span>Average monthly rating<small>${h.rated ? `${h.rated} submitted review${h.rated === 1 ? '' : 's'} · out of 100%` : 'Shows once reviews are submitted'}</small></span>${p ? was(pc(p.health.avgRating)) : ''}</div>
+    ${row('calcheck', 'g', 'Held on time', h.onTime, `${pctOf(h.onTime, h.held)}% of ${h.held} held`, 'onTime')}
+    ${row('clock', 'r', 'Held late', h.late, 'After the review window', 'late')}
+    ${row('calendar', 'a', 'Rescheduled', h.rescheduled, h.moves ? `${h.moves} date change${h.moves === 1 ? '' : 's'} in all` : 'No date changes', 'rescheduled')}
+    ${row('alert', 'b', 'Forms with flags', h.flagged, `of ${c.scheduled} scheduled`, 'flagged')}</div>`;
 }
+
+// ---------- dashboard card filters ----------
+// Option A of the filter designs (Harish, 2026-11-17): a "Filter" pill on Review status, Review quality and Team-wise
+// progress opens a two-step panel (the card's filters with coloured tiles, then the choices of the one clicked, Verveflow
+// style). Each card filters on its own; the choices are remembered in this browser. A card with no filter on shows the
+// /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
+const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az' };
+const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review quality', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] } };
+let cfOptions = null; // teams and managers to pick from (sent with every card answer, or fetched when the panel needs them)
+const CF_F = {
+  period: { label: 'Period', icon: 'calendar', tone: 'n', opts: () => [['month', 'This month'], ['last', 'Last month'], ['q', 'Quarter so far'], ['3m', 'Last 3 months'], ['fy', 'Financial year so far']] },
+  team: { label: 'Team', icon: 'team', tone: 'p', multi: true, opts: () => (cfOptions ? cfOptions.teams : []).map(t => [t.team, tl(t.team), t.n]) },
+  mgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', multi: true, opts: () => (cfOptions ? cfOptions.managers : []).map(m => [String(m.id), m.name, m.n]) },
+  cmp: { label: 'Compare', icon: 'trend', tone: 'a', opts: c => { const fy = !!c && CF[c].period === 'fy'; return [['off', 'No comparison'], ['prev', fy ? 'With the period before (not for the full year)' : 'With the period before', null, fy]]; } },
+  group: { label: 'Group by', icon: 'grid', tone: 's', opts: () => [['team', 'Team'], ['mgr', 'Reporting manager']] },
+  sort: { label: 'Sort', icon: 'sliders', tone: 'g', opts: () => [['az', 'A-Z'], ['behind', 'Most behind first'], ['done', 'Most submitted first']] },
+};
+const CF = (() => {
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem('pms.cardFilters') || '{}') || {}; } catch {}
+  const fix = (k, v) => Array.isArray(CF_DEF[k]) ? (Array.isArray(v) ? v.map(String) : []) : CF_F[k].opts('').some(o => o[0] === v) ? v : CF_DEF[k];
+  return Object.fromEntries(Object.entries(CF_CARDS).map(([c, d]) => [c, Object.fromEntries(d.keys.map(k => [k, fix(k, saved[c] && saved[c][k])]))]));
+})();
+const cfSave = () => { try { localStorage.setItem('pms.cardFilters', JSON.stringify(CF)); } catch {} };
+const HC = {}; // filtered card answers from the server; none = the card shows the /api/home numbers
+let homeRedraw = null; // redraws the dashboard cards from the last /api/home answer and HC
+// the admin's team tabs above the cards already pick one team: the cards' Team filter steps aside while one is picked
+const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam));
+const cfOn = (c, k) => Array.isArray(CF_DEF[k]) ? CF[c][k].length > 0 : CF[c][k] !== CF_DEF[k];
+const cfCount = c => cfKeys(c).filter(k => cfOn(c, k)).length;
+const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}Filter${n ? ` · ${n}` : ''}</button>`; };
+const cfTag = c => HC[c] && HC[c].tag ? ` <span class="cftag">${esc(HC[c].tag)}</span>` : '';
+const cfText = (c, k) => {
+  const v = CF[c][k], o = CF_F[k].opts(c);
+  if (!Array.isArray(v)) return (o.find(x => x[0] === v) || [, ''])[1];
+  const one = v.length === 1 && o.find(x => x[0] === v[0]);
+  return !v.length ? 'All' : one ? one[1] : `${v.length} selected`;
+};
+let cfWarned = false;
+async function cfFetch(c) {
+  if (!cfCount(c)) return null;
+  const f = CF[c], qs = new URLSearchParams({ card: c, month: S.month, period: f.period, team: (S.hteam ? [S.hteam] : f.team || []).join('|'), mgr: (f.mgr || []).join('|'), cmp: f.cmp || '', group: f.group || '', sort: f.sort || '' });
+  try { const r = await apiCall('/home/card?' + qs, {}); if (r.opts) cfOptions = r.opts; return r; }
+  catch (e) { if (!cfWarned) { cfWarned = true; toast(`Card filters could not be applied, so all data is shown. ${e.message}`, 'err'); } return null; }
+}
+const cfLoadAll = () => Promise.all(Object.keys(CF_CARDS).map(async c => { HC[c] = await cfFetch(c); }));
+
+// the panel: one open at a time, fixed under its pill (above it when there is no room below)
+let cfPop = null;
+function cfClose() { if (!cfPop) return; cfPop.el.remove(); const b = document.querySelector(`[data-cf="${cfPop.card}"]`); if (b) b.setAttribute('aria-expanded', 'false'); cfPop = null; }
+function cfPlace() {
+  if (!cfPop) return; const b = document.querySelector(`[data-cf="${cfPop.card}"]`); if (!b) return cfClose();
+  const r = b.getBoundingClientRect(), el = cfPop.el, w = el.offsetWidth, h = el.offsetHeight, W = document.documentElement.clientWidth;
+  el.style.left = `${Math.max(8, Math.min(r.right - w, W - w - 8))}px`;
+  el.style.top = `${r.bottom + 6 + h > innerHeight - 8 && r.top - 6 - h > 8 ? r.top - 6 - h : r.bottom + 6}px`;
+}
+function cfDraw() {
+  const { card: c, field: k, q, el } = cfPop;
+  if (!k) {
+    const n = cfCount(c);
+    el.innerHTML = `<div class="cfp-h"><div><b>Filter</b><small>${CF_CARDS[c].title}</small></div>${n ? `<button type="button" class="cfp-clr" data-clr>${ico('trash')}Clear</button>` : ''}</div>
+      <div class="cfp-l">${cfKeys(c).map(f => `<button type="button" class="cfp-r" data-f="${f}"><i class="cfp-ic t-${CF_F[f].tone}">${ico(CF_F[f].icon)}</i><span><b>${CF_F[f].label}</b><small>${esc(cfText(c, f))}</small></span>${cfOn(c, f) ? '<i class="cfp-dot" title="On"></i>' : ''}${ico('right')}</button>`).join('')}</div>
+      ${S.hteam && CF_CARDS[c].keys.includes('team') ? `<p class="cfp-note">Team: ${esc(tl(S.hteam))}, picked in the team tabs above.</p>` : ''}`;
+  } else {
+    const F = CF_F[k], v = CF[c][k], on = x => F.multi ? v.includes(x) : v === x;
+    const need = (k === 'team' || k === 'mgr') && !cfOptions, all = need ? [] : F.opts(c), list = all.filter(o => !q || o[1].toLowerCase().includes(q.toLowerCase()));
+    el.innerHTML = `<div class="cfp-h"><button type="button" class="cfp-back" data-back aria-label="Back to the filters">${ico('left')}</button><div><b>${F.label}</b><small>${F.multi ? 'Pick one or more' : 'Pick one'}</small></div>${F.multi && v.length ? `<button type="button" class="cfp-clr" data-reset>${ico('trash')}Clear</button>` : ''}</div>
+      ${all.length > 6 ? `<label class="cfp-s">${ico('search')}<input type="search" data-q placeholder="Search ${F.label.toLowerCase()}" value="${esc(q)}" aria-label="Search ${F.label.toLowerCase()}"></label>` : ''}
+      <div class="cfp-l" role="listbox" aria-multiselectable="${!!F.multi}">${need ? `<div class="cfp-empty">${ico('loader')}Loading…</div>` : list.map(([x, l, n, dis]) => `<button type="button" role="option" class="cfp-o ${on(x) ? 'on' : ''}" data-v="${esc(x)}" aria-selected="${on(x)}" ${dis ? 'disabled' : ''}>${F.multi ? `<i class="cfp-cb">${on(x) ? ico('tick') : ''}</i>` : ''}<span>${esc(l)}</span>${n != null ? `<em>${n}</em>` : ''}${!F.multi ? ico('tick') : ''}</button>`).join('') || '<div class="cfp-empty">Nothing matches.</div>'}</div>`;
+    if (need) apiCall(`/home/card?card=opts&month=${S.month}`, {}).then(r => { cfOptions = r.opts; if (cfPop && cfPop.field === k) cfDraw(); })
+      .catch(e => { const x = cfPop && cfPop.el.querySelector('.cfp-empty'); if (x) x.textContent = e.message; });
+  }
+  cfPlace();
+}
+// a choice changed: remember it, ask the server for the card's numbers, redraw the cards (the panel stays open)
+async function cfChanged(c) {
+  cfSave(); cfDraw();
+  const want = JSON.stringify(CF[c]), r = await cfFetch(c);
+  if (JSON.stringify(CF[c]) !== want) return; // another choice came in meanwhile; its own fetch redraws
+  HC[c] = r; if (homeRedraw) homeRedraw();
+}
+function cfOpen(btn) {
+  const c = btn.dataset.cf, same = cfPop && cfPop.card === c; cfClose(); if (same) return;
+  const el = document.createElement('div'); el.className = 'cfp'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', `Filter ${CF_CARDS[c].title}`);
+  document.body.appendChild(el); cfPop = { card: c, field: null, q: '', el }; btn.setAttribute('aria-expanded', 'true');
+  el.onclick = e => {
+    const t = e.target, P = cfPop; if (!P) return;
+    if (t.closest('[data-clr]')) { cfKeys(c).forEach(k => { CF[c][k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); return cfChanged(c); }
+    if (t.closest('[data-back]')) { P.field = null; P.q = ''; return cfDraw(); }
+    const f = t.closest('[data-f]'); if (f) { P.field = f.dataset.f; P.q = ''; cfDraw(); const i = el.querySelector('[data-q]'); if (i) i.focus(); return; }
+    if (t.closest('[data-reset]')) { CF[c][P.field] = []; return cfChanged(c); }
+    const o = t.closest('[data-v]'); if (!o || o.disabled) return;
+    const k = P.field, x = o.dataset.v;
+    if (CF_F[k].multi) { const a = CF[c][k], i = a.indexOf(x); i < 0 ? a.push(x) : a.splice(i, 1); }
+    else { CF[c][k] = x; if (k === 'period' && x === 'fy' && 'cmp' in CF[c]) CF[c].cmp = 'off'; P.field = null; }
+    cfChanged(c);
+  };
+  el.oninput = e => { if (!e.target.matches('[data-q]')) return; cfPop.q = e.target.value; const pos = e.target.selectionStart; cfDraw(); const i = el.querySelector('[data-q]'); i.focus(); i.setSelectionRange(pos, pos); };
+  cfDraw(); const first = el.querySelector('button'); if (first) first.focus();
+}
+document.addEventListener('click', e => { if (cfPop && !cfPop.el.contains(e.target) && !e.target.closest(`[data-cf="${cfPop.card}"]`) && document.body.contains(e.target)) cfClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && cfPop) { const c = cfPop.card; cfClose(); const b = document.querySelector(`[data-cf="${c}"]`); if (b) b.focus(); } });
+addEventListener('scroll', cfPlace, true); addEventListener('resize', cfPlace); addEventListener('hashchange', cfClose);
 // employee home: how much of the person's own part of the form is filled in (fp = the /api/form payload)
 function myProgress(fp) {
   if (!fp) return null;
@@ -832,7 +936,9 @@ pages.home = async (v, opts = {}) => {
   lastHome = d;
   if (mgr && S.hteam && !d.teams.some(t => t.team === S.hteam)) { S.hteam = ''; return pages.home(v, opts); } // the filtered team was renamed or deleted
   let html = null;
+  homeRedraw = null;
   if (mgr) {
+    cfOptions = null; await cfLoadAll(); // the team and manager choices follow the month picked
     const q = d.quick, teams = d.teams, att = d.attention, SHOW = 8;
     const quick = [
       ['calendar', '', 'Scheduling', '#/scheduling', `${q.datesCollected} of ${q.datesTotal} dates collected`],
@@ -841,15 +947,24 @@ pages.home = async (v, opts = {}) => {
       S.me.role === 'admin' ? ['idcard', 'r', 'Employees', '#/employees', `${q.employees.active} active · ${q.employees.inactive} inactive`] : ['team', 'r', 'My team', '#/team', `${q.teamReviews} review${q.teamReviews === 1 ? '' : 's'} in your scope`],
     ];
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
-    const share = n => `${pctOf(n, c.scheduled)}% of scheduled`;
     const chips = S.me.role !== 'admin' ? '' : `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(tl(t.team))}</button>`).join('')}</div></div>`;
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}${r.movedFrom ? ` · first sent to ${esc(r.movedFrom)}` : ''}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
-    const body = `<div class="stats">${kpi('n', '', 'calendar', 'Scheduled', c.scheduled, `Across ${S.hteam ? '1 team' : `${teams.length} team${teams.length === 1 ? '' : 's'}`}`)}${kpi('g', 'Filled', 'check', 'Filled', c.filled, share(c.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', c.notFilled, share(c.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', c.reviewCompleted, share(c.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', c.reviewPending, share(c.reviewPending))}</div>
+    // the three filterable cards follow their own filter (HC) when one is on, else this month's /api/home numbers
+    const cards = () => {
+      const hs = HC.status, hq = HC.quality, hp = HC.progress;
+      const sc = hs ? hs.counts : c, nT = hs ? hs.teamCount : S.hteam ? 1 : teams.length, share = n => `${pctOf(n, sc.scheduled)}% of scheduled`;
+      const bar = (t, label) => t.scheduled ? stackBar(t, label) : `<div class="tbar"><span class="n" title="${esc(label)}">${esc(label)}</span><div class="tr"></div><b>0/0</b></div>`;
+      const prog = hp ? hp.groups.map(g => bar(g, hp.group === 'mgr' ? g.label : tl(g.team))) : teams.map(t => bar(t, tl(t.team)));
+      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${cfPill('status')}</div>
+    <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
-      ${widget('award', 'Review quality', '<a class="more" href="#/report">Report</a>', qualityBody(d.health, c))}
-      ${widget('chart', 'Team-wise progress', '<a class="more" href="#/report">Team view</a>', `<div class="mb">${teams.length ? teams.map(t => t.scheduled ? stackBar(t, tl(t.team)) : `<div class="tbar"><span class="n" title="${esc(tl(t.team))}">${esc(tl(t.team))}</span><div class="tr"></div><b>0/0</b></div>`).join('') + statusLegend() : '<div class="empty">No teams in your scope.</div>'}</div>`)}
+      ${widget('award', 'Review quality' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
+      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? 'Nothing matches these filters.' : 'No teams in your scope.'}</div>`}</div>`)}
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
-    </div>
+    </div>`;
+    };
+    homeRedraw = () => { const x = v.querySelector('#hCards'); if (x) { x.innerHTML = cards(); cfPlace(); } };
+    const body = `<div id="hCards">${cards()}</div>
     <div class="wgrid">
       ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(tl(a.team))} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
     </div>`;
@@ -920,6 +1035,7 @@ pages.home = async (v, opts = {}) => {
   if (html != null) v.innerHTML = html;
   onMonth(() => pages.home(v));
   v.onclick = async e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // a card's Filter pill
     const kd = e.target.closest('[data-kdash]');
     if (kd) {
       try { await api('/kra-request/decide', { method: 'POST', body: { empId: +kd.dataset.emp, month: kd.dataset.mon, approve: kd.dataset.kdash === '1' } }); toast(kd.dataset.kdash === '1' ? 'Access given' : 'Request rejected'); pages.home(v, { partial: true }); }
@@ -958,10 +1074,17 @@ pages.form = async (v, emp, month) => {
 };
 
 const editingQ = new Set();
+const editingW = new Set(); // KRAs whose "Weightage of KRA" box is open (the pencil opens it)
+const folded = new Set(); // form sections folded with the arrow on their heading (operational, process, people, qa)
+const foldBtn = (k, label) => `<button type="button" class="ibtn opf-fold" data-fold="${k}" aria-expanded="${!folded.has(k)}" title="${folded.has(k) ? 'Show' : 'Hide'} ${label}" aria-label="${folded.has(k) ? 'Show' : 'Hide'} ${label}">${CHEV}</button>`;
+// KRA rating colours (managers' review, 2026-11-16): 75 and above green, 74 to 50 yellow, 49 to 25 orange, 24 and below red
+const rateCol = x => x == null || x === '' ? '' : +x >= 75 ? 'r-g' : +x >= 50 ? 'r-y' : +x >= 25 ? 'r-o' : 'r-r';
 let focusQ = null; // question answer box to put the cursor in after a redraw
 const qOriginal = {}; // answer text when its box was opened, to skip saving when nothing changed
 function drawForm(v, errors) {
   const { form: f, perms: p, employee: e, manager: m } = FP;
+  // one KRA: the old portal's order (name + description, weightage of KRA, the table with its Totals row even when empty,
+  // then add / save), drawn in the app's own style (Harish, 2026-11-17)
   const sec = (k, label, desc) => {
     const kr = f.kras[k], ed = p.editKras, rows = kr.rows;
     const sum = rows.reduce((a, r) => a + (+r.weight || 0), 0);
@@ -1080,17 +1203,10 @@ function exportKpi() {
     lines.push([`${k.label} total`, k.weight, '', '', '', '', k.self != null ? k.self + '%' : '', k.mgr != null ? k.mgr + '%' : '', `KRA score ${k.score != null ? k.score + '%' : '-'}`, `Points ${k.points ?? '-'}`]);
   });
   lines.push([], ['Questionnaire'], ['Sr. no', 'Question', 'Answer', 'Self rating (of 5)', 'Manager rating (of 5)', 'Manager remark']);
-const editingW = new Set(); // KRAs whose "Weightage of KRA" box is open (the pencil opens it)
-const folded = new Set(); // form sections folded with the arrow on their heading (operational, process, people, qa)
-const foldBtn = (k, label) => `<button type="button" class="ibtn opf-fold" data-fold="${k}" aria-expanded="${!folded.has(k)}" title="${folded.has(k) ? 'Show' : 'Hide'} ${label}" aria-label="${folded.has(k) ? 'Show' : 'Hide'} ${label}">${CHEV}</button>`;
-// KRA rating colours (managers' review, 2026-11-16): 75 and above green, 74 to 50 yellow, 49 to 25 orange, 24 and below red
-const rateCol = x => x == null || x === '' ? '' : +x >= 75 ? 'r-g' : +x >= 50 ? 'r-y' : +x >= 25 ? 'r-o' : 'r-r';
   (FP.questions || []).forEach((x, i) => { const a = f.qa[x.id]; lines.push(x.type === 'text' ? [i + 1, x.text, a || ''] : [i + 1, x.text, '', a && a.self != null ? a.self : '', a && a.mgr != null ? a.mgr : '', a ? a.remark || '' : '']); });
   const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = `KPI_${e.name.replace(/\s+/g, '_')}_${f.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  // one KRA: the old portal's order (name + description, weightage of KRA, the table with its Totals row even when empty,
-  // then add / save), drawn in the app's own style (Harish, 2026-11-17)
 }
 // KRA change requests: employees ask, the manager approves, then the employee can edit once
 function kraBanner(p) {
@@ -1150,6 +1266,7 @@ function wireForm(v) {
     if (folded.delete('qa')) redraw();
     const sc = SC(); sc.scrollTop += $('#sec-questionnaire').getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
   };
+  $('#totop').onclick = () => { SC().scrollTop = 0; };
   // autosave: only the fields this person changed (see formDirty)
   const save = async () => {
     const body = { empId: f.empId, month: f.month }, keys = [...formDirty];
@@ -1272,7 +1389,6 @@ pages.team = async (v, arg) => {
   ${d.me ? '' : `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? esc(p.manager.name) : 'nobody'} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span>${reportLinks(p)}</div>`}
   <div class="small" style="margin:0 0 12px">${mon} reviews of everyone under ${d.me ? 'you' : esc(p.name)} (all levels)</div>
   ${countTiles(c)}
-  $('#totop').onclick = () => { SC().scrollTop = 0; };
   <h2>${list ? `Reporting Manager (${rows.length})` : `${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})`}</h2>
   <div class="tablewrap"><table>${table}<tr id="tnone" hidden><td colspan="9" class="small">No one here matches your search.</td></tr></table></div>
   <p class="small">${list ? 'Every manager and team lead under you, at every level. Click the Employees count to open their team.' : 'Click a name or the Employees count to open that person\'s team; click a review status to open the form.'}</p>`;
@@ -1819,16 +1935,18 @@ setInterval(async () => {
   } catch {}
 }, 30000);
 function allStats(st) {
+  // a server not restarted after an update sends no byDesignation: show dashes instead of breaking the dashboard
+  const by = st.byDesignation || {};
   // [colour class, icon, label, number, sub line, filter: [tab, role] for the Employees page]
   const cards = [
     ['all', 'team', 'Members', st.members, 'Active in PMS', ['active', '']],
     // counted by the designation in the master sheet, whatever their role in PMS
-    ['dir', 'sitemap', 'Directors', st.byDesignation['Director'], '', ['active', 'Director']],
-    ['smg', 'idcard', 'Senior Managers', st.byDesignation['Senior Manager'], '', ['active', 'Senior Manager']],
-    ['mgr', 'idcard', 'Managers', st.byDesignation['Manager'], '', ['active', 'Manager']],
-    ['sen', 'award', 'Senior Executives', st.byDesignation['Senior Executive'], '', ['active', 'Senior Executive']],
-    ['exe', 'review', 'Executives', st.byDesignation['Executive'], '', ['active', 'Executive']],
-    ['ina', 'list', 'Article / Intern', st.byDesignation['Article/Intern'], '', ['active', 'Article/Intern']],
+    ['dir', 'sitemap', 'Directors', by['Director'] ?? '–', '', ['active', 'Director']],
+    ['smg', 'idcard', 'Senior Managers', by['Senior Manager'] ?? '–', '', ['active', 'Senior Manager']],
+    ['mgr', 'idcard', 'Managers', by['Manager'] ?? '–', '', ['active', 'Manager']],
+    ['sen', 'award', 'Senior Executives', by['Senior Executive'] ?? '–', '', ['active', 'Senior Executive']],
+    ['exe', 'review', 'Executives', by['Executive'] ?? '–', '', ['active', 'Executive']],
+    ['ina', 'list', 'Article / Intern', by['Article/Intern'] ?? '–', '', ['active', 'Article/Intern']],
   ];
   // big numbers fading into each role's colour, a faint icon in the corner (Harish picked this design, 2026-11-13)
   return `<section class="hero allstats" aria-label="All stats">${ORBS}${cards.map(([c, ic, label, n, sub, to]) =>

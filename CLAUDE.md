@@ -42,6 +42,16 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Email, joining date and code are not in the sheet yet: blank / FY start / `V###`. Without emails nobody but
   `ADMIN_EMAILS` can use Google sign-in (admins use "View as"). Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
+  Dashboard card filters: Harish picked option A of the mock-ups (2026-11-17; he asked for "A + C", A first, C = a
+  page-wide "Filters" drawer with removable chips is still to be decided). A "Filter · N" pill on Review status (small
+  header above the five status cards), Review quality and Team-wise progress opens a two-step panel (`cfOpen` / `cfDraw`
+  in `app.js`, CSS `.cfpill` / `.cfp*`): Period (this month, last month, quarter so far, last 3 months, FY so far,
+  counted back from the dashboard month), Team, Reporting manager, plus Compare (quality: the period before, shown as
+  "Jul-Sep 0" next to each number) and Group by / Sort (progress). Each card filters on its own; choices are kept in
+  `localStorage` `pms.cardFilters`; a period other than this month adds a tag ("Q3", "Oct") to the card title. A card with
+  no filter shows `/api/home`; a filtered one reads `GET /api/home/card` (read-only, `server.js`; managers and admins
+  only). If that call fails the card falls back to its unfiltered numbers with one toast. While the admin's team tabs
+  pick a team, the cards' Team field is hidden. After changing an API the page reads, restart the server.
 - UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"

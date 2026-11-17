@@ -295,12 +295,7 @@ route('GET', '/api/home', ({ user, q }) => {
   teams.sort((a, b) => a.label.localeCompare(b.label));
   const counts = L.counts(rows);
   // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
-  const rated = rows.filter(r => r.rating != null);
-  const health = {
-    held: rows.filter(r => r.actual).length, onTime: rows.filter(r => r.dueStatus === 'Within due date').length, late: rows.filter(r => r.dueStatus === 'After due date').length,
-    rescheduled: rows.filter(r => r.reschedules).length, moves: rows.reduce((n, r) => n + r.reschedules, 0), flagged: rows.filter(r => r.flags.length).length,
-    avgRating: rated.length ? Math.round(rated.reduce((n, r) => n + r.rating, 0) / rated.length * 100) / 100 : null, rated: rated.length,
-  };
+  const health = healthOf(rows);
   const attention = rows.filter(r => r.status !== 'Review Completed' || r.form !== 'Filled' || r.flags.length)
     .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.form !== 'Filled' ? 'Form not filled' : 'Review pending'), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
   const win = D.windowOf(user, month);
@@ -333,6 +328,69 @@ route('GET', '/api/home', ({ user, q }) => {
       kraAccess: ownForm.kraRequest ? { status: ownForm.kraRequest.status, manager: (L.emp(user.managerId) || {}).name || '', decidedBy: ownForm.kraRequest.decidedBy || '' } : null };
   }
   return out;
+});
+
+// Dashboard card filters (Harish, 2026-11-17: option A of the filter designs = a "Filter" pill on each card). One card's
+// numbers for a period counted back from the month picked on the dashboard, optionally narrowed to teams / managers.
+// card = status | quality | progress | opts (just the team and manager choices). Read-only, nothing is saved.
+const CARD_PERIODS = {
+  month: m => ({ months: [m], prev: [D.prevMonth(m)], tag: '' }),
+  last: m => { const p = D.prevMonth(m); return { months: [p], prev: [D.prevMonth(p)], tag: mon3(p) }; },
+  // Indian financial-year quarters: Q1 Apr-Jun, Q2 Jul-Sep, Q3 Oct-Dec, Q4 Jan-Mar; "so far" = quarter start to the month
+  q: m => {
+    const mo = +m.slice(5), qi = Math.floor(((mo + 8) % 12) / 3), months = [m];
+    for (let k = (mo + 8) % 3; k > 0; k--) months.unshift(D.prevMonth(months[0]));
+    const prev = [D.prevMonth(months[0])]; while (prev.length < 3) prev.unshift(D.prevMonth(prev[0]));
+    return { months, prev, tag: `Q${qi + 1}` };
+  },
+  '3m': m => { const months = [m]; while (months.length < 3) months.unshift(D.prevMonth(months[0]));
+    const prev = [D.prevMonth(months[0])]; while (prev.length < 3) prev.unshift(D.prevMonth(prev[0])); return { months, prev, tag: '3 months' }; },
+  fy: m => { const months = [m]; while (months[0].slice(5) !== '04') months.unshift(D.prevMonth(months[0])); return { months, prev: null, tag: 'FY' }; },
+};
+const mon3 = m => D.monthLabel(m).slice(0, 3); // "Oct"
+const periodLabel = ms => ms.length === 1 ? D.monthLabel(ms[0]) : `${D.monthLabel(ms[0]).split(' ')[0]}-${D.monthLabel(ms[ms.length - 1])}`;
+const healthOf = rows => {
+  const rated = rows.filter(r => r.rating != null);
+  return {
+    held: rows.filter(r => r.actual).length, onTime: rows.filter(r => r.dueStatus === 'Within due date').length, late: rows.filter(r => r.dueStatus === 'After due date').length,
+    rescheduled: rows.filter(r => r.reschedules).length, moves: rows.reduce((n, r) => n + r.reschedules, 0), flagged: rows.filter(r => r.flags.length).length,
+    avgRating: rated.length ? Math.round(rated.reduce((n, r) => n + r.rating, 0) / rated.length * 100) / 100 : null, rated: rated.length,
+  };
+};
+route('GET', '/api/home/card', ({ user, q }) => {
+  if (user.role === 'employee') throw forbidMsg('Only managers and admins have dashboard card filters.');
+  const month = D.validMonth(q.month) ? q.month : config.currentMonth;
+  const list = s => String(s || '').split('|').filter(Boolean);
+  const teams = list(q.team), mgrs = list(q.mgr);
+  // rows for some months, kept to the picked teams and managers (months before the tool started have no forms: no rows)
+  const rowsFor = months => months.filter(m => m >= config.fyStartMonth && m <= config.currentMonth)
+    .flatMap(m => L.reportRows(user, m)).filter(r => (!teams.length || teams.includes(r.team)) && (!mgrs.length || mgrs.includes(String(r.managerId))));
+  // the choices: teams and reporting managers in this person's scope this month
+  const cur = L.reportRows(user, month), mgrN = new Map();
+  for (const r of cur) if (r.managerId) mgrN.set(r.managerId, (mgrN.get(r.managerId) || 0) + 1);
+  const opts = {
+    teams: [...new Set(cur.map(r => r.team))].sort().map(t => ({ team: t, label: teamLabel(t), n: cur.filter(r => r.team === t).length })),
+    managers: [...mgrN].map(([id, n]) => ({ id, name: (L.emp(id) || {}).name || '', n })).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+  if (q.card === 'opts') return { opts };
+  const per = (CARD_PERIODS[q.period] || CARD_PERIODS.month)(month), rows = rowsFor(per.months);
+  const out = { card: q.card, period: q.period in CARD_PERIODS ? q.period : 'month', label: periodLabel(per.months), tag: per.tag, months: per.months.length, opts };
+  if (q.card === 'status') return { ...out, counts: L.counts(rows), teamCount: new Set(rows.map(r => r.team)).size };
+  if (q.card === 'quality') {
+    const prevRows = q.cmp === 'prev' && per.prev ? rowsFor(per.prev) : null;
+    return { ...out, counts: L.counts(rows), health: healthOf(rows),
+      prev: prevRows ? { label: periodLabel(per.prev), short: per.prev.length === 1 ? mon3(per.prev[0]) : `${mon3(per.prev[0])}-${mon3(per.prev[per.prev.length - 1])}`, counts: L.counts(prevRows), health: healthOf(prevRows) } : null };
+  }
+  if (q.card === 'progress') {
+    // group by team (the same review-window groups as the unfiltered card) or by reporting manager
+    const groups = q.group === 'mgr'
+      ? [...new Set(rows.map(r => r.managerId))].map(id => { const rs = rows.filter(r => r.managerId === id); return { key: 'm:' + id, team: rs[0].team, label: rs[0].manager || 'No manager', ...L.counts(rs) }; })
+      : windowGroups(rows, month).map(g => ({ key: g.key, team: g.team, label: g.label, ...L.counts(g.rows) }));
+    const done = g => g.scheduled ? g.reviewCompleted / g.scheduled : -1;
+    groups.sort((a, b) => q.sort === 'behind' ? done(a) - done(b) || a.label.localeCompare(b.label) : q.sort === 'done' ? done(b) - done(a) || a.label.localeCompare(b.label) : a.label.localeCompare(b.label));
+    return { ...out, group: q.group === 'mgr' ? 'mgr' : 'team', groups };
+  }
+  throw bad('Unknown card.');
 });
 
 // the bell: the signed-in person's notifications (an admin in "View as" sees that person's list but does not mark it read)
