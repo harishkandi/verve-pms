@@ -392,23 +392,23 @@ button.tile.on{border-color:var(--vr-navy-600);box-shadow:0 0 0 1px var(--vr-nav
 .empty{padding:24px 20px;text-align:center;font-size:14px;color:var(--vr-n-500)}
 /* All stats (admin): the navy bar at the top of the dashboard; big numbers fading into each role's colour, a faint icon
    in the corner that tilts on hover; each opens its list */
-.hero.allstats{flex-wrap:wrap;gap:0;padding:26px 12px}
-.bstat{--c:#fff;position:relative;flex:1 1 160px;display:flex;flex-direction:column;min-width:0;padding:6px 20px;overflow:hidden;border-left:1px solid rgba(255,255,255,.1);border-radius:12px;color:#fff;text-decoration:none;transition:background-color .15s}
+.hero.allstats{flex-wrap:nowrap;overflow-x:auto;gap:0;padding:22px 8px}
+.bstat{--c:#fff;position:relative;flex:1 1 0;display:flex;flex-direction:column;min-width:0;padding:6px 12px;overflow:hidden;border-left:1px solid rgba(255,255,255,.1);border-radius:12px;color:#fff;text-decoration:none;transition:background-color .15s}
 .bstat:first-of-type{border-left:0}
-.bstat.dir{--c:var(--vr-navy-100)}.bstat.mgr{--c:var(--vr-success-500)}.bstat.exe{--c:var(--vr-chart-wd)}.bstat.ina{--c:rgba(255,255,255,.4)}
+.bstat.dir{--c:var(--vr-navy-100)}.bstat.mgr{--c:var(--vr-success-500)}.bstat.exe{--c:var(--vr-chart-wd)}.bstat.ina{--c:rgba(255,255,255,.4)}.bstat.con{--c:var(--vr-chart-wd)}.bstat.sen{--c:var(--vr-success-500)}.bstat.smg{--c:var(--vr-navy-100)}
 .bstat:hover{background:rgba(255,255,255,.06)}
 #view a.bstat:hover{text-decoration:none}
 .bstat:hover .bl{text-decoration:underline;text-underline-offset:3px}
 .bstat:focus-visible{outline:2px solid rgba(255,255,255,.8);outline-offset:2px}
 .bstat .wm{position:absolute;right:6px;bottom:-14px;color:var(--c);opacity:.09;pointer-events:none;transition:opacity .2s,transform .3s}
-.bstat .wm svg{width:84px;height:84px;stroke-width:1.6}
+.bstat .wm svg{width:56px;height:56px;stroke-width:1.6}
 .bstat:hover .wm{opacity:.2;transform:rotate(-8deg) scale(1.05)}
-.bstat .bl{display:flex;align-items:center;gap:8px;font-size:10px;line-height:14px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.62)}
+.bstat .bl{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:9px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.62)}
 .bstat .bl::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--c)}
-.bstat .bn{margin:6px 0 2px;font-size:54px;line-height:56px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 30%,var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+.bstat .bn{margin:4px 0 2px;font-size:36px;line-height:40px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 30%,var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
 .bstat.all .bn{background-image:linear-gradient(180deg,#fff 40%,var(--vr-success-200))}
-.bstat .bs{position:relative;font-size:11px;line-height:15px;color:rgba(255,255,255,.5)}
-@media (max-width:900px){.bstat{border-left:0}}
+.bstat .bs:empty{display:none}.bstat .bs{position:relative;font-size:11px;line-height:15px;color:rgba(255,255,255,.5)}
+@media (max-width:900px){.bstat{border-left:0;flex:0 0 120px}}
 @media (prefers-reduced-motion:reduce){.bstat .wm{transition:none}.bstat:hover .wm{transform:none}}
 .emptybox{max-width:512px;margin:64px auto 0;padding:48px 32px;border:1px dashed var(--vr-n-300);border-radius:12px;background:var(--vr-n-50);text-align:center;font-size:14px;color:var(--vr-n-500)}
 

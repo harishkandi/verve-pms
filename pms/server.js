@@ -75,8 +75,7 @@ const fyLabel = m => { const [y, mo] = m.split('-').map(Number); const s = mo >=
 function mustForm(viewer, empId, month) {
   empId = +empId;
   if (!L.emp(empId) || !L.canView(viewer, empId)) throw forbid();
-  // people with no reporting manager (top-level directors) are not reviewed: no new form for them (old ones stay readable)
-  if (!L.emp(empId).managerId && !L.peek(empId, month)) throw bad('Top-level directors have no monthly review, so there is no form to open.');
+  // top-level directors are not reviewed (they are left out of the reports and counts), but their form is there every month to fill in
   const f = L.getForm(empId, month);
   if (!f) throw bad('No form exists for this month.');
   return f;
@@ -260,21 +259,17 @@ function windowGroups(rows, month) {
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 // one short line for the hero banner: scheduled count, then the most useful window fact
 function homeSummary(teams, counts) {
-  const bits = [`${plural(counts.scheduled, 'review')} scheduled`];
-  const open = teams.filter(t => t.state === 'open'), up = teams.filter(t => t.state === 'upcoming').sort((a, b) => a.window.start.localeCompare(b.window.start));
-  if (open.length) { const last = open.map(t => t.window.end).sort().pop(); bits.push(open.length === 1 ? `${open[0].label} window open until ${fmtDay(last)}` : `${open.length} windows open until ${fmtDay(last)}`); }
-  else if (up.length) bits.push(`Next window: ${up[0].label}, ${fmtDay(up[0].window.start)}`);
-  else if (teams.length) bits.push('All windows closed');
-  if (counts.pending) bits.push(`${plural(counts.pending, 'review')} past due`);
+  const bits = [`${plural(counts.scheduled, 'review')} scheduled`, `${counts.filled} filled`, `${counts.reviewCompleted} review${counts.reviewCompleted === 1 ? '' : 's'} completed`];
+  if (counts.reviewPending) bits.push(`${counts.reviewPending} pending`);
   return bits.join(' · ');
 }
 function homeTips(teams, counts, emails) {
   const tips = [];
   const up = teams.filter(t => t.state === 'upcoming' && t.collected < t.total);
   if (up.length) { const first = up.map(t => t.window.start).sort()[0]; tips.push(`Collect ${joinNames(up.map(t => t.label))} review dates before ${fmtDay(D.addDays(first, -3))} to avoid overdue reviews.`); }
-  teams.filter(t => t.state === 'open' && t.notCompleted).forEach(t => tips.push(`${t.label} window closes on ${fmtDay(t.window.end)}: ${plural(t.notCompleted, 'review')} still to complete.`));
-  teams.filter(t => t.state === 'closed' && t.pending).forEach(t => tips.push(`${plural(t.pending, 'review')} in ${t.label} ${t.pending === 1 ? 'is' : 'are'} past the due date. Open ${t.pending === 1 ? 'it' : 'them'} from the attention list.`));
-  if (emails && counts.scheduled && counts.submitted === counts.scheduled && !emails.drafts && !emails.sent) tips.push('All reviews are submitted. Generate the manager emails from Manager Emails.');
+  teams.filter(t => t.state === 'open' && t.reviewPending).forEach(t => tips.push(`${t.label} window closes on ${fmtDay(t.window.end)}: ${plural(t.reviewPending, 'review')} still pending.`));
+  teams.filter(t => t.state === 'closed' && t.reviewPending).forEach(t => tips.push(`${plural(t.reviewPending, 'review')} in ${t.label} ${t.reviewPending === 1 ? 'is' : 'are'} past the due date. Open ${t.reviewPending === 1 ? 'it' : 'them'} from the attention list.`));
+  if (emails && counts.scheduled && counts.reviewCompleted === counts.scheduled && !emails.drafts && !emails.sent) tips.push('All reviews are submitted. Generate the manager emails from Manager Emails.');
   return tips.slice(0, 2);
 }
 const emailStates = (user, month) => {
@@ -306,8 +301,8 @@ route('GET', '/api/home', ({ user, q }) => {
     rescheduled: rows.filter(r => r.reschedules).length, moves: rows.reduce((n, r) => n + r.reschedules, 0), flagged: rows.filter(r => r.flags.length).length,
     avgRating: rated.length ? Math.round(rated.reduce((n, r) => n + r.rating, 0) / rated.length * 100) / 100 : null, rated: rated.length,
   };
-  const attention = rows.filter(r => r.status !== 'Completed and Submitted' || r.flags.length)
-    .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.status === 'Pending' ? 'Review pending' : r.status), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
+  const attention = rows.filter(r => r.status !== 'Review Completed' || r.form !== 'Filled' || r.flags.length)
+    .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.form !== 'Filled' ? 'Form not filled' : 'Review pending'), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
   const win = D.windowOf(user, month);
   const scoped = q.team ? teams.filter(t => t.team === q.team) : teams; // hero text and tips follow the team filter
   const out = { month, label: D.monthLabel(month), today: config.today, counts, health, teams, attention, canEditWindows: user.role === 'admin', window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };
@@ -790,19 +785,26 @@ route('PUT', '/api/annual', ({ user, body }) => {
 });
 
 // organisation counts (admin): All stats cards on the dashboard and the tiles on the Employees page
+// the designation shown for a person is the master sheet's (PMS's own is only the fallback for someone not in the sheet, e.g. a director)
+const DESIG_GROUPS = ['Director', 'Senior Manager', 'Manager', 'Senior Executive', 'Executive', 'Article/Intern']; // Consultant has no tile of its own (counted in Others)
+const masterDesignation = e => { const m = masterRowOf(e); return (m && m.designation) || e.designation || ''; };
+const desigGroup = e => { const d = masterDesignation(e).trim().toLowerCase(); return e.role === 'director' ? 'Director' : /manager/.test(d) ? (/senior/.test(d) ? 'Senior Manager' : 'Manager') : /team ?lead/.test(d) ? 'Manager' : DESIG_GROUPS.find(g => g.toLowerCase() === d) || (/article|intern/.test(d) ? 'Article/Intern' : /executive/.test(d) ? (/senior/.test(d) ? 'Senior Executive' : 'Executive') : 'Other'); };
 function orgStats() {
-  const rows = employees.filter(e => e.role !== 'admin'), active = rows.filter(e => e.active), role = r => active.filter(e => e.role === r).length;
-  return { members: active.length, directors: role('director'), managers: role('manager') + role('teamlead'), executives: role('employee'),
+  const rows = employees.filter(e => e.role !== 'admin'), active = rows.filter(e => e.active);
+  const by = Object.fromEntries([...DESIG_GROUPS, 'Other'].map(g => [g, active.filter(e => desigGroup(e) === g).length]));
+  return { members: active.length, byDesignation: by,
     inactive: rows.length - active.length, questions: L.activeQuestions(config.currentMonth).length };
 }
 
 // Employees (admin)
 const adminOnly = u => { if (u.role !== 'admin') throw forbid(); };
+// the dashboard's counts, re-read while the page is open (they follow the master sheet, which is checked every 30 seconds)
+route('GET', '/api/stats', ({ user }) => { adminOnly(user); return orgStats(); });
 route('GET', '/api/employees', ({ user, q }) => {
   adminOnly(user);
   const month = config.currentMonth;
   const rows = employees.filter(e => e.role !== 'admin').map(e => { const f = L.peek(e.id, month); const { notices, ...rest } = e;
-    return { ...rest, manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a',
+    return { ...rest, masterDesignation: masterDesignation(e), desigGroup: desigGroup(e), manager: e.managerId ? L.emp(e.managerId).name : '', reviewStatus: f ? L.reviewStatus(f) : 'n/a',
       pending: e.pendingManager ? { to: nameOf(e.pendingManager.id), from: D.monthLabel(e.pendingManager.from) } : null }; });
   const active = rows.filter(e => e.active);
   return { active, inactive: rows.filter(e => !e.active), stats: orgStats(),
@@ -1032,7 +1034,7 @@ route('POST', '/api/employees/inactive', async ({ user, body }) => {
     }
   }
   const f = L.peek(e.id, config.currentMonth);
-  const warning = f && !['Completed and Submitted', 'Completed but Not Submitted'].includes(L.reviewStatus(f)) && body.date.slice(0, 7) === config.currentMonth
+  const warning = f && L.reviewStatus(f) !== 'Review Completed' && body.date.slice(0, 7) === config.currentMonth
     ? 'Their review this month is not completed. It is counted until the inactive date.' : null;
   if (!body.confirm && warning) return { needsConfirm: true, warning };
   // the person is leaving, so their team's reviews move now (same clean-up as any reporting change: invites, notes, roles)
@@ -1066,7 +1068,7 @@ route('POST', '/api/employees/reactivate', ({ user, body }) => {
 function orgHelpers(month) {
   const people = employees.filter(e => e.active && e.role !== 'admin');
   const direct = id => people.filter(e => e.managerId === id);
-  const reviewOf = e => { const f = L.peek(e.id, month); return f ? { status: L.reviewStatus(f), rating: f.submitted ? L.monthlyRating(f) : null, reviewDate: f.reviewDate || null } : null; };
+  const reviewOf = e => { const f = L.peek(e.id, month); return f ? { ...L.statusOf(f), rating: f.submitted ? L.monthlyRating(f) : null, reviewDate: f.reviewDate || null } : null; };
   // review counts for a set of people (only those with a form this month)
   const countsOf = list => L.counts(list.map(reviewOf).filter(Boolean));
   const above = e => { const out = []; for (let c = L.emp(e.managerId); c && c.role !== 'admin' && out.length < 20; c = L.emp(c.managerId)) out.unshift(c); return out; };
@@ -1131,7 +1133,7 @@ route('GET', '/api/mis', ({ user, q }) => {
   const byMonth = months.map(m => {
     const fs = people.map(e => L.peek(e.id, m)).filter(Boolean);
     const due = fs.map(f => L.dueInfo(f).due);
-    return { month: m, label: D.monthLabel(m), ...L.counts(fs.map(f => ({ status: L.reviewStatus(f) }))),
+    return { month: m, label: D.monthLabel(m), ...L.counts(fs.map(f => (L.statusOf(f)))),
       onTime: due.filter(x => x === 'Within due date').length, late: due.filter(x => x === 'After due date').length,
       avgRating: avgOf(fs.filter(f => f.submitted).map(f => L.monthlyRating(f)).filter(x => x != null)) };
   });
@@ -1184,7 +1186,7 @@ route('GET', '/api/yearly', ({ user, q }) => {
   if (q.team) people = people.filter(e => e.team === q.team);
   // status cards at the top of the Team report (this used to be the separate My team report): one month of reviews
   const cardMonth = q.month || config.currentMonth;
-  const counts = L.counts(people.map(e => L.peek(e.id, cardMonth)).filter(Boolean).map(f => ({ status: L.reviewStatus(f) })));
+  const counts = L.counts(people.map(e => L.peek(e.id, cardMonth)).filter(Boolean).map(f => (L.statusOf(f))));
   const blocks = people.slice().sort((a, b) => (L.subordinates(b.id).length > 0) - (L.subordinates(a.id).length > 0)).map(e => {
     const cells = months.map(m => {
       const f = L.peek(e.id, m);
