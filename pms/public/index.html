@@ -168,12 +168,9 @@ svg{flex:none}
 .tb-menu .out:hover{background:var(--vr-danger-50)}
 /* Profile information page (#/profile): dashboard hero + cards */
 .avatar{overflow:hidden}.avatar img{display:block;width:100%;height:100%;object-fit:cover}
-/* banner photo: click to upload / change; camera badge bottom-right */
-.pf-av{position:relative;z-index:1;flex:none;padding:0;border:0;border-radius:9999px;background:none;cursor:pointer}
-.pf-av .avatar{width:96px;height:96px;font-size:30px;background:rgba(255,255,255,.12);box-shadow:0 0 0 4px rgba(255,255,255,.1);transition:box-shadow .15s}
-.pf-av:hover .avatar,.pf-av:focus-visible .avatar{box-shadow:0 0 0 4px rgba(255,255,255,.35)}
-.pf-cam{position:absolute;right:0;bottom:2px;display:grid;place-items:center;width:30px;height:30px;border-radius:9999px;background:var(--vr-card);color:var(--vr-brand-text);box-shadow:var(--vr-shadow-lg)}
-.pf-cam svg{width:15px;height:15px}
+/* banner avatar: initials (no photo upload) */
+.pf-av{position:relative;z-index:1;flex:none}
+.pf-av .avatar{width:96px;height:96px;font-size:30px;background:rgba(255,255,255,.12);box-shadow:0 0 0 4px rgba(255,255,255,.1)}
 .pf-hero .pf-hx{z-index:1;min-width:0;flex:1}
 .pf-hero .ht{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:22px;line-height:30px}
 .pf-hero p{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px}
@@ -181,8 +178,6 @@ svg{flex:none}
 .pf-st{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:9999px;background:rgba(255,255,255,.12);font-size:11px;line-height:18px;font-weight:600;letter-spacing:.02em;color:rgba(255,255,255,.75)}
 .pf-st::before{content:'';width:6px;height:6px;border-radius:9999px;background:rgba(255,255,255,.5)}
 .pf-st.on::before{background:var(--vr-success-500)}
-.pf-hero .acts{display:flex;flex-wrap:wrap}
-.pf-hero .acts .btn svg{width:14px;height:14px}
 .pf-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}
 .pf-f{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 0;border-bottom:1px solid var(--vr-n-100)}
 .pf-grid .pf-f:nth-last-child(-n+2){border-bottom:0}
@@ -392,7 +387,7 @@ button.tile.on{border-color:var(--vr-navy-600);box-shadow:0 0 0 1px var(--vr-nav
 .empty{padding:24px 20px;text-align:center;font-size:14px;color:var(--vr-n-500)}
 /* All stats (admin): the navy bar at the top of the dashboard; big numbers fading into each role's colour, a faint icon
    in the corner that tilts on hover; each opens its list */
-.hero.allstats{flex-wrap:nowrap;overflow-x:auto;gap:0;padding:22px 8px}
+.hero.allstats{flex-wrap:nowrap;overflow:hidden;gap:0;padding:22px 8px} /* no scrollbar (Harish, 2026-11-17): narrow screens wrap instead */
 .bstat{--c:#fff;position:relative;flex:1 1 0;display:flex;flex-direction:column;min-width:0;padding:6px 12px;overflow:hidden;border-left:1px solid rgba(255,255,255,.1);border-radius:12px;color:#fff;text-decoration:none;transition:background-color .15s}
 .bstat:first-of-type{border-left:0}
 .bstat.dir{--c:var(--vr-navy-100)}.bstat.mgr{--c:var(--vr-success-500)}.bstat.exe{--c:var(--vr-chart-wd)}.bstat.ina{--c:rgba(255,255,255,.4)}.bstat.con{--c:var(--vr-chart-wd)}.bstat.sen{--c:var(--vr-success-500)}.bstat.smg{--c:var(--vr-navy-100)}
@@ -408,7 +403,7 @@ button.tile.on{border-color:var(--vr-navy-600);box-shadow:0 0 0 1px var(--vr-nav
 .bstat .bn{margin:4px 0 2px;font-size:36px;line-height:40px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 30%,var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
 .bstat.all .bn{background-image:linear-gradient(180deg,#fff 40%,var(--vr-success-200))}
 .bstat .bs:empty{display:none}.bstat .bs{position:relative;font-size:11px;line-height:15px;color:rgba(255,255,255,.5)}
-@media (max-width:900px){.bstat{border-left:0;flex:0 0 120px}}
+@media (max-width:900px){.hero.allstats{flex-wrap:wrap;row-gap:8px}.bstat{border-left:0;flex:1 1 120px}}
 @media (prefers-reduced-motion:reduce){.bstat .wm{transition:none}.bstat:hover .wm{transform:none}}
 .emptybox{max-width:512px;margin:64px auto 0;padding:48px 32px;border:1px dashed var(--vr-n-300);border-radius:12px;background:var(--vr-n-50);text-align:center;font-size:14px;color:var(--vr-n-500)}
 
@@ -1051,12 +1046,92 @@ td table tr:hover>td{background:transparent}
 /* =====================================================================
    Print
    ===================================================================== */
+/* =====================================================================
+   Old PMS portal look for the whole app (Harish, 2026-11-17: employees know the portal's UI, so copy its look; page
+   layouts and functions stay as they are). Colours come from the portal's own stylesheet (pms.verveadvisory.com
+   assetsnew/css/style.css + Bootstrap 5): navy #23408b (table heads, "the blue in My review"), light blue #cbdaff,
+   grey #ececec fields, #d9dada lines, text #212121, yellow buttons (Bootstrap warning). Only token values and the
+   shape of shared components change here; the monthly form (.opf) below adds the portal's form pieces.
+   ===================================================================== */
+:root{
+  --vr-navy-50:#edf2ff;--vr-navy-100:#cbdaff;--vr-navy-600:#2d4f9e;--vr-navy-700:#1c3474;--vr-navy-800:#23408b;--vr-navy-900:#1a2f66;
+  --vr-brand-text:#23408b;--vr-accent-navy:#23408b;--vr-overlay:rgba(26,47,102,0.5);
+  --vr-n-50:#f8f9fa;--vr-n-100:#f4f5f7;--vr-n-200:#e4e5e6;--vr-n-300:#d9dada;--vr-n-400:#adb5bd;--vr-n-500:#6c757d;--vr-n-600:#565e64;--vr-n-700:#3d3d3c;--vr-n-800:#212529;--vr-n-900:#212121;
+  --vr-card-hover:#f8f9fa;--vr-input:#ececec;--vr-border-light:#ececec;--vr-warm:#f8f9fa;
+  --vr-sidebar:#23408b;--vr-thead:#23408b;--vr-thead-text:#ffffff;
+  --vr-login-gradient:linear-gradient(135deg,#1a2f66,#23408b,#2d4f9e);
+  --vr-shadow:0 2px 10px rgba(35,64,139,0.06);--vr-shadow-lg:0 8px 28px rgba(35,64,139,0.14);
+  --vr-orb:#2d4f9e;--vr-orb2:#3a5fb5;
+  --vr-pms-blue:#cbdaff;--vr-pms-blue-50:#e8eeff;--vr-pms-line:#d9dada;--vr-pms-on:#ffffff;
+}
+.dark{
+  --vr-navy-50:#1a2645;--vr-navy-100:#24325a;--vr-navy-600:#4a6fd1;--vr-navy-700:#2d4f9e;--vr-navy-800:#23408b;--vr-navy-900:#0a1730;
+  --vr-brand-text:#a9c2ee;--vr-accent-navy:#4d7fd6;--vr-overlay:rgba(3,8,20,0.7);
+  --vr-n-50:#1a2338;--vr-n-100:#121a2c;--vr-n-200:#2a3450;--vr-n-300:#3a4666;--vr-n-400:#6d7794;--vr-n-500:#8b95ae;--vr-n-600:#a9b2c7;--vr-n-700:#c3cad9;--vr-n-800:#e3e7ef;--vr-n-900:#f3f5f9;
+  --vr-card-hover:#1c2642;--vr-input:#222c44;--vr-border-light:#232d47;--vr-warm:#1a2338;
+  --vr-sidebar:#142552;--vr-thead:#23408b;--vr-thead-text:#ffffff;
+  --vr-login-gradient:linear-gradient(135deg,#060e22,#142552,#23408b);
+  --vr-shadow:0 2px 12px rgba(0,0,0,0.4);--vr-shadow-lg:0 8px 28px rgba(0,0,0,0.5);
+  --vr-orb:#1b3a7d;--vr-orb2:#2a4f9e;
+  --vr-pms-blue:#24325a;--vr-pms-blue-50:#1a2645;--vr-pms-line:#2f3a55;--vr-pms-on:#ffffff;
+}
+body{background-color:var(--vr-card)}
+/* fields: the portal's grey boxes (form-control / form-select #ececec, same border) */
+input,select,textarea{border-color:var(--vr-input);border-radius:4px}
+input:focus,select:focus,textarea:focus{border-color:var(--vr-navy-800);background-color:var(--vr-card)}
+input:disabled,select:disabled,textarea:disabled{opacity:.85}
+/* buttons: yellow main buttons, plain bordered secondary ones, Bootstrap corners */
+.btn{border-radius:5px;border-color:var(--vr-pms-line);color:var(--vr-n-800)}
+.btn:hover:not(:disabled){background:var(--vr-pms-field)}
+.btn.pri,.btn.yel{border-color:var(--vr-pms-y);background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
+.btn.pri:hover:not(:disabled),.btn.yel:hover:not(:disabled){border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
+.btn.pri svg,.btn.yel svg{color:var(--vr-pms-y-text)}
+/* cards, tables, tiles: square-ish portal boxes with thin grey lines */
+.card{border-color:var(--vr-pms-line);border-radius:8px}
+.tablewrap{border-color:var(--vr-pms-line);border-radius:6px}
+th{font-size:13px;line-height:18px;font-weight:700;color:var(--vr-thead-text)}
+td{border-bottom-color:var(--vr-pms-field)}
+tr.sub>td{background:var(--vr-pms-blue-50)}
+.tile,.stat{border:0;border-radius:10px;background:var(--vr-pms-blue-50);box-shadow:none}
+.tile::before,.stat::before{display:none}
+.stat[data-st]:hover,button.tile:hover{background:var(--vr-pms-blue)}
+.hero{border-radius:10px}
+.info{border-color:var(--vr-pms-blue);background:var(--vr-pms-blue-50)}
+.chip.on,.seg a.on{background:var(--vr-navy-800);color:var(--vr-pms-on)}
+/* page titles: the portal's plain medium-weight headings ("Monthly Reporting") */
+h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
+/* dropdown buttons look like the portal's grey selects */
+.dd-btn:not(.h1-pick):not(.exp){border-color:var(--vr-input);border-radius:4px;background:var(--vr-input);box-shadow:none;font-weight:500;color:var(--vr-n-800)}
+.dd-btn:not(.h1-pick):not(.exp):hover{background:var(--vr-pms-line)}
+/* dropdown lists and the date picker: a plain list like the browser's own, navy for the chosen item */
+.pick,.cal,.dd-menu{border-color:var(--vr-pms-line);border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+.pick-i,.dd-item{border-radius:2px;font-size:14px;line-height:20px;color:var(--vr-n-800)}
+.pick-i:hover:not(:disabled),.pick-i:focus-visible,.dd-item:hover:not(:disabled),.dd-item:focus-visible{background:var(--vr-pms-field)}
+.pick-i.on,.dd-item.on{background:var(--vr-navy-800);font-weight:500;color:var(--vr-pms-on)}
+.pick-i.on svg,.dd-item.on>svg{color:var(--vr-pms-on)}
+.cal{padding:0 0 10px;overflow:hidden;font-size:13px}
+.cal-h{margin:0 0 8px;padding:8px 10px;background:var(--vr-navy-800)}
+.cal-t,.cal-t svg{color:var(--vr-pms-on)}
+.cal-t:hover{background:rgba(255,255,255,.15)}
+.cal-n{border:0;border-radius:3px;background:rgba(255,255,255,.15);color:var(--vr-pms-on)}
+.cal-n:hover{background:rgba(255,255,255,.3)}
+.cal-g,.cal-m{padding:0 10px}
+.cal-w{letter-spacing:0;text-transform:none;font-size:12px;color:var(--vr-n-800)}
+.cal-d,.cal-mo{border-radius:3px;font-size:13px;color:var(--vr-n-800)}
+.cal-d:hover:not(.sel):not(:disabled),.cal-mo:hover:not(.sel){background:var(--vr-pms-field)}
+.cal-d.today{background:var(--vr-pms-blue);color:var(--vr-n-900)}
+.cal-d.today::after{display:none}
+.cal-d.sel,.cal-mo.sel{background:var(--vr-navy-800);color:var(--vr-pms-on)}
+.cal-f{margin:8px 10px 0}
+.cal-a{padding:4px 12px;border-radius:4px;background:var(--vr-pms-y);font-size:12px;color:var(--vr-pms-y-text)}
+.cal-a:hover:not(:disabled){text-decoration:none;background:var(--vr-pms-y-hover)}
+
 /* Monthly form (.opf): the old PMS portal's form, same layout and look (Harish, 2026-11-17: "keep layout look and exact
    like this"), more compact than the portal. Its colours are --vr-pms-* tokens (yellow buttons, grey KRA band, cream
    section bars, navy table heads). KRA ratings are tinted by value: 75+ green, 50-74 yellow, 25-49 orange, 24 and below red. */
 :root{--vr-rate-y-50:#fdf8dc;--vr-rate-y-200:#efe08a;--vr-rate-y-800:#6b5a06;
   --vr-pms-y:#ffc107;--vr-pms-y-hover:#f0b400;--vr-pms-y-soft:#ffd966;--vr-pms-y-text:#212529;--vr-pms-band:#6c757d;--vr-pms-band-text:#212529;
-  --vr-pms-cream:#fff2dc;--vr-pms-cream-line:#f0e0c0;--vr-pms-navy:#22418a;--vr-pms-head-text:#ffffff;--vr-pms-grid:#dee2e6;--vr-pms-field:#e4e4e4;--vr-pms-link:#0d6efd}
+  --vr-pms-cream:#fff2dc;--vr-pms-cream-line:#f0e0c0;--vr-pms-navy:#23408b;--vr-pms-head-text:#ffffff;--vr-pms-grid:#dee2e6;--vr-pms-field:#ececec;--vr-pms-link:#0d6efd}
 .dark{--vr-rate-y-50:#2e2a12;--vr-rate-y-200:#5c5220;--vr-rate-y-800:#ede08f;
   --vr-pms-y:#f2b705;--vr-pms-y-hover:#ffc61a;--vr-pms-y-soft:#c99a1c;--vr-pms-y-text:#1a1404;--vr-pms-band:#3d4554;--vr-pms-band-text:#e3e7ef;
   --vr-pms-cream:#2c2618;--vr-pms-cream-line:#433824;--vr-pms-navy:#24438f;--vr-pms-head-text:#ffffff;--vr-pms-grid:#2f3a55;--vr-pms-field:#222c44;--vr-pms-link:#7fb0ff}
@@ -1110,9 +1185,15 @@ td table tr:hover>td{background:transparent}
 .opf-qr select.num{width:76px;border:0;border-radius:3px;background-color:var(--vr-pms-field);text-align:center}
 .opf-qr textarea{min-height:52px;border:0;border-radius:2px;background:var(--vr-pms-field)}
 .opf-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.opf-none{display:grid;grid-template-columns:auto;justify-items:start;gap:4px;margin:26px 4px 0}
-.opf-none svg{width:18px;height:18px;color:var(--vr-n-700)}
-.opf-x{min-width:38px;min-height:36px;margin-top:4px;border:0;border-radius:4px;background:var(--vr-danger-600);font:inherit;font-size:16px;color:var(--vr-pms-head-text);cursor:pointer}
+.opf-saved{display:flex;align-items:center;gap:4px;min-height:18px;margin-top:4px;font-size:12px;line-height:16px;color:var(--vr-n-500)}
+.opf-saved.on{color:var(--vr-green-600);animation:opfSaved .3s ease-out}
+.opf-saved svg{width:14px;height:14px}
+.opf-t textarea.saved{border-color:var(--vr-green-500);transition:border-color .3s}
+@keyframes opfSaved{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.opf-none{display:flex;align-items:center;gap:10px;margin:22px 0 0;padding:9px 10px 9px 14px;border:1px solid var(--vr-pms-cream-line);border-radius:6px;background:var(--vr-pms-cream)}
+.opf-none>div{flex:1;min-width:0}
+.opf-none svg{width:18px;height:18px;flex:none;color:var(--vr-warn-600)}
+.opf-x{flex:none;min-width:30px;min-height:30px;border:0;border-radius:4px;background:var(--vr-danger-600);font:inherit;font-size:14px;line-height:1;color:var(--vr-pms-head-text);cursor:pointer}
 .opf-x:hover{background:var(--vr-danger-700)}
 .opf-rate td:not(:first-child){text-align:center}
 .opf-end{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}

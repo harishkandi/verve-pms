@@ -165,7 +165,6 @@ const ICON = {
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54z"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
-  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
   grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
   download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -414,7 +413,7 @@ async function start() {
     <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span>
       ${S.me.real.role === 'admin' && !S.me.viewingAs ? `<button class="btn sm" id="asbtn" title="See PMS exactly as another person sees it">${ico('eye')}View as…</button>` : ''}<span class="tbn"><button type="button" class="ibtn tb-bell" id="tbbell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${ico('bell')}<b class="tb-cnt" id="tbcnt" hidden></b></button><div class="tb-notes" id="tbnotes" role="dialog" aria-label="Notifications" hidden></div></span>${themeBtn()}
       <span class="tb-div"></span>
-      <span class="tbm"><button type="button" class="tb-user" id="tbuser" aria-haspopup="menu" aria-expanded="false" title="Profile and sign out"><span class="tb-who"><b>${esc(S.me.name)}</b><small>${(S.me.designation || '').toLowerCase() === ROLE_LABEL[S.me.role].toLowerCase() || !S.me.designation ? esc(ROLE_LABEL[S.me.role]) : dotJoin(S.me.designation, ROLE_LABEL[S.me.role])}</small></span><span class="avatar" id="tbav">${avatarIn(S.me.name, S.me.photo)}</span>${CHEV}</button>
+      <span class="tbm"><button type="button" class="tb-user" id="tbuser" aria-haspopup="menu" aria-expanded="false" title="Profile and sign out"><span class="tb-who"><b>${esc(S.me.name)}</b><small>${(S.me.designation || '').toLowerCase() === ROLE_LABEL[S.me.role].toLowerCase() || !S.me.designation ? esc(ROLE_LABEL[S.me.role]) : dotJoin(S.me.designation, ROLE_LABEL[S.me.role])}</small></span><span class="avatar" id="tbav">${initials(S.me.name)}</span>${CHEV}</button>
       <div class="tb-menu" id="tbmenu" role="menu" hidden>
         <button type="button" role="menuitem" data-um="profile">${ico('idcard')}Profile information</button><hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
@@ -773,8 +772,6 @@ const countTiles = c => `<div class="tiles">${[['', 'scheduled', 'Scheduled', 'c
 function openReport(status) { RF.status = status || ''; RF.team = S.hteam || ''; RF.manager = ''; location.hash = '#/report'; }
 const pctOf = (n, tot) => tot ? Math.round(n / tot * 100) : 0;
 const initials = n => esc(n.split(' ').map(x => x[0]).join('').slice(0, 2));
-// a person's avatar contents: their profile photo when they set one, else their initials
-const avatarIn = (name, photo) => photo ? `<img src="${esc(photo)}" alt="">` : initials(name);
 const winBadge = t => t.state === 'closed' ? '<span class="badge b-blue">Closed</span>'
   : t.collected === t.total && t.total ? `<span class="badge b-green">${t.collected} of ${t.total} dates</span>` : `<span class="badge b-amber">${t.collected} of ${t.total} dates</span>`;
 const winText = w => w.state === 'open' ? `open until ${fmtD(w.end)}` : w.state === 'upcoming' ? `opens ${fmtD(w.start)} (in ${w.days} day${w.days === 1 ? '' : 's'})` : `closed on ${fmtD(w.end)}`;
@@ -801,8 +798,12 @@ function qualityBody(h, c, p) {
 // progress opens a two-step panel (the card's filters with coloured tiles, then the choices of the one clicked, Verveflow
 // style). Each card filters on its own; the choices are remembered in this browser. A card with no filter on shows the
 // /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
-const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az' };
-const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review quality', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] } };
+const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any' };
+const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review quality', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
+  // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
+  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true } };
+let empFO = { desig: [], role: [], mgr: [] }; // the Employees page's choices with counts, set each time it draws
+const cfLocalRedraw = {}; // card -> redraw of a page that filters in the browser
 let cfOptions = null; // teams and managers to pick from (sent with every card answer, or fetched when the panel needs them)
 const CF_F = {
   period: { label: 'Period', icon: 'calendar', tone: 'n', opts: () => [['month', 'This month'], ['last', 'Last month'], ['q', 'Quarter so far'], ['3m', 'Last 3 months'], ['fy', 'Financial year so far']] },
@@ -811,6 +812,11 @@ const CF_F = {
   cmp: { label: 'Compare', icon: 'trend', tone: 'a', opts: c => { const fy = !!c && CF[c].period === 'fy'; return [['off', 'No comparison'], ['prev', fy ? 'With the period before (not for the full year)' : 'With the period before', null, fy]]; } },
   group: { label: 'Group by', icon: 'grid', tone: 's', opts: () => [['team', 'Team'], ['mgr', 'Reporting manager']] },
   sort: { label: 'Sort', icon: 'sliders', tone: 'g', opts: () => [['az', 'A-Z'], ['behind', 'Most behind first'], ['done', 'Most submitted first']] },
+  edesig: { label: 'Designation', icon: 'award', tone: 'p', multi: true, opts: () => empFO.desig },
+  erole: { label: 'Role', icon: 'shield', tone: 'a', multi: true, opts: () => empFO.role },
+  emgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', multi: true, opts: () => empFO.mgr },
+  email: { label: 'Work email', icon: 'mail', tone: 'n', opts: () => [['any', 'Any'], ['set', 'Has a work email'], ['missing', 'No work email yet']] },
+  ews: { label: 'Work status', icon: 'clock', tone: 'g', opts: () => [['any', 'Any'], ['working', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']] },
 };
 const CF = (() => {
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('pms.cardFilters') || '{}') || {}; } catch {}
@@ -819,6 +825,7 @@ const CF = (() => {
 })();
 const cfSave = () => { try { localStorage.setItem('pms.cardFilters', JSON.stringify(CF)); } catch {} };
 const HC = {}; // filtered card answers from the server; none = the card shows the /api/home numbers
+const empPreset = grp => { Object.keys(CF.emp).forEach(k => { CF.emp[k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); if (grp) CF.emp.edesig = [grp]; cfSave(); };
 let homeRedraw = null; // redraws the dashboard cards from the last /api/home answer and HC
 // the admin's team tabs above the cards already pick one team: the cards' Team filter steps aside while one is picked
 const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam));
@@ -834,12 +841,12 @@ const cfText = (c, k) => {
 };
 let cfWarned = false;
 async function cfFetch(c) {
-  if (!cfCount(c)) return null;
+  if (CF_CARDS[c].local || !cfCount(c)) return null;
   const f = CF[c], qs = new URLSearchParams({ card: c, month: S.month, period: f.period, team: (S.hteam ? [S.hteam] : f.team || []).join('|'), mgr: (f.mgr || []).join('|'), cmp: f.cmp || '', group: f.group || '', sort: f.sort || '' });
   try { const r = await apiCall('/home/card?' + qs, {}); if (r.opts) cfOptions = r.opts; return r; }
   catch (e) { if (!cfWarned) { cfWarned = true; toast(`Card filters could not be applied, so all data is shown. ${e.message}`, 'err'); } return null; }
 }
-const cfLoadAll = () => Promise.all(Object.keys(CF_CARDS).map(async c => { HC[c] = await cfFetch(c); }));
+const cfLoadAll = () => Promise.all(Object.keys(CF_CARDS).filter(c => !CF_CARDS[c].local).map(async c => { HC[c] = await cfFetch(c); }));
 
 // the panel: one open at a time, fixed under its pill (above it when there is no room below)
 let cfPop = null;
@@ -871,6 +878,7 @@ function cfDraw() {
 // a choice changed: remember it, ask the server for the card's numbers, redraw the cards (the panel stays open)
 async function cfChanged(c) {
   cfSave(); cfDraw();
+  if (CF_CARDS[c].local) { if (cfLocalRedraw[c]) await cfLocalRedraw[c](); return cfPlace(); }
   const want = JSON.stringify(CF[c]), r = await cfFetch(c);
   if (JSON.stringify(CF[c]) !== want) return; // another choice came in meanwhile; its own fetch redraws
   HC[c] = r; if (homeRedraw) homeRedraw();
@@ -1042,8 +1050,8 @@ pages.home = async (v, opts = {}) => {
       catch (er) { toast(er.message, 'err'); }
       return;
     }
-    // All stats cards: the Employees page remembers its role filter in S.erole; set it so the list matches the card
-    const sc = e.target.closest('a[data-role]'); if (sc) { S.erole = sc.dataset.role; S.eq = ''; S.eteam = ''; return; }
+    // All stats cards: open Employees with only that designation filter on, so the list matches the card
+    const sc = e.target.closest('a[data-role]'); if (sc) { empPreset(sc.dataset.role); S.eq = ''; S.eteam = ''; return; }
     const b = e.target.closest('[data-team]');
     if (b) {
       if (b.classList.contains('on')) return;
@@ -1067,7 +1075,7 @@ pages.form = async (v, emp, month) => {
   try { FP = await api(`/form?emp=${emp}&month=${S.month}`); }
   catch (er) {
     if (!/No form exists/.test(er.message)) throw er;
-    v.innerHTML = head('Monthly review form', `PMS › ${esc(monthLabel(S.month))}`) + `<div class="row">${fyPick(S.month)}</div><div class="info">There is no review form for ${esc(monthLabel(S.month))}. Forms start from ${esc(monthLabel(S.me.firstMonth))}, or from the month the person joined, and the current month is the latest one that opens.</div>`;
+    v.innerHTML = head('Monthly review form') + `<div class="row">${fyPick(S.month)}</div><div class="info">There is no review form for ${esc(monthLabel(S.month))}. Forms start from ${esc(monthLabel(S.me.firstMonth))}, or from the month the person joined, and the current month is the latest one that opens.</div>`;
     return wirePick(emp);
   }
   drawForm(v);
@@ -1080,7 +1088,8 @@ const foldBtn = (k, label) => `<button type="button" class="ibtn opf-fold" data-
 // KRA rating colours (managers' review, 2026-11-16): 75 and above green, 74 to 50 yellow, 49 to 25 orange, 24 and below red
 const rateCol = x => x == null || x === '' ? '' : +x >= 75 ? 'r-g' : +x >= 50 ? 'r-y' : +x >= 25 ? 'r-o' : 'r-r';
 let focusQ = null; // question answer box to put the cursor in after a redraw
-const qOriginal = {}; // answer text when its box was opened, to skip saving when nothing changed
+const qSavedAt = {}; // question id -> when its answer was last saved automatically (shows "Saved automatically")
+let qTimer = null; // pending automatic save of a question answer
 function drawForm(v, errors) {
   const { form: f, perms: p, employee: e, manager: m } = FP;
   // the old PMS portal's form, same layout and look (Harish, 2026-11-17: "keep layout look and exact like this"), only more
@@ -1144,8 +1153,8 @@ function drawForm(v, errors) {
     ${sec('people', 'People', 'Self updating of skills')}
     ${ratingBox(f)}
     <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
-    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="opf-btns"><button type="button" class="opf-y" data-qsave="${q.id}">Save</button><button type="button" class="btn sm" data-qcancel="${q.id}">Cancel</button></div>`
-      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id], q.id) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
+    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved automatically">${esc(f.qa[q.id] || '')}</textarea><div class="opf-saved" data-qstat="${q.id}" aria-live="polite"></div>`
+      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? pen(q.id, 'Edit answer') : ''}${Date.now() - (qSavedAt[q.id] || 0) < 4000 ? `<div class="opf-saved on">${ico('tick')}Saved automatically</div>` : ''}`}${shortAns(f.qa[q.id], q.id) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       // the Self Rating / Manager Rating / Remark heading only above the first rated question
       return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)}${/rate out of/i.test(q.text) ? '' : ' (Rate out of 5)'}</td><td><table class="opf-qr"><colgroup><col style="width:25%"><col style="width:25%"><col></colgroup>${i ? '' : '<tr><th>Self Rating</th><th>Manager Rating</th><th>Remark</th></tr>'}<tr>
@@ -1242,7 +1251,7 @@ function wireForm(v) {
       const r = f.kras[t.dataset.k].rows[+t.dataset.i]; r[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value;
       if (RATING_FIELDS.includes(t.dataset.f)) formDirty.add(`k|${t.dataset.k}|${r.id}|${t.dataset.f}`);
     }
-    else if (t.dataset.qt) { f.qa[t.dataset.qt] = t.value; formDirty.add(`qt|${t.dataset.qt}`); }
+    else if (t.dataset.qt) { const id = t.dataset.qt; f.qa[id] = t.value; formDirty.add(`qt|${id}`); clearTimeout(qTimer); qTimer = setTimeout(() => qSave(id), 800); }
     else if (t.dataset.qr) { const a = f.qa[t.dataset.qr] ||= {}; a[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value; formDirty.add(`qr|${t.dataset.qr}|${t.dataset.f}`); }
   };
   // re-render on blur-ish changes so remark requirements update
@@ -1292,6 +1301,29 @@ function wireForm(v) {
     keys.forEach(k => formDirty.delete(k));
   };
   const redraw = () => { const y = SC().scrollTop; drawForm(v); SC().scrollTop = y; };
+  // question answers save themselves (Harish, 2026-11-17: no Save button): a short pause in typing saves and shows
+  // "Saved automatically"; leaving the box saves too and closes it
+  const qSave = async id => {
+    clearTimeout(qTimer); qTimer = null;
+    if (!formDirty.has(`qt|${id}`)) return;
+    const st = v.querySelector(`[data-qstat="${id}"]`), ta = v.querySelector(`textarea[data-qt="${id}"]`);
+    if (st) { st.className = 'opf-saved'; st.textContent = 'Saving…'; }
+    try {
+      await save(); qSavedAt[id] = Date.now();
+      if (st) { st.className = 'opf-saved on'; st.innerHTML = `${ico('tick')}Saved automatically`; }
+      if (ta) { ta.classList.add('saved'); setTimeout(() => ta.classList.remove('saved'), 1200); }
+    } catch (er) { if (st) st.textContent = ''; toast(er.message, 'err'); }
+  };
+  // (Chrome has no onfocusout property, so a listener; the previous draw's one is removed first)
+  if (v._qfo) v.removeEventListener('focusout', v._qfo);
+  v.addEventListener('focusout', v._qfo = e => {
+    const id = e.target.dataset && e.target.dataset.qt; if (!id) return;
+    // wait a moment so a click elsewhere (another pencil, a button) still lands before the form is redrawn
+    qSave(id).then(() => setTimeout(() => {
+      if (!v.querySelector(`textarea[data-qt="${id}"]`) || document.activeElement?.dataset?.qt === id) return; // page changed, or back in the box
+      editingQ.delete(id); if (focusQ === id) focusQ = null; redraw();
+    }, 150));
+  });
   // question answers: the pencil opens a box; the Save button stores the answer (ratings and remarks still save automatically)
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   $('#expk').onclick = () => exportKpi();
@@ -1320,21 +1352,13 @@ function wireForm(v) {
   v.onclick = async e => {
     const t = e.target, post = (u, b) => api(u, { method: 'POST', body: { empId: f.empId, month: f.month, ...b } });
     try {
-      const qs = t.closest('[data-qsave]'), qc = t.closest('[data-qcancel]');
-      if (qs) {
-        const id = qs.dataset.qsave, ta = v.querySelector(`textarea[data-qt="${id}"]`);
-        f.qa[id] = ta.value; formDirty.add(`qt|${id}`);
-        try { await save(); editingQ.delete(id); toast('Answer saved'); } catch (er) { toast(er.message, 'err'); }
-        return redraw();
-      }
-      if (qc) { const id = qc.dataset.qcancel; f.qa[id] = qOriginal[id] || ''; editingQ.delete(id); focusQ = null; return redraw(); }
       const qe = t.closest('[data-qedit]'); // the click usually lands on the pencil's svg, not the button
       const kw = t.closest('[data-kwedit]'); // KRA weightage pencil: opens the box; the tick closes it (save stores it)
       const fb = t.closest('[data-fold]'); // − / + on a section bar folds or opens that section
       if (t.closest('#resx')) { resultNoteOff = true; return redraw(); }
       if (fb) { const k = fb.dataset.fold; folded.has(k) ? folded.delete(k) : folded.add(k); redraw(); }
       else if (kw) { const k = kw.dataset.kwedit; editingW.has(k) ? editingW.delete(k) : editingW.add(k); redraw(); const box = v.querySelector(`[data-kw="${k}"]`); if (box) { box.focus(); box.select(); } }
-      else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; qOriginal[id] = f.qa[id] || ''; redraw(); }
+      else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; redraw(); }
       else if (t.dataset.kreq) {
         FP = await post('/kra-request', {}); toast('Request sent to your manager'); drawForm(v);
       }
@@ -1369,14 +1393,14 @@ const rateCls = x => x == null ? '' : x >= 80 ? 'g' : x >= 60 ? 'a' : 'r'; // pe
 const personHref = id => S.me.role === 'admin' ? `#/reporting/${id}` : `#/team/${id}`;
 const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Team report</a>` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
 const reportHead = (d, title, crumbLabel) => head(d.me ? `My ${title}` : `${title[0].toUpperCase() + title.slice(1)}: ${esc(d.person.name)}`,
-  d.me ? `PMS › My ${title}` : `PMS › <a href="${personHref(d.person.id)}">${esc(d.person.name)}</a> › ${crumbLabel || title}`);
+  d.me ? '' : `<a href="${personHref(d.person.id)}">${esc(d.person.name)}</a> › ${crumbLabel || title}`); // no "PMS" crumbs (Harish, 2026-11-17)
 
 // My Team: my people (drill into anyone who has a team), and the list of every manager under me
 pages.team = async (v, arg) => {
   arg = String(arg || '').toLowerCase();
   const id = /^\d+$/.test(arg) ? arg : '', list = arg === 'managers';
   const d = await api(`/myteam?month=${S.month}${id ? '&id=' + id : ''}`), p = d.person, c = d.counts, mon = monShort();
-  const crumbs = d.me ? `PMS › My team${list ? ' › Reporting Manager' : ''}`
+  const crumbs = d.me ? ''
     : ['<a href="#/team">My team</a>', ...d.path.filter(x => x.id !== S.me.id).map(x => `<a href="#/team/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ');
   const up = d.path.filter(x => x.id !== S.me.id), back = up.length ? `#/team/${up[up.length - 1].id}` : '#/team';
   const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}</span>`;
@@ -1417,7 +1441,7 @@ pages.mis = async (v, id) => {
   if (S.me.role !== 'admin') return pages.home(v); // MIS, KPI and manager emails are admin-only
   const d = await api(`/mis${id ? '?id=' + id : ''}`), short = m => esc(m.label.split(' ')[0].slice(0, 3));
   const cell = x => !x ? '<span class="small" title="No form">–</span>' : x.rating != null ? `<b class="rt ${rateCls(x.rating)}" title="${esc(x.status)}">${pc(x.rating)}</b>` : `<span class="small" title="${esc(x.status)}">${{ 'Review Pending': 'Pending' }[x.status] || '–'}</span>`;
-  v.innerHTML = (d.org ? head('MIS report', 'PMS › MIS report · whole organisation') : reportHead(d, 'MIS report', 'MIS report')) + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for ${d.org ? 'everyone in the organisation' : `everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)`}</span><span class="sp"></span>${d.org ? '' : `<a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team report</a>`}<button class="btn pri" id="misx">Download CSV</button></div>
+  v.innerHTML = (d.org ? head('MIS report', 'Whole organisation') : reportHead(d, 'MIS report', 'MIS report')) + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for ${d.org ? 'everyone in the organisation' : `everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)`}</span><span class="sp"></span>${d.org ? '' : `<a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team report</a>`}<button class="btn pri" id="misx">Download CSV</button></div>
   <div id="mgraph"></div>
   <h2>Month by month</h2>
   <div class="tablewrap"><table><tr><th>Month</th><th class="nr">Scheduled</th><th class="nr">Filled</th><th class="nr">Not Filled</th><th class="nr">Review Completed</th><th class="nr">Review Pending</th><th class="nr" title="Review held within the window">On time</th><th class="nr" title="Review held after the window">Late</th><th class="nr">Avg rating</th><th>Completion</th></tr>
@@ -1652,7 +1676,9 @@ pages.scheduling = async v => {
   const d = await api('/scheduling?month=' + S.month), cal = d.calendar;
   const rules = d.canEditWindows ? await api('/config') : null;
   // admins only watch the schedule (no booking, no calendar): the reporting managers schedule the reviews
-  const calCard = d.adminView ? `<div class="info">Reporting managers schedule the reviews. As admin you set the review windows and rules here; the team list shows only the people who report to ${S.me.viewingAs ? esc(S.me.name) : 'you'} directly. Use Review status report for everyone.</div>`
+  const asMgr = d.adminView && d.rows.some(r => r.managerOnly);
+  const calCard = asMgr ? `<div class="info">You are viewing as ${esc(S.me.name)}. ${esc(S.me.name.split(' ')[0])} sees these Schedule buttons and books the reviews from their own sign-in; they are greyed out for you because admins do not schedule reviews.</div>`
+    : d.adminView ? `<div class="info">Reporting managers schedule the reviews. As admin you set the review windows and rules here; the team list shows only the people who report to ${S.me.viewingAs ? esc(S.me.name) : 'you'} directly. Use Review status report for everyone.</div>`
     : !cal.google ? `<div class="info">Calendar invites are off on this server: Google sign-in is not set up yet. Reviews can still be scheduled here.</div>`
     : cal.connected ? `<div class="calcard on">${ico('calendar')}<div><b>Google Calendar connected</b><span>Invites go out from ${esc(cal.email)}, Google emails the employee, and their manager if someone else schedules.</span></div><span class="sp"></span><button class="btn sm" id="caloff">Disconnect</button></div>`
     : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
@@ -1668,7 +1694,7 @@ pages.scheduling = async v => {
   <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
   <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
   ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
-  <td>${r.scheduled ? `<b>${fmtD(r.scheduled)}</b>${r.time ? ` <span class="small">${fmtT(r.time)}</span>` : ''}${r.canManage ? ` <button class="btn sm" data-resch="${r.empId}">Reschedule</button>` : ''}` : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
+  <td>${r.scheduled ? `<b>${fmtD(r.scheduled)}</b>${r.time ? ` <span class="small">${fmtT(r.time)}</span>` : ''}${r.canManage ? ` <button class="btn sm" data-resch="${r.empId}">Reschedule</button>` : r.managerOnly ? ` <button class="btn sm" disabled title="${esc(S.me.name)} reschedules from their own sign-in">Reschedule</button>` : ''}` : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="rcount" title="Counted once per new date">${r.reschedules}</span> <span class="small">time${r.reschedules === 1 ? '' : 's'}</span><div class="small">${reschedDates(r).map(fmtD).join(' → ')}</div>` : '<span class="rcount z">0</span>'}</td>
   <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}</table></div>
@@ -1735,12 +1761,11 @@ pages.profile = async v => {
   // one field: coloured icon tile, label, value
   const field = (icon, tone, label, val) => `<div class="pf-f"><span class="pf-i ${tone}">${ico(icon)}</span><div><small>${label}</small><b>${val || notSet}</b></div></div>`;
   const role = ROLE_LABEL[p.role] || p.role;
-  // each detail appears once: name, photo, designation and department in the banner; the rest in Work details
+  // each detail appears once: name, designation and department in the banner; the rest in Work details (no photo upload, Harish 2026-11-17)
   const hero = `<div class="hero pf-hero">${ORBS}${HALO}
-    <button type="button" class="pf-av" data-pf="pick" title="${p.photo ? 'Change' : 'Upload'} profile photo" aria-label="${p.photo ? 'Change' : 'Upload'} profile photo"><span class="avatar">${avatarIn(p.name, p.photo)}</span><i class="pf-cam">${ico('camera')}</i></button>
+    <span class="pf-av"><span class="avatar">${initials(p.name)}</span></span>
     <div class="pf-hx"><div class="ht">${esc(p.name)}<span class="pf-st ${p.active ? 'on' : ''}">${p.active ? 'Active' : 'Inactive'}</span></div>
-      <p>${esc(p.designation) || esc(role)}${p.team ? `<span class="pf-dot">·</span>${teamIco(p.team)}${esc(tl(p.team))}` : ''}</p></div>
-    <div class="acts"><button type="button" class="btn yel" data-pf="pick">${ico('camera')}${p.photo ? 'Change photo' : 'Upload photo'}</button>${p.photo ? `<button type="button" class="btn" data-pf="del">${ico('trash')}Remove</button>` : ''}</div></div>`;
+      <p>${esc(p.designation) || esc(role)}${p.team ? `<span class="pf-dot">·</span>${teamIco(p.team)}${esc(tl(p.team))}` : ''}</p></div></div>`;
   const work = widget('idcard', 'Work details', '', `<div class="mb"><div class="pf-grid">
     ${field('idcard', 'n', 'Employee code', esc(p.code))}${field('mail', 'b', 'Work email', esc(p.email))}
     ${field('shield', 'a', 'Access role', esc(role))}${field('calendar', 'p', 'Date of joining', fmt(p.joined))}
@@ -1750,48 +1775,15 @@ pages.profile = async v => {
   // reporting line: director at the top, the person at the bottom
   // the person's own row just says "You" (name and designation are already in the banner)
   const line = p.chain.length > 1 ? `<ol class="pf-line">${p.chain.map((x, i) => x.me
-    ? `<li class="me"><span class="avatar">${avatarIn(x.name, x.photo)}</span><div><b>${me ? 'You' : esc(x.name.split(' ')[0])}</b></div></li>`
-    : `<li><span class="avatar">${avatarIn(x.name, x.photo)}</span><div><b>${esc(x.name)}</b><small>${esc(x.designation) || '&nbsp;'}${i === 0 && !/director/i.test(x.designation) ? ' · Director' : i === p.chain.length - 2 && i > 0 ? ' · Reporting manager' : ''}</small></div></li>`).join('')}</ol>`
+    ? `<li class="me"><span class="avatar">${initials(x.name)}</span><div><b>${me ? 'You' : esc(x.name.split(' ')[0])}</b></div></li>`
+    : `<li><span class="avatar">${initials(x.name)}</span><div><b>${esc(x.name)}</b><small>${esc(x.designation) || '&nbsp;'}${i === 0 && !/director/i.test(x.designation) ? ' · Director' : i === p.chain.length - 2 && i > 0 ? ' · Reporting manager' : ''}</small></div></li>`).join('')}</ol>`
     : `<div class="pf-none" style="padding:4px 0">Top level: ${me ? 'you report' : 'they report'} to no one in PMS, so there is no monthly review.</div>`;
   const rep = widget('sitemap', 'Reporting line', '', `<div class="mb">${line}</div>`);
-  v.innerHTML = head('Profile information', `PMS › Profile information${me ? '' : ` · ${esc(p.name)}`}`) + hero
+  v.innerHTML = head('Profile information', me ? '' : esc(p.name)) + hero
     + `<div class="wgrid">${work}${rep}</div>`
-    + `<div class="info pf-note">${ico('info')}<span>These details are kept by the admin. If something is wrong or missing, ask HR to update it. Your photo is yours to change.</span></div>`;
-  v.onclick = async e => {
-    const b = e.target.closest('[data-pf]'); if (!b) return;
-    if (b.dataset.pf === 'pick') return pickPhoto();
-    if (await confirmBox('Remove profile photo?', 'Your initials will show instead.', { ok: 'Remove', danger: true })) savePhoto('').then(() => toast('Profile photo removed')).catch(er => toast(er.message, 'err'));
-  };
+    + `<div class="info pf-note">${ico('info')}<span>These details are kept by the admin. If something is wrong or missing, ask HR to update it.</span></div>`;
+  v.onclick = null;
 };
-// profile photo: pick an image, crop it to a centred square and shrink it to 256px JPEG in the browser, then save
-function pickPhoto() {
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/webp';
-  inp.onchange = async () => {
-    const f = inp.files[0]; if (!f) return;
-    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) return toast('Please pick a JPG, PNG or WebP image.', 'err');
-    if (f.size > 10e6) return toast('That image is larger than 10 MB. Please pick a smaller one.', 'err');
-    try { await savePhoto(await squarePhoto(f)); toast('Profile photo updated'); } catch (er) { toast(er.message, 'err'); }
-  };
-  inp.click();
-}
-function squarePhoto(file, size = 256) {
-  return new Promise((resolve, reject) => {
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      const s = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas'); c.width = c.height = size;
-      const g = c.getContext('2d'); g.fillStyle = 'white'; g.fillRect(0, 0, size, size); // transparent PNGs get a white background
-      g.drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
-      URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That image could not be read. Please try another one.')); };
-    img.src = url;
-  });
-}
-async function savePhoto(photo) {
-  const r = await api('/profile/photo', { method: 'POST', body: { photo } });
-  S.me.photo = r.photo; const t = $('#tbav'); if (t) t.innerHTML = avatarIn(S.me.name, S.me.photo);
-  if ((location.hash || '').startsWith('#/profile')) route();
-}
 
 // ---------- emails ----------
 pages.emails = async v => {
@@ -1964,18 +1956,29 @@ function allStats(st) {
 // set by the admin in Edit; shown as the Final Status in the review status report (Full details)
 const WORK_STATUS = [['', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']];
 pages.employees = async (v, arg, grp) => {
-  if (arg === 'active' || arg === 'inactive') { S.etab = arg; S.erole = grp ? decodeURIComponent(grp) : ''; S.eq = S.eteam = ''; } // the address carries the tile's group
+  if (arg === 'active' || arg === 'inactive') { S.etab = arg; S.eq = S.eteam = ''; if (grp) empPreset(decodeURIComponent(grp)); } // the address carries the tile's group
   const [d, md] = await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
   const GROUPS = ['Director', 'Senior Manager', 'Manager', 'Senior Executive', 'Executive', 'Article/Intern', 'Other']; // designation groups from the master sheet
-  const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '', rf = tab === 'active' && GROUPS.includes(S.erole) ? S.erole : '';
-  const rows = (tab === 'active' ? d.active : d.inactive).filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && (!rf || e.desigGroup === rf));
+  const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '';
+  // the Filter pill (same panel as the dashboard cards): designation, role, reporting manager, work email, work status
+  const all = tab === 'active' ? d.active : d.inactive, F = CF.emp, any = (a, x) => !a.length || a.includes(x);
+  const grpOf = e => e.desigGroup || 'Other', wsOf = e => e.workStatus ? e.workStatus.type : 'working';
+  const passF = e => any(F.edesig, grpOf(e)) && any(F.erole, e.role) && any(F.emgr, String(e.managerId ?? ''))
+    && (F.email === 'any' || (F.email === 'set') === !!e.email) && (F.ews === 'any' || wsOf(e) === F.ews);
+  const count = (key, label) => { const n = {}; all.forEach(e => { const k = key(e); n[k] = (n[k] || 0) + 1; }); return Object.keys(n).map(k => [k, label(k), n[k]]); };
+  empFO = {
+    desig: count(grpOf, x => x).sort((a, b) => GROUPS.indexOf(a[0]) - GROUPS.indexOf(b[0])),
+    role: count(e => e.role, x => ROLE_LABEL[x] || x).sort((a, b) => a[1].localeCompare(b[1])),
+    mgr: count(e => String(e.managerId ?? ''), x => x ? (all.find(e => String(e.managerId) === x) || {}).manager || x : 'No manager (top-level director)').sort((a, b) => a[1].localeCompare(b[1])),
+  };
+  cfLocalRedraw.emp = () => pages.employees(v);
+  const rows = all.filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && passF(e));
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
-  const inScope = (tab === 'active' ? d.active : d.inactive).filter(e => !rf || e.desigGroup === rf);
+  const inScope = all.filter(passF);
   const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
   const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(tl(t))}: ${teamN[t]}">${teamIco(t)}${esc(tl(t))}</button>`).join('')}</div></div>`;
-  const shown = rf; // role filter set by a dashboard card
   const opts = (list, cur, lab = x => x) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option value="${esc(x)}" ${x === cur ? 'selected' : ''}>${esc(lab(x))}</option>`).join('');
   // anyone active can be picked: people who already lead first, then everyone else (picking one makes them a manager)
   const mgrOpts = e => {
@@ -2014,7 +2017,7 @@ pages.employees = async (v, arg, grp) => {
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
   <div class="row"><div class="seg" style="margin:0"><a class="chip ${tab === 'active' ? 'on' : ''}" href="#/employees/active">Active <span class="cnt">${d.active.length}</span></a><a class="chip ${tab === 'inactive' ? 'on' : ''}" href="#/employees/inactive">Inactive <span class="cnt">${d.inactive.length}</span></a></div></div>
-  <div class="row">${rf ? `<button type="button" class="chip on" data-clearrole title="Show all active members">${shown} <span aria-hidden="true">×</span></button>` : ''}${searchBox('eq', 'Search by name, code or email', S.eq, 270)}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
+  <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
   ${md.diffs.length ? `<div class="warn" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
@@ -2055,7 +2058,7 @@ pages.employees = async (v, arg, grp) => {
   };
   v.onclick = async e => {
     const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
-    if (e.target.closest('[data-clearrole]')) { S.erole = ''; return pages.employees(v); }
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // the Filter pill
     const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
     if (a === 'mdsync') {
       try { const r = await api('/master/sync', { method: 'POST' }); toast(r.changes.length ? `${r.changes.length} change${r.changes.length === 1 ? '' : 's'} brought in from the list` : 'The list has no new changes'); pages.employees(v); }
@@ -2065,7 +2068,7 @@ pages.employees = async (v, arg, grp) => {
     if (t.dataset.stat) {
       const k = t.dataset.stat;
       if (k === 'questions') { location.hash = '#/params'; return; }
-      S.etab = k === 'inactive' ? 'inactive' : 'active'; S.erole = '';
+      S.etab = k === 'inactive' ? 'inactive' : 'active'; empPreset('');
       const h = '#/employees/' + S.etab; // keep the address (and the menu highlight) in step with the tile
       if (location.hash !== h) { location.hash = h; return; }
       return pages.employees(v);

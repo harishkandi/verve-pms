@@ -50,9 +50,15 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   "Jul-Sep 0" next to each number) and Group by / Sort (progress). Each card filters on its own; choices are kept in
   `localStorage` `pms.cardFilters`; a period other than this month adds a tag ("Q3", "Oct") to the card title. A card with
   no filter shows `/api/home`; a filtered one reads `GET /api/home/card` (read-only, `server.js`; managers and admins
-  only). If that call fails the card falls back to its unfiltered numbers with one toast. While the admin's team tabs
+  only). If that call fails the card falls back to its unfiltered numbers with one toast. The Employees page uses the SAME pill and panel
+  (card `emp`, `local: true`: filters its list in the browser, no server call; Harish 2026-11-17): Designation (group from
+  the master sheet), Role, Reporting manager, Work email, Work status; the dashboard's All stats tiles open it with only
+  that Designation on (`empPreset`). While the admin's team tabs
   pick a team, the cards' Team field is hidden. After changing an API the page reads, restart the server.
-- UI follows the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
+- UI = the old PMS portal's look (Harish 2026-11-17: employees know that UI; layouts and functions stay, only the look):
+  the "Old PMS portal look" block in `index.html` re-points the tokens to the portal's colours (navy `#23408b` = "the blue in
+  My review", light blue `#cbdaff`, grey `#ececec` fields, yellow main buttons, plain dropdown lists and date picker). Built
+  on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"
   etc., `.toast.t-ok`, 2026-11-16). The monthly form (`drawForm`, CSS `.opf*`) keeps the old PMS portal's ORDER
@@ -96,7 +102,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   only Admin is a choice in Edit); anyone active can be picked as a manager. People involved get notifications (see below). Submitted forms keep `f.reviewedBy` (manager at the time):
   the form header and Team report ("by <name>") use it. The employee sheet stays master: an import replaces app-made
   reporting changes (`managerSetInApp`) and lists them. Admins never schedule reviews (`manageForm` refuses when the
-  real user is admin, also in View as); their Scheduling page is windows + rules + read-only status.
+  real user is admin, also in View as); their Scheduling page is windows + rules + read-only status; in View as of a manager that
+  manager's Schedule / Reschedule buttons show greyed out with a note (`managerOnly`, 2026-11-17), so View as matches what they see.
 - Team follows the reporting manager (Harish, 2026-11-12): a new manager (Employees table/Edit, moving a manager to
   inactive, or a planned "keep" move when it takes effect) puts the person in that manager's team, and the people under
   them who were in their old team come along (`teamOfManager` / `moveTeam` in `server.js`). Exceptions: reporting to a
@@ -147,7 +154,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Monthly form is two steps: the employee clicks "Submit to manager" (`POST /api/form/self-submit`, blocked until
   `employeeTodo` is empty; sets `form.selfSubmitted`, their part is then read-only), the manager can "Send back to
   employee" (`POST /api/form/return`) or "Submit review" (`POST /api/form/submit`, final). Everyone who can edit gets
-  Save draft; employees' entries also autosave. Autosave sends only the fields that person changed (`formDirty` in
+  Save draft; employees' entries also autosave. Question answers have no Save button (2026-11-17): they save after a
+  short pause in typing and when the box is left, showing "Saved automatically". Autosave sends only the fields that person changed (`formDirty` in
   `app.js`) and `PUT /api/form` changes only the fields it is sent, so the employee and the manager can have the form
   open together without wiping each other's entries (found in testing, 2026-11-12; never send the whole form back).
   Top-level directors (no manager) get no new form (`mustForm`) and no My review / My report menu items. Since 2026-11-13

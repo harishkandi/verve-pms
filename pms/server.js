@@ -102,8 +102,12 @@ function ensureAccounts() {
 }
 // test logins: the role addresses are login names only, never stored as the person's email, so no invite can reach those inboxes
 const byCode = c => employees.find(e => e.code === c);
+const firstActive = ok => employees.find(e => e.active && ok(e));
 const testAccounts = () => [
-  ['admin', 'Admin', byCode('A900')], ['hr', 'HR', byCode('E001')], ['manager', 'Manager', byCode('E006')], ['employee', 'Employee', byCode('E101')],
+  // the old demo codes (E001, E006, E101) are gone since the real list came in: fall back to the first real person of that
+  // kind, so manager@ signs in as a real reporting manager (Schedule buttons, team forms) and employee@ as a reviewed employee
+  ['admin', 'Admin', byCode('A900')], ['hr', 'HR', byCode('E001') || firstActive(e => /^hr/i.test(e.team || '') && e.managerId)],
+  ['manager', 'Manager', byCode('E006') || firstActive(e => e.role === 'manager' && e.managerId)], ['employee', 'Employee', byCode('E101') || firstActive(e => e.role === 'employee' && e.managerId)],
   ...A.ADMIN_EMAILS.map(em => [em, 'Admin (you)', findByEmail(em)]),
 ].filter(([, , e]) => e && e.active).map(([login, label, emp]) => ({ email: login.includes('@') ? login : `${login}@${A.ORG_DOMAIN}`, label, emp }));
 route('GET', '/api/auth/status', ({ user }) => ({
@@ -204,7 +208,7 @@ const calendarState = real => { const l = C.linked(real.id); return { google: A.
 route('GET', '/api/me', ({ user, realUser }) => (ensureMonthForms(), {
   ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(Boolean))].sort(),
   teamLabels: Object.fromEntries([...teamNames(), 'Directors'].map(t => [t, teamLabel(t)])), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, firstMonth: config.fyStartMonth, today: config.today, fy: fyLabel(config.currentMonth),
-  photo: D.photos[user.id] || '', real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
+  real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
 }));
 
 // Profile information (top bar menu): the person's own details as the admin set them; read-only for them.
@@ -221,20 +225,9 @@ route('GET', '/api/profile', ({ user }) => {
     role: e.role, manager: mgr ? { name: mgr.name, designation: mgr.designation || '' } : null,
     director: top.id !== e.id ? top.name : '', joined: unset('joined') ? '' : e.joined || '', active: e.active !== false,
     reports: employees.filter(x => x.active && x.managerId === e.id).length,
-    chain: chain.map(x => ({ id: x.id, name: x.name, designation: x.designation || '', me: x.id === e.id, photo: D.photos[x.id] || '' })),
-    photo: D.photos[e.id] || '',
+    chain: chain.map(x => ({ id: x.id, name: x.name, designation: x.designation || '', me: x.id === e.id })),
     window: w ? { month: D.monthLabel(config.currentMonth), start: w.start, end: w.end } : null,
   };
-});
-
-// profile photo: the person sets or removes their own (the browser crops it to a small square JPEG first)
-route('POST', '/api/profile/photo', ({ user, body }) => {
-  const photo = String(body.photo || '');
-  if (!photo) { delete D.photos[user.id]; audit(user.name, 'profile photo', 'removed'); return { photo: '' }; }
-  if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)) throw bad('That file is not a supported image (JPG, PNG or WebP).');
-  if (photo.length > 300000) throw bad('That photo is too large. Please pick a smaller image.');
-  D.photos[user.id] = photo; audit(user.name, 'profile photo', 'updated');
-  return { photo };
 });
 
 // Home dashboard: every number shown on the page is computed here, in one call
@@ -621,7 +614,9 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const adminView = realUser.role === 'admin';
   return { windows, canEditWindows: user.role === 'admin', adminView, directOnly, calendar: calendarState(realUser), rows: rows.map(r => {
     const f = L.peek(r.empId, month), e = L.emp(r.empId);
-    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: !adminView && L.canManage(user, r.empId) };
+    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: !adminView && L.canManage(user, r.empId),
+      // an admin viewing as a manager sees that manager's buttons greyed out (the manager books the review, not the admin)
+      managerOnly: adminView && user.role !== 'admin' && L.canManage(user, r.empId) };
   }) };
 });
 
