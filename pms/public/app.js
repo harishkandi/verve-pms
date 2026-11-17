@@ -1059,11 +1059,11 @@ pages.home = async (v, opts = {}) => {
 };
 
 // ---------- monthly form ----------
-let FP = null, attempted = false;
+let FP = null, attempted = false, resultNoteOff = false; // resultNoteOff: the "Monthly result is not available" note was closed
 pages.form = async (v, emp, month) => {
   if (/^annual/.test(month || '')) return drawAppraisal(v, emp, month.split('-')[1]); // annual or annual-2026
   S.month = month || S.month;
-  attempted = false; editingQ.clear(); editingW.clear(); folded.clear(); focusQ = null; formDirty.clear();
+  attempted = false; resultNoteOff = false; editingQ.clear(); editingW.clear(); folded.clear(); focusQ = null; formDirty.clear();
   try { FP = await api(`/form?emp=${emp}&month=${S.month}`); }
   catch (er) {
     if (!/No form exists/.test(er.message)) throw er;
@@ -1083,19 +1083,20 @@ let focusQ = null; // question answer box to put the cursor in after a redraw
 const qOriginal = {}; // answer text when its box was opened, to skip saving when nothing changed
 function drawForm(v, errors) {
   const { form: f, perms: p, employee: e, manager: m } = FP;
-  // one KRA: the old portal's order (name + description, weightage of KRA, the table with its Totals row even when empty,
-  // then add / save), drawn in the app's own style (Harish, 2026-11-17)
+  // the old PMS portal's form, same layout and look (Harish, 2026-11-17: "keep layout look and exact like this"), only more
+  // compact: cream bar with the KRA name, "Weightage Of KRA" + pencil, navy-headed table with its Totals row even when
+  // empty, then the yellow + and save buttons
   const sec = (k, label, desc) => {
     const kr = f.kras[k], ed = p.editKras, rows = kr.rows;
     const sum = rows.reduce((a, r) => a + (+r.weight || 0), 0);
     const t = formSummary(f).kras.find(x => x.key === k), sr = t.self ?? 0, mr = t.mgr ?? 0, calc = t.score ?? Math.round((0.3 * sr + 0.7 * mr) * 10) / 10;
     const wEdit = ed && editingW.has(k), shut = folded.has(k);
-    const head = `<div class="opf-sec ${shut ? 'shut' : ''}" id="sec-${k}"><h3>${label}</h3><span class="opf-desc">${desc}</span><span class="sp"></span>
-      <span class="opf-w">Weightage of KRA ${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<b>${kr.weight}</b>`}${ed ? `<button type="button" class="ibtn" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}</span>${foldBtn(k, label)}</div>`;
+    const head = `<div class="opf-sec ${shut ? 'shut' : ''}" id="sec-${k}"><h3>${label} : (${desc})</h3>${foldBtn(k, label)}</div>`;
     if (shut) return head;
     const top = !rows.length && FP.newJoiner ? '<div class="info">New joiner: no KRAs set yet. Only the questionnaire is checked.</div>' : '';
-    const btns = ed ? `<div class="opf-btns"><button type="button" class="btn sm" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">${ico('plus')}Add sub-KRA</button><button type="button" class="btn pri sm" data-savek="${k}" title="Save the ${label} KRA">Save ${label} KRA</button></div>` : '';
-    return head + top + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:64px"><col style="width:17%"><col style="width:11%"><col style="width:104px"><col style="width:100px"><col style="width:112px"><col><col></colgroup><tr><th>Sr. no</th><th>Key performance indicator</th><th>Target</th><th>Weightage</th><th>Self rating (30%)</th><th>Manager rating (70%)</th><th>Remark</th><th>Manager remark</th></tr>
+    const w = `<div class="opf-w"><b>Weightage Of KRA:</b>${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<span>${kr.weight}</span>`}${ed ? `<button type="button" class="ibtn opf-pen" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}</div>`;
+    const btns = ed ? `<div class="opf-btns"><button type="button" class="opf-y sq" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">+</button><button type="button" class="opf-y soft" data-savek="${k}" title="Save the ${label} KRA">save</button></div>` : '';
+    return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:60px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col></colgroup><tr><th>Sr.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th></tr>
     ${rows.map((r, i) => {
       // every rated sub-KRA needs a manager remark; after a Submit attempt, unrated ones are marked too
       const needRemark = (r.mgr != null || (attempted && p.canSubmit)) && !(r.mgrRemark || '').trim();
@@ -1114,45 +1115,48 @@ function drawForm(v, errors) {
       <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'}>${esc(r.mgrRemark)}</textarea>
       ${needRemark ? '<div class="flag">Manager remark is required for every sub-KRA.</div>' : ''}</td></tr>`;
     }).join('')}
-    <tr class="sub"><td></td><td></td><td><b>Totals</b></td><td>Weightage: <b>${sum}</b></td><td>Total SR: <b>${sr}</b></td><td>Total MR: <b>${mr}</b></td><td colspan="2">Total calculation: <b>${calc}</b></td></tr></table></div>` + btns;
+    <tr class="sub"><td></td><td></td><td>Totals</td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td>Total Calculation : ${calc}</td><td></td></tr></table></div>` + btns;
   };
   const qs = FP.questions;
   const text = qs.filter(q => q.type === 'text'), rate = qs.filter(q => q.type === 'rating');
   const noDate = !f.reviewDate && attempted;
-  // breadcrumb: where the list of people is for this viewer
-  const crumb = e.id === S.me.id ? 'PMS › My review' : S.me.role === 'admin' ? 'PMS › <a href="#/employees/active">All employees</a>' : 'PMS › <a href="#/team">My team</a>';
-  // the old portal's order (managers' review, 2026-11-16) in the app's own style (Harish, 2026-11-17): title, month / year /
-  // View Question-Answer, the KRA card with the employee details, the three KRAs, the rating table, the Question-Answers,
-  // Back to top and Save Final Reporting
-  v.innerHTML = `<div class="opf"><div class="opf-top"><div><h1>Monthly Reporting</h1><div class="crumb">${crumb} › ${esc(e.name)}</div></div><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
-    <div class="row opf-bar">${fyPick(S.month)}<span class="sp"></span><button type="button" class="btn sm" id="toqa">View Question-Answer</button></div>
+  // the name next to the title leads back to where this viewer's list of people is
+  const back = e.id === S.me.id ? '#/profile' : S.me.role === 'admin' ? '#/employees/active' : '#/team';
+  const [mon, yr] = monthLabel(S.month).split(' ');
+  const pen = (id, label) => `<button type="button" class="ibtn opf-pen" data-qedit="${id}" title="${label}" aria-label="${label}">${ico('pencil')}</button>`;
+  // order of the old portal (managers' review, 2026-11-16): title, month / year / View Question-Answer, the KRA card with the
+  // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
+  v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
     ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
-    <div class="card opf-card"><div class="opf-band"><span>KRA · ${esc(FP.fy || '')}</span><b>${esc(monthLabel(S.month))}</b></div>
-    <div class="opf-emp"><div><small>Employee</small><b>${esc(e.name)}</b>${e.designation ? `<span>${esc(e.designation)}</span>` : ''}</div>${m ? `<div><small>Reporting manager</small><b>${esc(m.name)}</b></div>` : '' /* top-level directors have nobody above them */}
-      <div><small>Review date <i>*</i></small><input type="date" id="reviewDate" class="${noDate ? 'err' : ''}" value="${esc(f.reviewDate)}" ${p.editSelf || p.editManager ? '' : 'disabled'} aria-label="Review date (required)"></div>
-      <div class="opf-ctl">${p.copyKras ? '<button type="button" class="btn sm" id="copyk">Copy KPI from last month</button>' : ''}<button type="button" class="btn sm" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">${ico('download')}Export KPI</button></div></div>
+    <div class="opf-bar">${fyPick(S.month)}<button type="button" class="opf-y" id="toqa">View Question-Answer</button></div>
+    <div class="opf-card"><div class="opf-band">KRA : ${esc(FP.fy || '')} ${esc(mon)},${esc(yr)}</div>
+    <div class="opf-body"><div class="opf-emp"><div class="opf-who">
+      <div><b>Employee Name :</b> ${esc(e.name)}${e.designation ? ` ( ${esc(e.designation)} )` : ''}</div>
+      ${m ? `<div><b>Reporting Manager :</b> ${esc(m.name)}</div>` : '' /* top-level directors have nobody above them */}
+      <div class="opf-rd"><b>Review Date <i>*</i> :</b> <input type="date" id="reviewDate" class="${noDate ? 'err' : ''}" value="${esc(f.reviewDate)}" ${p.editSelf || p.editManager ? '' : 'disabled'} aria-label="Review date (required)"></div></div>
+      <div class="opf-ctl">${p.copyKras ? '<button type="button" class="opf-y" id="copyk">Copy KPI from last month</button>' : ''}<button type="button" class="opf-y" id="expk" title="Download this month's KRAs, ratings, remarks and questionnaire as a CSV file (opens in Excel)">Export KPI</button></div></div>
     ${noDate ? '<div class="warn">Review date is required. Enter it before submitting the form.</div>' : ''}
-    ${errors ? `<div class="warn">${errors.map(esc).join('<br>')}</div>` : ''}</div>
-    ${sec('operational', 'Operational', 'Our value addition to the client via quality / financially')}
+    ${errors ? `<div class="warn">${errors.map(esc).join('<br>')}</div>` : ''}
+    ${sec('operational', 'Operational', 'Our value addition to the client via quality/financially')}
     ${sec('process', 'Process', 'Streamlining of processes &amp; its replication')}
     ${sec('people', 'People', 'Self updating of skills')}
     ${ratingBox(f)}
-    <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3><span class="opf-desc">Text answers and rated questions</span><span class="sp"></span>${foldBtn('qa', 'Question-Answers')}</div>
-    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:70px"><col style="width:34%"><col></colgroup><tr><th>Sr. no</th><th>Question</th><th>Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="opf-btns" style="margin-top:8px"><button type="button" class="btn pri sm" data-qsave="${q.id}">Save</button><button type="button" class="btn sm" data-qcancel="${q.id}">Cancel</button></div>`
-      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? `<button type="button" class="ibtn" data-qedit="${q.id}" title="Edit answer" aria-label="Edit answer" style="vertical-align:middle">${ico('pencil')}</button>` : ''}`}${shortAns(f.qa[q.id], q.id) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
+    <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
+    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer">${esc(f.qa[q.id] || '')}</textarea><div class="opf-btns"><button type="button" class="opf-y" data-qsave="${q.id}">Save</button><button type="button" class="btn sm" data-qcancel="${q.id}">Cancel</button></div>`
+      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id], q.id) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
-      // the Self / Manager / Remark heading only above the first rated question
-      return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)} <span class="muted">(rate out of 5)</span></td><td><table><colgroup><col style="width:120px"><col style="width:130px"><col></colgroup>${i ? '' : '<tr><th>Self rating</th><th>Manager rating</th><th>Remark</th></tr>'}<tr>
-        <td>${rateSel(a.self, `data-qr="${q.id}" data-f="self" aria-label="Self rating"`, p.editSelf, a.self != null ? 'filled' : '')}</td>
-        <td>${rateSel(a.mgr, `data-qr="${q.id}" data-f="mgr" aria-label="Manager rating"`, p.editManager, a.mgr != null ? 'filled' : '')}</td>
-        <td><textarea class="${need ? 'err' : ''}" rows="1" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'} aria-label="Manager remark">${esc(a.remark || '')}</textarea>${need ? '<div class="flag">Manager remark required: ratings differ.</div>' : ''}</td></tr></table></td></tr>`;
+      // the Self Rating / Manager Rating / Remark heading only above the first rated question
+      return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)}${/rate out of/i.test(q.text) ? '' : ' (Rate out of 5)'}</td><td><table class="opf-qr"><colgroup><col style="width:25%"><col style="width:25%"><col></colgroup>${i ? '' : '<tr><th>Self Rating</th><th>Manager Rating</th><th>Remark</th></tr>'}<tr>
+        <td>${rateSel(a.self, `data-qr="${q.id}" data-f="self" aria-label="Self rating"`, p.editSelf)}</td>
+        <td>${rateSel(a.mgr, `data-qr="${q.id}" data-f="mgr" aria-label="Manager rating"`, p.editManager)}</td>
+        <td><textarea class="${need ? 'err' : ''}" rows="2" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'} aria-label="Manager remark">${esc(a.remark || '')}</textarea>${need ? '<div class="flag">Manager remark required: ratings differ.</div>' : ''}</td></tr></table></td></tr>`;
     }).join('')}</table></div>`}
-    <div class="opf-end"><button type="button" class="btn sm" id="totop">Back to top</button><span class="sp"></span>
+    <div class="opf-end"><button type="button" class="opf-y soft" id="totop">Back To Top</button><span class="sp"></span>
     ${p.canReturn ? '<button type="button" class="btn" id="giveback" title="Let the employee change their self ratings, remarks and answers again">Send back to employee</button>' : ''}
-    ${p.canSubmit ? '<button type="button" class="btn pri" id="submit" title="Submit the review: the form is then locked for good">Save Final Reporting</button>' : ''}
-    </div></div>`;
+    ${p.canSubmit ? '<button type="button" class="opf-y" id="submit" title="Submit the review: the form is then locked for good">Save Final Reporting</button>' : ''}
+    </div></div></div></div>`;
   wireForm(v);
 }
 
@@ -1182,16 +1186,18 @@ function formSummary(f) {
 // once the review is submitted (the summary stays hidden from employees until then, Harish 2026-11-12).
 function ratingBox(f) {
   const has = x => x != null && x !== '';
-  if (!f.submitted && FP.employee.id === S.me.id) return '';
+  // until there is a result: the old portal's "Monthly result is not available" note, closed with its red X
+  const none = () => resultNoteOff ? '' : `<div class="opf-none" role="status">${ico('alert')}<div>Monthly result is not available for <b>${esc(monthLabel(f.month))}</b></div><button type="button" class="opf-x" id="resx" title="Close" aria-label="Close this note">X</button></div>`;
+  if (!f.submitted && FP.employee.id === S.me.id) return none();
   const set = ['operational', 'process', 'people'].map(k => f.kras[k]).filter(k => k.rows.length);
-  if (!set.length || !set.every(k => k.rows.every(r => has(r.self) && has(r.mgr)))) return '';
-  const tw = set.reduce((a, k) => a + (+k.weight || 0), 0); if (!tw) return '';
+  if (!set.length || !set.every(k => k.rows.every(r => has(r.self) && has(r.mgr)))) return none();
+  const tw = set.reduce((a, k) => a + (+k.weight || 0), 0); if (!tw) return none();
   const avg = key => set.reduce((a, k) => { const rw = k.rows.reduce((x, r) => x + (+r.weight || 0), 0); return a + k.weight * (rw ? k.rows.reduce((x, r) => x + r.weight * r[key], 0) / rw : 0); }, 0) / tw;
   const sr = avg('self'), mr = avg('mgr'), r2 = x => +x.toFixed(2);
-  return `<div class="opf-sec"><h3>Rating</h3><span class="opf-desc">Monthly average report${f.submitted ? '' : ' (preview until the review is submitted)'}</span></div>
-    <div class="tablewrap opf-rate"><table><tr><th>Rating</th><th>Self rating</th><th>Manager rating</th></tr>
-    <tr><td>Average rating</td><td>${r2(sr)}</td><td>${r2(mr)}</td></tr>
-    <tr class="mon"><td>Monthly rating</td><td colspan="2"><b>${r2(0.3 * sr + 0.7 * mr)}%</b></td></tr></table></div>`;
+  return `<div class="opf-sec"><h3>Rating : (Monthly average report${f.submitted ? '' : ', preview until the review is submitted'})</h3></div>
+    <div class="tablewrap opf-rate"><table class="opf-t"><tr><th>Rating</th><th>Self Rating</th><th>Manager Rating</th></tr>
+    <tr><td>Average Rating</td><td>${r2(sr)}</td><td>${r2(mr)}</td></tr>
+    <tr class="sub"><td>Monthly Rating</td><td colspan="2"><b>${r2(0.3 * sr + 0.7 * mr)}%</b></td></tr></table></div>`;
 }
 // Export KPI: the monthly form as it is on screen, as a CSV file Excel opens directly (UTF-8 with BOM)
 function exportKpi() {
@@ -1325,6 +1331,7 @@ function wireForm(v) {
       const qe = t.closest('[data-qedit]'); // the click usually lands on the pencil's svg, not the button
       const kw = t.closest('[data-kwedit]'); // KRA weightage pencil: opens the box; the tick closes it (save stores it)
       const fb = t.closest('[data-fold]'); // − / + on a section bar folds or opens that section
+      if (t.closest('#resx')) { resultNoteOff = true; return redraw(); }
       if (fb) { const k = fb.dataset.fold; folded.has(k) ? folded.delete(k) : folded.add(k); redraw(); }
       else if (kw) { const k = kw.dataset.kwedit; editingW.has(k) ? editingW.delete(k) : editingW.add(k); redraw(); const box = v.querySelector(`[data-kw="${k}"]`); if (box) { box.focus(); box.select(); } }
       else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; qOriginal[id] = f.qa[id] || ''; redraw(); }

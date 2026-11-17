@@ -56,9 +56,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"
   etc., `.toast.t-ok`, 2026-11-16). The monthly form (`drawForm`, CSS `.opf*`) keeps the old PMS portal's ORDER
-  (managers' review meeting 2026-11-16) but since 2026-11-17 is drawn in the app's own style, compact (Harish: "our app's
-  style, same layout"; the copy of the old portal's colours/bars looked dated and too zoomed): title "Monthly Reporting" +
-  crumb, month / year / View Question-Answer, a card with a navy "KRA · FY | month" band and the employee details
+  (managers' review meeting 2026-11-16) AND the old portal's LOOK (Harish 2026-11-17, with screenshots: "keep layout look and exact like this"; an app-style
+  version was rejected), only more compact: `--vr-pms-*` tokens (yellow buttons, grey KRA band, cream section bars, navy
+  table heads). Title "Monthly Reporting : <name link>", month / year / View Question-Answer, a card with a navy "KRA · FY | month" band and the employee details
   (review date, Copy KPI / Export KPI), then Operational / Process / People (heading + description, "Weightage of KRA"
   pill with pencil, fold arrow `folded`, table with Totals row, Add sub-KRA / Save; save asks "Are you sure? You want to
   add all these KPI?", then "Added! Your KPI has been added."), the Rating table (`ratingBox`: reviewers/admins see it once

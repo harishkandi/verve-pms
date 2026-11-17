@@ -1051,42 +1051,50 @@ td table tr:hover>td{background:transparent}
 /* =====================================================================
    Print
    ===================================================================== */
-/* Monthly form (.opf): the old PMS portal's order of sections (managers' review, 2026-11-16) drawn in the app's own style
-   (Harish, 2026-11-17: "our app's style, same layout", compact). KRA ratings are tinted by value: 75+ green, 50-74
-   yellow, 25-49 orange, 24 and below red (yellow has its own tokens, the brief has none). */
-:root{--vr-rate-y-50:#fdf8dc;--vr-rate-y-200:#efe08a;--vr-rate-y-800:#6b5a06}
-.dark{--vr-rate-y-50:#2e2a12;--vr-rate-y-200:#5c5220;--vr-rate-y-800:#ede08f}
-.opf{font-size:14px;line-height:20px}
-.opf-top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--vr-n-200)}
-.opf-top h1{font-size:22px;line-height:28px}
-.opf-top .crumb{margin-top:2px;font-size:13px}
-.opf-bar{margin-bottom:12px}
-.opf-bar select{min-width:150px}
-.opf-card{padding:0;overflow:hidden}
-.opf-band{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 16px;padding:10px 18px;background:var(--vr-sidebar);font-size:13px;line-height:20px;color:var(--vr-thead-text)}
-.opf-band b{font-size:14px;font-weight:600;color:#fff}
-.opf-emp{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 32px;padding:14px 18px}
-.opf-emp>div{display:flex;flex-direction:column;gap:2px;min-width:0}
-.opf-emp small{font-size:11px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--vr-n-500)}
-.opf-emp small i{font-style:normal;color:var(--vr-danger-600)}
-.opf-emp b{font-size:14px;font-weight:600;color:var(--vr-n-900)}
-.opf-emp span{font-size:12px;line-height:16px;color:var(--vr-n-500)}
-.opf-emp input[type=date]{min-height:32px;padding-top:5px;padding-bottom:5px;font-size:13px}
-.opf-emp .opf-ctl{flex-direction:row;flex-wrap:wrap;gap:8px;margin-left:auto}
-.opf-card>.warn{margin:0 18px 14px}
-.opf-sec{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:22px 0 8px;scroll-margin-top:12px}
-.opf-sec h3{margin:0;font-size:16px;line-height:24px;font-weight:700;color:var(--vr-n-900)}
-.opf-desc{font-size:13px;color:var(--vr-n-500)}
-.opf-w{display:inline-flex;align-items:center;gap:6px;padding:2px 4px 2px 10px;border:1px solid var(--vr-n-200);border-radius:9999px;background:var(--vr-card);font-size:12px;line-height:20px;color:var(--vr-n-600)}
-.opf-w b{font-weight:700;color:var(--vr-n-900)}
-.opf-w .ibtn{padding:3px}.opf-w .ibtn svg{width:14px;height:14px}
-.opf-w input{width:64px;padding:1px 6px;font-size:12px;line-height:18px}
+/* Monthly form (.opf): the old PMS portal's form, same layout and look (Harish, 2026-11-17: "keep layout look and exact
+   like this"), more compact than the portal. Its colours are --vr-pms-* tokens (yellow buttons, grey KRA band, cream
+   section bars, navy table heads). KRA ratings are tinted by value: 75+ green, 50-74 yellow, 25-49 orange, 24 and below red. */
+:root{--vr-rate-y-50:#fdf8dc;--vr-rate-y-200:#efe08a;--vr-rate-y-800:#6b5a06;
+  --vr-pms-y:#ffc107;--vr-pms-y-hover:#f0b400;--vr-pms-y-soft:#ffd966;--vr-pms-y-text:#212529;--vr-pms-band:#6c757d;--vr-pms-band-text:#212529;
+  --vr-pms-cream:#fff2dc;--vr-pms-cream-line:#f0e0c0;--vr-pms-navy:#22418a;--vr-pms-head-text:#ffffff;--vr-pms-grid:#dee2e6;--vr-pms-field:#e4e4e4;--vr-pms-link:#0d6efd}
+.dark{--vr-rate-y-50:#2e2a12;--vr-rate-y-200:#5c5220;--vr-rate-y-800:#ede08f;
+  --vr-pms-y:#f2b705;--vr-pms-y-hover:#ffc61a;--vr-pms-y-soft:#c99a1c;--vr-pms-y-text:#1a1404;--vr-pms-band:#3d4554;--vr-pms-band-text:#e3e7ef;
+  --vr-pms-cream:#2c2618;--vr-pms-cream-line:#433824;--vr-pms-navy:#24438f;--vr-pms-head-text:#ffffff;--vr-pms-grid:#2f3a55;--vr-pms-field:#222c44;--vr-pms-link:#7fb0ff}
+.opf{font-size:14px;line-height:21px;color:var(--vr-n-900)}
+.opf-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin:2px 0 14px}
+.opf-top h1{font-size:22px;line-height:28px;font-weight:500}
+.opf-top>a{font-size:15px;color:var(--vr-pms-link);text-decoration:underline}
+.opf-y{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 16px;border:0;border-radius:4px;background:var(--vr-pms-y);font:inherit;font-size:14px;line-height:20px;color:var(--vr-pms-y-text);cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.opf-y:hover{background:var(--vr-pms-y-hover)}
+.opf-y.soft{background:var(--vr-pms-y-soft)}.opf-y.soft:hover{background:var(--vr-pms-y)}
+.opf-y.sq{min-width:40px;padding:4px 10px;font-size:18px}
+.opf-bar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 24px;margin-bottom:-1px;padding:8px 10px;border:1px solid var(--vr-n-200);border-radius:4px 4px 0 0;background:var(--vr-card)}
+.opf-bar select{width:100%;min-height:38px;border:0;border-radius:3px;background-color:var(--vr-pms-field);font-size:14px}
+.opf-card{border:1px solid var(--vr-n-200);border-radius:0 0 4px 4px;background:var(--vr-card)}
+.opf-band{padding:10px 16px;background:var(--vr-pms-band);text-align:center;font-size:20px;line-height:28px;font-weight:500;color:var(--vr-pms-band-text)}
+.opf-body{padding:0 16px 18px}
+.opf-emp{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 24px;padding:14px 4px 16px;border-bottom:1px solid var(--vr-n-300)}
+.opf-who{display:flex;flex-direction:column;gap:3px}
+.opf-who b{font-weight:600}
+.opf-rd i{font-style:normal;color:var(--vr-danger-600)}
+.opf-rd input{min-height:30px;padding:3px 8px;font-size:13px}
+.opf-ctl{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:240px}
+.opf-body>.warn,.opf-body>.info{margin:14px 0 0}
+.opf-sec{display:flex;align-items:center;gap:10px;margin:22px 0 0;padding:9px 16px;border-bottom:1px solid var(--vr-pms-cream-line);background:var(--vr-pms-cream);scroll-margin-top:12px}
+.opf-sec h3{flex:1;margin:0;font-size:19px;line-height:26px;font-weight:500;color:var(--vr-n-900)}
 .opf-fold svg{width:18px;height:18px;transition:transform .15s}
 .opf-sec.shut .opf-fold svg{transform:rotate(-90deg)}
-.opf-t{table-layout:fixed;font-size:13px;line-height:18px}
-.opf-t th{white-space:normal}
-.opf-t td{vertical-align:top}
-.opf-t tr.sub>td{white-space:nowrap}
+.opf-w{display:flex;align-items:center;gap:2px;margin:18px 0 12px}
+.opf-w b{font-weight:600}
+.opf-w input{width:70px;margin-left:4px;padding:2px 6px;font-size:13px;line-height:18px}
+.opf-pen{padding:3px;color:var(--vr-pms-y)}.opf-pen:hover{color:var(--vr-pms-y-hover)}.opf-pen svg{width:17px;height:17px}
+.opf td .opf-pen{vertical-align:middle}
+.opf .tablewrap{border-radius:0;box-shadow:none;border-color:var(--vr-pms-grid)}
+.opf-sec+.tablewrap{margin-top:14px}
+.opf-t{border-collapse:collapse;table-layout:fixed;font-size:14px;line-height:20px}
+.opf-t th{padding:8px 10px;border:1px solid var(--vr-pms-grid);background:var(--vr-pms-navy);vertical-align:bottom;white-space:normal;font-size:14px;line-height:20px;font-weight:700;color:var(--vr-pms-head-text)}
+.opf-t td{padding:8px 10px;border:1px solid var(--vr-pms-grid);vertical-align:top}
+.opf-t tr.sub>td{background:var(--vr-pms-cream);font-size:14px;color:var(--vr-n-900);white-space:nowrap}
 .opf-t.kt{min-width:960px}
 .opf-t textarea{min-height:36px;padding:6px 8px;font-size:13px;line-height:18px}
 .opf-t input.num,.opf-t select.num{width:100%;max-width:84px;padding-top:5px;padding-bottom:5px;font-size:13px}
@@ -1095,13 +1103,21 @@ td table tr:hover>td{background:transparent}
 .opf-t select.num.r-y{border-color:var(--vr-rate-y-200);background-color:var(--vr-rate-y-50);color:var(--vr-rate-y-800)}
 .opf-t select.num.r-o{border-color:var(--vr-warn-200);background-color:var(--vr-warn-50);color:var(--vr-warn-700)}
 .opf-t select.num.r-r{border-color:var(--vr-danger-200);background-color:var(--vr-danger-50);color:var(--vr-danger-700)}
-.opf-t td table{table-layout:fixed}
-.opf-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.opf-rate table{font-size:13px}
-.opf-rate tr.mon>td{background:var(--vr-navy-50);color:var(--vr-n-900)}
-.opf-rate tr.mon td:last-child{text-align:center;font-size:14px}
-.opf-end{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:18px}
-@media (max-width:760px){.opf-emp{gap:12px 20px}.opf-emp .opf-ctl{margin-left:0}.opf-bar select{min-width:0;flex:1}}
+.opf-qr{border-collapse:collapse;table-layout:fixed;border:1px solid var(--vr-n-700);border-radius:0}
+.opf-qr th{padding:5px 8px;border:0;letter-spacing:normal;text-transform:none;background:var(--vr-pms-navy);font-size:14px;line-height:20px;font-weight:700;color:var(--vr-pms-head-text);white-space:normal}
+.opf-qr td{padding:8px;border:1px solid var(--vr-n-700);vertical-align:middle}
+.opf-qr td:not(:last-child){text-align:center}
+.opf-qr select.num{width:76px;border:0;border-radius:3px;background-color:var(--vr-pms-field);text-align:center}
+.opf-qr textarea{min-height:52px;border:0;border-radius:2px;background:var(--vr-pms-field)}
+.opf-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.opf-none{display:grid;grid-template-columns:auto;justify-items:start;gap:4px;margin:26px 4px 0}
+.opf-none svg{width:18px;height:18px;color:var(--vr-n-700)}
+.opf-x{min-width:38px;min-height:36px;margin-top:4px;border:0;border-radius:4px;background:var(--vr-danger-600);font:inherit;font-size:16px;color:var(--vr-pms-head-text);cursor:pointer}
+.opf-x:hover{background:var(--vr-danger-700)}
+.opf-rate td:not(:first-child){text-align:center}
+.opf-end{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
+@media (max-width:760px){.opf-bar{grid-template-columns:1fr 1fr}.opf-bar #toqa{grid-column:1/-1}.opf-ctl{min-width:0;width:100%}.opf-band{font-size:17px}.opf-sec h3{font-size:17px}}
+
 @media print{
   .side,.topbar,.ibtn,.btn,.toast{display:none!important}
   #app{display:block;height:auto;overflow:visible}#main{overflow:visible;padding:0}
