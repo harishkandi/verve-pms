@@ -558,10 +558,29 @@ route('POST', '/api/form/self-submit', ({ user, body }) => {
   if (errs.length) throw bad('Form cannot be submitted yet. Please fill in:', { errors: errs });
   f.selfSubmitted = true; f.selfSubmittedAt = new Date().toISOString();
   audit(user.name, 'send form to manager', `${L.emp(f.empId).name} ${f.month}`);
-  N.resolve(`back|${f.empId}|${f.month}`);
+  N.resolve(`back|${f.empId}|${f.month}`); N.resolve(`remind|${f.empId}|${f.month}`);
   const m = mgrOf(f.empId);
   if (m) N.push(m.id, { type: 'review', action: true, key: `sent|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} sent you their part of the ${revOf(f)}. Add your ratings and submit it.` }, user);
   return formPayload(user, f);
+});
+// "Remind not filled" on the dashboard (Harish 2026-11-18): a bell notification to everyone in the sender's access whose
+// form is still Not Filled this month (people on leave or serving notice are skipped). dry = only count and name a few.
+// Once per 12 hours per sender and month (in memory); the reminder closes when the employee sends their form on.
+const REMINDED = new Map();
+route('POST', '/api/remind', ({ user, realUser, body }) => {
+  if (!['manager', 'director', 'admin'].includes(user.role)) throw forbid();
+  if (realUser.id !== user.id) throw forbidMsg(`You are viewing PMS as ${user.name}. Only they can send reminders, from their own sign-in.`);
+  const month = config.currentMonth, label = D.monthLabel(month);
+  const away = e => e.workStatus && (!e.workStatus.from || e.workStatus.from <= month);
+  const rows = L.reportRows(user, month, { team: body.team || '' }).filter(r => r.form === 'Not Filled' && !away(L.emp(r.empId)));
+  const key = `${realUser.id}|${month}`, wait = 12 * 3600e3 - (Date.now() - (REMINDED.get(key) || 0)), hours = Math.ceil(wait / 3600e3);
+  if (body.dry) return { count: rows.length, names: rows.slice(0, 4).map(r => r.name), waitHours: wait > 0 ? hours : 0 };
+  if (wait > 0) throw new HttpError(429, `You sent reminders less than 12 hours ago. You can send again in about ${hours} hour${hours === 1 ? '' : 's'}.`);
+  if (!rows.length) throw bad('Everyone has filled in their form. Nobody to remind.');
+  REMINDED.set(key, Date.now());
+  for (const r of rows) N.push(r.empId, { type: 'review', action: true, key: `remind|${r.empId}|${month}`, link: N.formLink(r.empId, month), text: `${user.name} reminds you to fill in your ${label} review form and send it to your manager.` }, user);
+  audit(user.name, 'sent reminders', `${rows.length} ${rows.length === 1 ? 'person' : 'people'}, ${label}${body.team ? `, ${body.team}` : ''}`);
+  return { sent: rows.length };
 });
 // the manager hands the form back so the employee can change their part again
 route('POST', '/api/form/return', ({ user, body }) => {

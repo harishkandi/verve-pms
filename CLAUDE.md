@@ -145,7 +145,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   for tests): window open, closes in 2 days, overdue, meeting tomorrow, admin "no work email". State container
   `notifications` (empId -> list, last 100 / 60 days), in `KEYS`. Routes call `N.push` after their `audit(...)`:
   KRA request/decision/changes, send to manager / send back / submit, schedule / reschedule / invite cancelled,
-  reporting changes, window / rules / questionnaire / parameters changes, list import (admins). In View as the admin
+  reporting changes, window / rules / questionnaire / parameters changes, list import (admins). "Remind not
+  filled" on the dashboard's Review status header (`remindAll()`, `POST /api/remind`, dry run counts first; managers,
+  directors, admins; not in View as): action item `remind|<emp>|<month>` to every Not Filled person in scope (leave /
+  notice skipped), once per 12 h per sender (in memory), resolved by self-submit (Harish 2026-11-18). In View as the admin
   sees the person's list but never marks it read. No email yet (no sender; Google Calendar already emails invites).
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
 - PMS report format (management's "PMS Reports Format" sheet, 2026-11-13) = the Review status report's "Full details"

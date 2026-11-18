@@ -985,6 +985,18 @@ const statusLegend = () => `<div class="legend inline">${STATUS_SEGS.map(([, col
 const TILE_HINT = { filled: STATUS_HINT['Filled'], notFilled: STATUS_HINT['Not Filled'], reviewCompleted: STATUS_HINT['Review Completed'], reviewPending: STATUS_HINT['Review Pending'] };
 // stat tiles for the five review counts (label on top, big number, tone stripe)
 const countTiles = c => `<div class="tiles">${[['', 'scheduled', 'Scheduled', 'calendar'], ['g', 'filled', 'Filled', 'check'], ['r', 'notFilled', 'Not Filled', 'alert'], ['g', 'reviewCompleted', 'Review Completed', 'award'], ['', 'reviewPending', 'Review Pending', 'hourglass']].map(([cls, k, l, icon]) => `<div class="tile ${cls}"${TILE_HINT[k] ? ` title="${esc(TILE_HINT[k])}"` : ''}><small>${l}</small><b>${c[k]}</b><span>${k !== 'scheduled' && c.scheduled ? `${pctOf(c[k], c.scheduled)}% of scheduled` : k === 'scheduled' ? 'Reviews this month' : 'None scheduled'}</span><i class="wm">${ico(icon)}</i></div>`).join('')}</div>`;
+// "Remind not filled" (managers, directors, admins): counts first, asks, then sends a bell reminder to each person
+async function remindAll() {
+  try {
+    const team = S.hteam || '', r = await api('/remind', { method: 'POST', body: { dry: true, team } });
+    if (!r.count) return toast('Everyone has filled in their form. Nobody to remind.');
+    if (r.waitHours) return toast(`You sent reminders less than 12 hours ago. You can send again in about ${r.waitHours} hour${r.waitHours === 1 ? '' : 's'}.`, 'err');
+    const who = r.names.join(', ') + (r.count > r.names.length ? ` and ${r.count - r.names.length} more` : '');
+    if (!await confirmBox(`Remind ${r.count} ${r.count === 1 ? 'person' : 'people'}?`, `${who} will get a reminder under the bell to fill in their ${monthLabel(S.me.currentMonth)} form. It goes away by itself once they send their form to their manager. People on leave or serving notice are left out.`, { ok: 'Send reminder' })) return;
+    const s = await api('/remind', { method: 'POST', body: { team } });
+    toast(`Reminder sent to ${s.sent} ${s.sent === 1 ? 'person' : 'people'}`);
+  } catch (er) { toast(er.message, 'err'); }
+}
 // open the status report filtered to one status (and the team chosen on Home)
 function openReport(status) { RF.status = status || ''; RF.team = S.hteam || ''; RF.manager = ''; location.hash = '#/report'; }
 const pctOf = (n, tot) => tot ? Math.round(n / tot * 100) : 0;
@@ -1210,7 +1222,9 @@ pages.home = async (v, opts = {}) => {
       const sc = hs ? hs.counts : c, nT = hs ? hs.teamCount : S.hteam ? 1 : teams.length, share = n => `${pctOf(n, sc.scheduled)}% of scheduled`;
       const bar = (t, label) => t.scheduled ? stackBar(t, label) : `<div class="tbar"><span class="n" title="${esc(label)}">${esc(label)}</span><div class="tr"></div><b>0/0</b></div>`;
       const prog = hp ? hp.groups.map(g => bar(g, hp.group === 'mgr' ? g.label : tl(g.team))) : teams.map(t => bar(t, tl(t.team)));
-      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${cfPill('status')}</div>
+      const remind = S.month === S.me.currentMonth && c.notFilled && !S.me.viewingAs
+        ? `<button type="button" class="btn sm" id="remind" title="Send a reminder under the bell to everyone whose form is not filled yet">${ico('bell')}Remind not filled</button>` : '';
+      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
     <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
       ${widget('award', 'Review quality' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
@@ -1291,6 +1305,7 @@ pages.home = async (v, opts = {}) => {
   onMonth(() => pages.home(v));
   v.onclick = async e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // a card's Filter pill
+    if (e.target.closest('#remind')) return remindAll();
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     const kd = e.target.closest('[data-kdash]');
     if (kd) {
