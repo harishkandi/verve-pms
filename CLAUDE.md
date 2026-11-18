@@ -84,8 +84,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   pill with pencil, fold arrow `folded`, table with Totals row, Add sub-KRA / Save; save asks "Are you sure? You want to
   add all these KPI?", then "Added! Your KPI has been added."), the Rating table (`ratingBox`: reviewers/admins see it once
   every rating is in, the employee only after submit), Question-Answers (Self/Manager/Remark heading only above the first
-  rated question), Back to top, "Save Final Reporting" (= Submit review). KRA ratings (self and manager) are tinted by
-  value (`rateCol`): 75+ green, 50-74 yellow (`--vr-rate-y-*`), 25-49 orange (warn), 24 and below red (danger). The
+  rated question), Back to top, "Save Final Reporting" (= Submit review). KRA ratings (self and manager) get a solid fill by
+  value (`rateCol`, `--vr-rate-g/y/o/r` tokens; Harish 2026-11-18 wanted full dark colours, not light tints): 75+ green, 50-74 yellow (`--vr-rate-y-*`), 25-49 orange (warn), 24 and below red (danger). The
   employee's "Request KRA change" button is titled "Allow to add new KPI" (managers: only the title changes). Theme button and the user menu
   live in the top bar: clicking the name/avatar opens a small menu (same look as the other dropdowns) with Profile
   information and Sign out. Profile information is a page, not a popup (`#/profile`, `pages.profile`, `GET /api/profile`):
