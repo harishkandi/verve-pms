@@ -498,10 +498,10 @@ async function start() {
         ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
     <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
-  sideSet(sideMini); palPeople = null; // a new sign-in or View as: search fetches its people again
+  sideSet(sidePref || sideNarrow.matches); palPeople = null; // a new sign-in or View as: search fetches its people again
   $('.side-in').onscroll = navFlyClose;
   $('#root').onclick = e => {
-    if (e.target.closest('#sidetog')) sideSet(!sideMini);
+    if (e.target.closest('#sidetog')) sideSet(!sideMini, !sideNarrow.matches);
     const g = e.target.closest('.ngrp-btn');
     if (g && sideMini) navFly(g.parentNode); else if (g) navOpen(g.parentNode, !g.parentNode.classList.contains('open'));
     if (!e.target.closest('.ngrp') || e.target.closest('.nsub a')) navFlyClose();
@@ -579,11 +579,15 @@ document.addEventListener('keydown', e => {
 addEventListener('hashchange', palClose);
 // side panel shrinks to icons only (Harish 2026-11-18): the round button on its right edge, remembered in this browser.
 // Shrunk, each icon shows its name on hover and a menu group opens as a small menu beside the panel (navFly).
-let sideMini = false; try { sideMini = localStorage.getItem('pms.sideMini') === '1'; } catch {}
-function sideSet(mini) {
+// Narrow windows (under 1100px: a laptop at 125% zoom, a tablet) start shrunk without changing the saved choice.
+let sidePref = false; try { sidePref = localStorage.getItem('pms.sideMini') === '1'; } catch {}
+const sideNarrow = matchMedia('(max-width: 1100px)');
+let sideMini = sidePref || sideNarrow.matches;
+sideNarrow.addEventListener('change', e => { if ($('#app')) sideSet(e.matches || sidePref); });
+function sideSet(mini, save) {
   sideMini = mini; navFlyClose();
   $('#app').classList.toggle('mini', mini);
-  try { localStorage.setItem('pms.sideMini', mini ? '1' : '0'); } catch {}
+  if (save) { sidePref = mini; try { localStorage.setItem('pms.sideMini', mini ? '1' : '0'); } catch {} }
   const t = $('#sidetog'), label = mini ? 'Show the full menu' : 'Shrink the menu to icons';
   t.innerHTML = ico(mini ? 'panelOpen' : 'panelClose'); t.title = label; t.setAttribute('aria-label', label); t.setAttribute('aria-expanded', String(!mini));
   document.querySelectorAll('.side .links a, .side .ngrp-btn').forEach(a => {
