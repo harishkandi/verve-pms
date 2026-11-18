@@ -356,7 +356,16 @@ function loginPage(st, err) {
     try { await api('/auth/password', { method: 'POST', body: { email: email.value.trim(), password: pass.value, remember: $('#lrem').checked } }); await start(); }
     catch (er) { err$.innerHTML = alert(er.message); submit.disabled = false; submit.textContent = 'Sign in'; pass.select(); }
   };
-  $('#lforgot').onclick = e => { e.preventDefault(); err$.innerHTML = alert(`${st.demo && st.password ? `Test accounts all use the password ${st.password}. ` : ''}Forgot your PMS password? Ask the PMS admin for a new temporary password. With Sign in with Google you use your Google password, which IT manages.`, 'info'); };
+  // Forgot password: tells the PMS admins (a "Needs action" notification); they give a temporary password in person or on chat
+  $('#lforgot').onclick = async e => {
+    e.preventDefault();
+    const test = st.demo && st.password ? `Test accounts all use the password ${st.password}. ` : '';
+    if (!email.value.trim()) { err$.innerHTML = alert(`${test}Type your work email in the Email box above, then click Forgot password? again. The PMS admin is told and gives you a new temporary password.`, 'info'); return email.focus(); }
+    try {
+      await api('/auth/forgot', { method: 'POST', body: { email: email.value.trim() } });
+      err$.innerHTML = alert(`${test}Done. If ${email.value.trim()} is a PMS account, the PMS admin has been told and will give you a temporary password in person or on chat. With Sign in with Google you use your Google password, which IT manages.`, 'info');
+    } catch (er) { err$.innerHTML = alert(er.message); }
+  };
   $('#gsign').onclick = () => { if (st.google) location.href = `/api/auth/google/start?origin=${encodeURIComponent(location.origin)}`; };
   // a test account fills in its email and password and signs straight in
   document.querySelectorAll('.adm-row').forEach(b => b.onclick = () => {
@@ -413,6 +422,7 @@ function passwordFirstPage() {
 }
 // admin, Employees › Set / Reset password: the server makes a temporary password, shown here once to hand over;
 // the person picks their own at the first sign-in with it
+let pwFor = null; // person whose Password dialog opens when the Employees page has drawn
 function passwordDialog(p, done) {
   const first = esc(p.name.split(' ')[0]);
   if (!p.email) return toast(`${p.name} has no work email, which is their login name. Add it to the employee list first.`, 'err');
@@ -2319,6 +2329,7 @@ function allStats(st) {
 // set by the admin in Edit; shown as the Final Status in the review status report (Full details)
 const WORK_STATUS = [['', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']];
 pages.employees = async (v, arg, grp) => {
+  if (arg === 'pw') { S.etab = 'active'; S.eq = S.eteam = ''; pwFor = grp; } // #/employees/pw/<id>: a "forgot password" notification
   if (arg === 'active' || arg === 'inactive') { S.etab = arg; S.eq = S.eteam = ''; if (grp) empPreset(decodeURIComponent(grp)); } // the address carries the tile's group
   const [d, md] = await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
@@ -2336,6 +2347,10 @@ pages.employees = async (v, arg, grp) => {
     mgr: count(e => String(e.managerId ?? ''), x => x ? (all.find(e => String(e.managerId) === x) || {}).manager || x : 'No manager (top-level director)').sort((a, b) => a[1].localeCompare(b[1])),
   };
   cfLocalRedraw.emp = () => pages.employees(v);
+  if (pwFor) {
+    const p = d.active.find(x => String(x.id) === String(pwFor)); pwFor = null; history.replaceState(null, '', '#/employees/active');
+    if (p) passwordDialog(p, () => pages.employees(v)); else toast('That person is not active any more.', 'err');
+  }
   const rows = all.filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && passF(e));
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table

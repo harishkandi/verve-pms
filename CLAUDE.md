@@ -26,7 +26,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `auth.js`, repeated in `pwWire`). Stored as scrypt hashes in `D.passwords` (own container in `KEYS`, never spread
   into employee objects or sent to the page); the session cookie carries `pv` (password version), so a change or
   reset signs out that person's other password sessions (Google sessions are not affected). 5 wrong tries lock that
-  email for 15 minutes (in memory). No email sending yet, so "Forgot password?" says to ask the PMS admin.
+  email for 15 minutes (in memory). No email sending yet, so "Forgot password?" (type the
+  email first) calls `POST /api/auth/forgot` (open route, same answer for unknown emails, once per email per 10 min): the
+  admins get a "Needs action" notification `pwreset|<id>` linking to `#/employees/pw/<id>`, which opens that person's
+  Password dialog; `/api/password/set` resolves it (Harish 2026-11-18).
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules).

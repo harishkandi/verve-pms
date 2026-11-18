@@ -137,6 +137,24 @@ route('POST', '/api/auth/password', ({ body, setCookie, secure }) => {
   audit(e.name, 'signed in', `${email} (password)`);
   return { ok: true, mustChange: !!rec.temp };
 }, true);
+// "Forgot password?" on the sign-in page (Harish 2026-11-18). PMS cannot send email yet, so the request goes to the PMS
+// admins as a "Needs action" notification whose link opens the person's Password dialog; giving a temporary password
+// closes it (/api/password/set). The answer is the same whether or not the email is known, so nobody can probe for
+// accounts, and each email can ask once every 10 minutes (in memory).
+const FORGOT = new Map();
+route('POST', '/api/auth/forgot', ({ body }) => {
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Type your work email in the Email box first.');
+  if (Date.now() - (FORGOT.get(email) || 0) > 10 * 60e3) {
+    FORGOT.set(email, Date.now());
+    const e = findByEmail(email);
+    if (e && e.active && e.role !== 'admin') {
+      audit(e.name, 'asked for a new password', email);
+      for (const a of N.admins()) N.push(a.id, { type: 'admin', action: true, key: `pwreset|${e.id}`, link: `#/employees/pw/${e.id}`, text: `${e.name} forgot their PMS password and asked for a new temporary one.` });
+    }
+  }
+  return { ok: true };
+}, true);
 // the person changes their own password (also the first sign-in with a temporary one); the session in this browser
 // stays signed in, every other password sign-in of theirs ends
 route('POST', '/api/password/change', ({ user, realUser, session, body, setCookie, secure }) => {
@@ -170,6 +188,7 @@ route('POST', '/api/password/set', ({ user, realUser, body }) => {
   D.passwords[e.id] = { ...A.hashPassword(temp), temp: true, ver: ((old && old.ver) || 0) + 1, setAt: new Date().toISOString(), setBy: realUser.id };
   A.succeeded(e.email.toLowerCase()); // a reset also lifts a lock from wrong tries
   audit(realUser.name, old ? 'temporary password reset' : 'temporary password set', `${e.name} (${e.email})`);
+  N.resolve(`pwreset|${e.id}`); // their "forgot password" request is handled
   // the password goes back to the admin once, to hand over; it is not stored anywhere readable
   return { ok: true, password: temp, email: e.email, reset: !!old };
 });
