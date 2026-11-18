@@ -508,10 +508,12 @@ route('POST', '/api/form/submit', ({ user, body }) => {
   if (!L.canManage(user, f.empId)) throw new HttpError(403, 'Only managers and admins can submit the form. Employees can fill in their self-ratings and self-remarks.');
   if (f.locked) throw bad('This form is already submitted.');
   // everything missing at once (self rating and remark, manager rating and remark, SOP / learning links, review date)
-  const errs = L.validate(f).filter(x => x.level === 'block').map(x => x.msg);
+  // (blank or one-word questionnaire answers also stop the submit; elsewhere they are only flags)
+  const errs = L.validate(f).filter(x => x.level === 'block' || ['Q_TEXT', 'Q_SHORT'].includes(x.code)).map(x => x.msg);
   errs.push(...L.managerGaps(f));
   if (!L.ratingsComplete(f)) errs.push('All self and manager ratings must be entered before the form is submitted.');
   if (errs.length) throw bad('Form cannot be submitted.', { errors: [...new Set(errs)] });
+  if (body.check) return formPayload(user, f); // the page asks first, so it can show what is missing before the "Are you sure" box
   f.submitted = true; f.locked = true;
   // who the reporting manager was when the review was done: later reporting changes do not rewrite history
   const rm = L.emp(L.emp(f.empId).managerId);
@@ -556,7 +558,7 @@ route('POST', '/api/form/return', ({ user, body }) => {
 });
 
 // a submitted review is final: nobody can reopen or change it (admins included)
-const LOCKED_MSG = 'This review is completed and submitted, so the form can no longer be changed.';
+const LOCKED_MSG = 'This review is completed and submitted, so the employee can no longer change the form.';
 const SENT_MSG = 'You have sent this form to your manager, so your part can no longer be changed. Ask your manager to send it back if something needs fixing.';
 
 // KRA settings: sub-KRA totals must equal the parent KRA weight

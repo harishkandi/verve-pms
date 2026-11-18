@@ -1110,7 +1110,7 @@ pages.home = async (v, opts = {}) => {
       ['Fill in your part', !o ? 'No form this month' : finished ? 'Done' : pr ? `${done} of ${total} filled in` : 'Self ratings, remarks and answers', !!finished, !finished && pr ? partPct : null],
       ['Submit to manager', o && o.selfSubmitted ? `Sent${o.selfSubmittedAt ? ` on ${fmtD(o.selfSubmittedAt.slice(0, 10))}` : ''}` : o && !issues.length ? 'Ready to send' : 'Once your part is filled in', !!finished],
       ['Review meeting', o && o.reviewDate ? `Held on ${fmtD(o.reviewDate)}${o.due === 'After due date' ? ' · after the window' : ''}` : o && o.scheduled ? `${meeting}${o.invite ? ' · in your calendar' : ''}` : `${boss} sets the date`, !!(o && (o.reviewDate || o.submitted))],
-      [`${o && o.manager ? boss : 'Manager'} submits`, o && o.submitted ? 'Done · the form is locked' : rv != null ? `Rating preview ${pc(rv)}` : 'Their ratings count 70%, yours 30%', !!(o && o.submitted)],
+      [`${o && o.manager ? boss : 'Manager'} submits`, o && o.submitted ? 'Done · locked for the employee' : rv != null ? `Rating preview ${pc(rv)}` : 'Their ratings count 70%, yours 30%', !!(o && o.submitted)],
     ];
     const cur = st.findIndex(x => !x[2]);
     const hero = `<div class="hero eh">${ORBS}${HALO}
@@ -1176,20 +1176,48 @@ pages.form = async (v, emp, month) => {
   for (const k in kraErr) delete kraErr[k];
   if (/^annual/.test(month || '')) return drawAppraisal(v, emp, month.split('-')[1]); // annual or annual-2026
   S.month = month || S.month;
-  attempted = false; resultNoteOff = false; editingQ.clear(); editingW.clear(); folded.clear(); focusQ = null; formDirty.clear();
+  submitErrs = []; attempted = false; resultNoteOff = false; editingQ.clear(); editingW.clear(); folded.clear(); focusQ = null; formDirty.clear();
   try { FP = await api(`/form?emp=${emp}&month=${S.month}`); }
   catch (er) {
     if (!/No form exists/.test(er.message)) throw er;
     v.innerHTML = head('Monthly review form') + `<div class="row">${fyPick(S.month)}</div><div class="info">There is no review form for ${esc(monthLabel(S.month))}. Forms start from ${esc(monthLabel(S.me.firstMonth))}, or from the month the person joined, and the current month is the latest one that opens.</div>`;
     return wirePick(emp);
   }
+  const restored = draftRestore();
   drawForm(v);
+  if (restored) toast('Your unsaved KRA changes were restored. Click save on each KRA to store them.');
 };
 
 const editingQ = new Set();
 // the three KRA weightages (Operational + Process + People) should add up to 100
 const kraTotal = f => Object.values(f.kras).reduce((q, x) => q + (+x.weight || 0), 0);
 const kraTotalMsg = f => { const t = kraTotal(f); return `Total KRA weightage is ${t}%: ${t < 100 ? `${100 - t}% is still remaining` : `${t - 100}% over`}. It must be exactly 100%: update a KRA above so Operational + Process + People add up to 100%.`; };
+// KRA edits (KPI / target / weightage, added or removed sub-KRAs) are stored only by the KRA's save button. Until then they are kept
+// as a draft in this browser, so leaving the page (or reloading) and coming back does not lose them.
+const kraSig = kr => JSON.stringify({ w: +kr.weight || 0, r: kr.rows.map(r => [r.id, r.kpi, r.target, +r.weight || 0]) });
+let kraBase = {}; // KRA key -> signature of what the server holds
+const draftKey = () => `pms.kraDraft.${S.me.id}.${FP.form.empId}.${FP.form.month}`;
+const draftRead = () => { try { return JSON.parse(localStorage.getItem(draftKey()) || '{}'); } catch { return {}; } };
+function draftStore() {
+  const d = {};
+  for (const k of Object.keys(FP.form.kras)) if (kraSig(FP.form.kras[k]) !== kraBase[k]) d[k] = { weight: FP.form.kras[k].weight, rows: FP.form.kras[k].rows.map(r => ({ id: r.id, kpi: r.kpi, target: r.target, weight: r.weight })) };
+  try { Object.keys(d).length ? localStorage.setItem(draftKey(), JSON.stringify(d)) : localStorage.removeItem(draftKey()); } catch { /* storage blocked: the draft just lives until the page changes */ }
+}
+const kraUnsaved = k => FP.form.kras[k] && kraSig(FP.form.kras[k]) !== kraBase[k];
+function draftRestore() {
+  kraBase = Object.fromEntries(Object.keys(FP.form.kras).map(k => [k, kraSig(FP.form.kras[k])]));
+  if (!FP.perms.editKras) return false;
+  const d = draftRead(); let any = false;
+  for (const k of Object.keys(d)) {
+    const sk = FP.form.kras[k]; if (!sk) continue;
+    const srv = new Map(sk.rows.map(r => [r.id, r]));
+    sk.weight = d[k].weight;
+    sk.rows = d[k].rows.map(r => ({ self: null, selfRemark: '', mgr: null, mgrRemark: '', ...(srv.get(r.id) || {}), ...r }));
+    any = true;
+  }
+  return any;
+}
+let submitErrs = []; // what stops the final submit; stays on screen (and shrinks) until every item is fixed
 const kraErr = {}; // KRA key -> weightage error from its last Save, shown next to its "Weightage Of KRA"
 const editingW = new Set(); // KRAs whose "Weightage of KRA" box is open (the pencil opens it)
 const folded = new Set(); // form sections folded with the arrow on their heading (operational, process, people, qa)
@@ -1199,7 +1227,7 @@ const rateCol = x => x == null || x === '' ? '' : +x >= 75 ? 'r-g' : +x >= 50 ? 
 let focusQ = null; // question answer box to put the cursor in after a redraw
 const qSavedAt = {}; // question id -> when its answer was last saved automatically (shows "Saved automatically")
 let qTimer = null; // pending automatic save of a question answer
-function drawForm(v, errors) {
+function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
   const { form: f, perms: p, employee: e, manager: m } = FP;
   // the old PMS portal's form, same layout and look (Harish, 2026-11-17: "keep layout look and exact like this"), only more
   // compact: cream bar with the KRA name, "Weightage Of KRA" + pencil, navy-headed table with its Totals row even when
@@ -1213,7 +1241,7 @@ function drawForm(v, errors) {
     if (shut) return head;
     const top = !rows.length && FP.newJoiner ? '<div class="info">New joiner: no KRAs set yet. Only the questionnaire is checked.</div>' : '';
     const w = `<div class="opf-w"><b>Weightage Of KRA:</b>${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<span>${kr.weight}</span>`}${ed ? `<button type="button" class="ibtn opf-pen" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}${kraErr[k] ? `<div class="opf-werr" role="alert">${esc(kraErr[k])}</div>` : ''}${ed && k === 'people' && kraTotal(f) !== 100 ? `<div class="opf-wwarn" role="alert">${esc(kraTotalMsg(f))}</div>` : ''}</div>`;
-    const btns = ed ? `<div class="opf-btns"><button type="button" class="opf-y sq" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">+</button><button type="button" class="opf-y soft" data-savek="${k}" title="Save the ${label} KRA">save</button></div>` : '';
+    const btns = ed ? `<div class="opf-btns">${kraUnsaved(k) ? '<span class="opf-unsaved">Not saved yet: click save to keep these changes</span>' : ''}<button type="button" class="opf-y sq" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">+</button><button type="button" class="opf-y soft" data-savek="${k}" title="Save the ${label} KRA">save</button></div>` : '';
     return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:60px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col></colgroup><tr><th>Sr.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th></tr>
     ${rows.map((r, i) => {
       // every rated sub-KRA needs a manager remark; after a Submit attempt, unrated ones are marked too
@@ -1248,7 +1276,7 @@ function drawForm(v, errors) {
   // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
   v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
-    ${f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The form is locked and can no longer be changed.'}</div>`
+    ${f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The employee can no longer change it.'}</div>`
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="opf-bar">${fyPick(S.month)}<button type="button" class="opf-y" id="toqa">View Question-Answer</button></div>
     <div class="opf-card"><div class="opf-band">KRA : ${esc(FP.fy || '')} ${esc(mon)},${esc(yr)}</div>
@@ -1275,7 +1303,7 @@ function drawForm(v, errors) {
     }).join('')}</table></div>`}
     <div class="opf-end"><button type="button" class="opf-y soft" id="totop">Back To Top</button><span class="sp"></span>
     ${p.canReturn ? '<button type="button" class="btn" id="giveback" title="Let the employee change their self ratings, remarks and answers again">Send back to employee</button>' : ''}
-    ${p.canSubmit ? '<button type="button" class="opf-y" id="submit" title="Submit the review: the form is then locked for good">Save Final Reporting</button>' : ''}
+    ${p.canSubmit ? '<button type="button" class="opf-y" id="submit" title="Submit the review: the employee can no longer change it afterwards">Save Final Reporting</button>' : ''}
     </div></div></div></div>`;
   wireForm(v);
 }
@@ -1363,7 +1391,9 @@ function wireForm(v) {
       const r = f.kras[t.dataset.k].rows[+t.dataset.i]; r[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value;
       if (RATING_FIELDS.includes(t.dataset.f)) formDirty.add(`k|${t.dataset.k}|${r.id}|${t.dataset.f}`);
     }
-    else if (t.dataset.qt) f.qa[t.dataset.qt] = t.value; // a draft: stored only when the tick is clicked
+    if (t.dataset.kw || (t.dataset.k && !RATING_FIELDS.includes(t.dataset.f))) draftStore();
+    if (t.id === 'reviewDate') return;
+    if (t.dataset.qt) f.qa[t.dataset.qt] = t.value; // a draft: stored only when the tick is clicked
     else if (t.dataset.qr) { const a = f.qa[t.dataset.qr] ||= {}; a[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value; formDirty.add(`qr|${t.dataset.qr}|${t.dataset.f}`); }
   };
   // re-render on blur-ish changes so remark requirements update
@@ -1387,6 +1417,11 @@ function wireForm(v) {
     const ae = document.activeElement, d = ae && v.contains(ae) ? ae.dataset : null;
     const aSel = !d ? null : ae.id ? `#${ae.id}` : d.k !== undefined && d.f ? `[data-k="${d.k}"][data-i="${d.i}"][data-f="${d.f}"]` : d.qr && d.f ? `[data-qr="${d.qr}"][data-f="${d.f}"]` : d.kw ? `[data-kw="${d.kw}"]` : null;
     const aPos = aSel && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
+    // the list of what is still missing stays up and only shrinks as items are fixed (it was lost on every redraw)
+    if (submitErrs.length) {
+      if (FP.perms.canSubmit) { try { await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month, check: true } }); submitErrs = []; } catch (er) { submitErrs = er.data?.errors ? [er.message, ...er.data.errors] : [er.message]; } }
+      else submitErrs = [];
+    }
     const y = SC().scrollTop; drawForm(v); SC().scrollTop = y;
     if (aSel) {
       const nb = v.querySelector(aSel);
@@ -1445,13 +1480,15 @@ function wireForm(v) {
   // question answers are NOT saved automatically (Vidya, 2026-11-18): the pencil opens a box, the tick stores the answer
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   $('#expk').onclick = () => exportKpi();
-  const showErrors = e => { drawForm(v, e.data?.errors ? [e.message, ...e.data.errors] : [e.message]); SC().scrollTo({ top: 0, behavior: 'smooth' }); };
+  const showErrors = e => { submitErrs = e.data?.errors ? [e.message, ...e.data.errors] : [e.message]; drawForm(v); SC().scrollTo({ top: 0, behavior: 'smooth' }); };
   // step 2 (manager/admin): final submit, locks the form for good
   if ($('#submit')) $('#submit').onclick = async () => {
     attempted = true;
     try { await save(); } catch (e) { return showErrors(e); }
-    if (!await confirmBox('Submit this review?', 'After submitting, the form is locked for good. Nobody can change it, admins included.', { ok: 'Submit review' })) return;
-    try { FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; toast('Review submitted'); drawForm(v); }
+    // check everything first (review date, self and manager ratings and remarks, SOP / learning links, questionnaire answers): the question box only appears when the form is complete
+    try { await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month, check: true } }); } catch (e) { return showErrors(e); }
+    if (!await confirmBox('Submit this review?', 'After submitting, the employee can no longer change this review. Managers and admins still can.', { ok: 'Submit review' })) return;
+    try { FP = await api('/form/submit', { method: 'POST', body: { empId: f.empId, month: f.month } }); attempted = false; submitErrs = []; toast('Review submitted'); drawForm(v); }
     catch (e) { showErrors(e); }
   };
   // step 1 (employee): send self ratings, remarks and answers to the manager
@@ -1497,8 +1534,8 @@ function wireForm(v) {
         if (reply === null) return;
         FP = await post('/kra-request/decide', { approve, reply }); toast(approve ? 'Approved' : 'Rejected'); drawForm(v);
       }
-      else if (t.dataset.add) { const k = t.dataset.add; f.kras[k].rows.push({ id: k[0] + Date.now(), kpi: '', target: '', weight: 0, self: null, selfRemark: '', mgr: null, mgrRemark: '' }); drawForm(v); }
-      else if (t.closest('[data-del]')) { const [k, i] = t.closest('[data-del]').dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); drawForm(v); }
+      else if (t.dataset.add) { const k = t.dataset.add; f.kras[k].rows.push({ id: k[0] + Date.now(), kpi: '', target: '', weight: 0, self: null, selfRemark: '', mgr: null, mgrRemark: '' }); draftStore(); drawForm(v); }
+      else if (t.closest('[data-del]')) { const [k, i] = t.closest('[data-del]').dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); draftStore(); drawForm(v); }
       else if (t.dataset.savek) {
         const k = t.dataset.savek;
         // the old portal asks first and confirms after (same words)
@@ -1513,7 +1550,9 @@ function wireForm(v) {
         if (!await confirmBox('Are you sure?', 'You want to add all these KPI?', { ok: 'Yes, Add it!' })) return;
         delete kraErr[k];
         try { await save(); const local = f.kras; const kb = {}; for (const x of Object.keys(f.kras)) kb[x] = x === k ? f.kras[x] : { weight: f.kras[x].weight }; // the other two: weight only
-          FP = await api('/kras', { method: 'PUT', body: { empId: f.empId, month: f.month, kras: kb } }); keepUnsaved(local, k); editingW.delete(k); toast('Added! Your KPI has been added.'); drawForm(v); }
+          FP = await api('/kras', { method: 'PUT', body: { empId: f.empId, month: f.month, kras: kb } });
+          kraBase = Object.fromEntries(Object.keys(FP.form.kras).map(x => [x, kraSig(FP.form.kras[x])])); // what the server now holds
+          keepUnsaved(local, k); draftStore(); editingW.delete(k); toast('Added! Your KPI has been added.'); drawForm(v); }
         catch (er) {
           // the weightage message belongs next to this KRA's "Weightage Of KRA"; anything else goes to the top as before
           const all = er.data?.errors || [er.message], mine = all.filter(m => m.includes(`under ${KRA_LABEL[k]}`)), rest = all.filter(m => !mine.includes(m));
