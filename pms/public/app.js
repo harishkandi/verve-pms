@@ -1480,8 +1480,15 @@ function ratingBox(f) {
     <tr class="sub"><td>Monthly Rating</td><td colspan="2"><b>${r2(0.3 * sr + 0.7 * mr)}%</b></td></tr></table></div>`;
 }
 // Export KPI: the monthly form as it is on screen, as a CSV file Excel opens directly (UTF-8 with BOM)
+// one CSV download for every Export button: UTF-8 with BOM so Excel shows names and remarks correctly
+function fileSave(name, text) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const csvSave = (name, lines) => fileSave(name, lines.map(l => l.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n'));
+const fileName = s => String(s).trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '');
 function exportKpi() {
-  const { form: f, employee: e, manager: m } = FP, sum = formSummary(f), q = x => `"${String(x ?? '').replace(/"/g, '""')}"`;
+  const { form: f, employee: e, manager: m } = FP, sum = formSummary(f);
   const lines = [['Employee', e.name], ['Designation', e.designation], ['Reporting manager', m ? m.name : ''], ['Month', monthLabel(f.month)], ['Review date', f.reviewDate || ''],
     ['Status', STATUS_TEXT[FP.status] || FP.status], ['Monthly rating (%)', sum.rating ?? ''], [], ['KRA', 'KRA weightage', 'Sr. no', 'Key performance indicator', 'Target', 'Weightage', 'Self rating (30%)', 'Manager rating (70%)', 'Remark', 'Manager remark']];
   sum.kras.forEach(k => {
@@ -1490,9 +1497,7 @@ function exportKpi() {
   });
   lines.push([], ['Questionnaire'], ['Sr. no', 'Question', 'Answer', 'Self rating (of 5)', 'Manager rating (of 5)', 'Manager remark']);
   (FP.questions || []).forEach((x, i) => { const a = f.qa[x.id]; lines.push(x.type === 'text' ? [i + 1, x.text, a || ''] : [i + 1, x.text, '', a && a.self != null ? a.self : '', a && a.mgr != null ? a.mgr : '', a ? a.remark || '' : '']); });
-  const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `KPI_${e.name.replace(/\s+/g, '_')}_${f.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  csvSave(`KPI_${fileName(e.name)}_${f.month}.csv`, lines);
 }
 // KRA change requests: employees ask, the manager approves, then the employee can edit once
 function kraBanner(p) {
@@ -1770,10 +1775,8 @@ pages.mis = async (v, id) => {
   <p class="small">Ratings appear once a review is submitted. "Not sub." = completed but not submitted, "Open" = review not completed yet, – = no form that month. Ratings are percentages: blue is 80% and above, orange 60% to 79%, red below 60%.</p>`;
   misGraph($('#mgraph'), id).catch(er => { $('#mgraph').innerHTML = errBox(er); });
   $('#misx').onclick = () => {
-    const q = x => `"${String(x ?? '').replace(/"/g, '""')}"`;
-    const lines = [['Employee', 'Designation', 'Reports to', ...d.months.map(m => m.label), 'Average'].map(q).join(','),
-      ...d.grid.map(r => [r.name, r.designation, r.manager, ...r.cells.map(x => !x ? '' : x.rating ?? x.status), r.avg ?? ''].map(q).join(','))];
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `MIS-${d.person.name.replace(/\s+/g, '-')}.csv`; a.click();
+    csvSave(`MIS_${fileName(d.person.name)}.csv`, [['Employee', 'Designation', 'Reports to', ...d.months.map(m => m.label), 'Average'],
+      ...d.grid.map(r => [r.name, r.designation, r.manager, ...r.cells.map(x => !x ? '' : x.rating ?? x.status), r.avg ?? ''])]);
   };
 };
 
@@ -1887,11 +1890,15 @@ pages.yearly = async (v, id) => {
   v.innerHTML = head(d.me ? (mgrView ? 'Team report' : 'My report') : root ? (mgrView ? `Team report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team report',
       root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
     `<div class="row">${cfPill('yearly')}
-    <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
+    <span class="sp"></span>${list.length ? `<button type="button" class="btn" id="yx" title="Download the scores shown (CSV for Excel)">${ico('download')}Export CSV</button>` : ''}${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
     ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
-  v.onclick = e => { const cfb = e.target.closest('[data-cf]'); if (cfb) cfOpen(cfb); };
+  v.onclick = e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    if (e.target.closest('#yx')) csvSave(`Team_report_FY${d.fy}${qi == null ? '' : '_Q' + (qi + 1)}.csv`, [['Employee', 'Designation', 'Team', 'Reporting manager', 'KRA', ...pick(d.months).map(m => m.label)],
+      ...list.flatMap(p => [['operational', 'Operational'], ['process', 'Process'], ['people', 'People'], ['total', 'Total']].map(([k, l]) => [p.name, p.designation, tl(p.team), p.manager || '', l, ...pick(p.cells).map(c => c && c[k] != null ? c[k].toFixed(2) : '')]))]);
+  };
 };
 
 // ---------- review status report ----------
@@ -1984,7 +1991,7 @@ pages.report = async v => {
     const kind = e.target.value; e.target.value = '';
     try {
       // the PMS report format columns; UTF-8 with BOM so Excel shows names and remarks correctly
-      if (kind === 'csv') { const r = await api('/report.csv?' + q); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + r.csv], { type: 'text/csv;charset=utf-8' })); a.download = `PMS_report_${S.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+      if (kind === 'csv') { const r = await api('/report.csv?' + q); fileSave(`PMS_report_${S.month}.csv`, r.csv); }
       if (kind === 'pdf') reportPdf(d, c);
     } catch (er) { toast(er.message, 'err'); }
   };
@@ -2184,7 +2191,8 @@ pages.params = async (v, arg) => {
       ${s.items.map((it, ii) => `<div class="pitem"><span class="pn">${ii + 1}.</span><span class="pt">${esc(it)}</span>${admin ? `<span class="acts"><button class="btn sm" data-a="edit" data-s="${si}" data-i="${ii}">Edit</button><button class="btn sm dng" data-a="del" data-s="${si}" data-i="${ii}">Delete</button></span>` : ''}</div>`).join('')}
       ${admin ? `<div style="padding-top:10px"><button class="btn sm pri" data-a="add" data-s="${si}">${ico('plus')}Add item</button></div>` : ''}</div>`).join('')}
     <div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico('star')}</i>Rating scale (applies to the parameters above):</b>${admin ? '<span class="acts"><button class="btn sm" data-a="scale">Edit scale</button></span>' : ''}</div>${P.scale.map(x => `<div class="pitem"><span class="pt">${esc(x)}</span></div>`).join('')}</div>
-    ${admin ? `<div class="row" style="justify-content:flex-end"><button class="btn pri" id="savep" ${dirty ? '' : 'disabled'}>Save changes…</button></div><p class="small">Soft parameters here are not part of the monthly rating calculation. Changes apply from the month you choose and are written to the audit log.</p>` : ''}`;
+    ${admin && dirty ? `<div class="row" style="justify-content:flex-end;align-items:center"><span class="small" style="color:var(--vr-warn-700);font-weight:600">You have unsaved changes</span><button class="btn" id="discp">Discard</button><button class="btn pri" id="savep">Save changes</button></div>` : ''}
+    ${admin ? `<p class="small">Soft parameters here are not part of the monthly rating calculation. Changes apply from the month you choose and are written to the audit log.</p>` : ''}`;
   };
   draw();
   const ask = (title, val, cb) => { const m = modal(`<h2>${title}</h2><textarea id="tv" style="min-height:80px">${esc(val)}</textarea><div class="row" style="margin-top:12px"><button class="btn pri" id="ok">OK</button><button class="btn" id="no">Cancel</button></div>`); m.querySelector('#no').onclick = () => m.remove(); m.querySelector('#ok').onclick = () => { const t = m.querySelector('#tv').value.trim(); if (t) { cb(t); m.remove(); draw(true); } }; };
@@ -2197,6 +2205,7 @@ pages.params = async (v, arg) => {
     if (a === 'edit') ask('Edit item', P.sections[s].items[i], x => P.sections[s].items[i] = x);
     if (a === 'del' && await confirmBox('Delete this item?', P.sections[s].items[i], { ok: 'Delete item', danger: true })) { P.sections[s].items.splice(i, 1); draw(true); }
     if (a === 'scale') ask('Rating scale (one line per level)', P.scale.join('\n'), x => P.scale = x.split('\n').map(z => z.trim()).filter(Boolean));
+    if (t.id === 'discp') { P = JSON.parse(JSON.stringify(d.data)); draw(); }
     if (t.id === 'savep') {
       const m = modal(`<h2>Apply from which review month?</h2><select id="eff">${S.me.months.map(x => `<option value="${x.key}" ${x.key === S.me.currentMonth ? 'selected' : ''}>${x.label}</option>`).join('')}</select><p class="small">Forms from this month onward (including future months) use the new wording. Submitted forms keep the earlier wording.</p><div class="row"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
@@ -2364,7 +2373,7 @@ pages.employees = async (v, arg, grp) => {
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
   <div class="row"><div class="seg" style="margin:0"><a class="chip ${tab === 'active' ? 'on' : ''}" href="#/employees/active">Active <span class="cnt">${d.active.length}</span></a><a class="chip ${tab === 'inactive' ? 'on' : ''}" href="#/employees/inactive">Inactive <span class="cnt">${d.inactive.length}</span></a></div></div>
-  <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
+  <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><button type="button" class="btn" id="empx" title="Download this list as it is filtered (CSV for Excel)">${ico('download')}Export CSV</button><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
   ${md.diffs.length ? `<div class="warn" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
@@ -2406,6 +2415,8 @@ pages.employees = async (v, arg, grp) => {
   v.onclick = async e => {
     const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // the Filter pill
+    if (e.target.closest('#empx')) return csvSave(`Employees_${tab}_${new Date().toISOString().slice(0, 10)}.csv`, [['Code', 'Name', 'Work email', 'Designation', 'Team', 'Role', 'Reporting manager', 'Joining date', 'Work status'],
+      ...rows.map(r => [r.codeSet === false ? '' : r.code, r.name, r.email, r.designation, tl(r.team), ROLE_LABEL[r.role] || r.role, r.manager, r.joinedSet === false ? '' : r.joined, r.workStatus ? (r.workStatus.type === 'leave' ? 'On leave' : 'Serving notice') : 'Working'])]);
     const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
     if (a === 'mdsync') {
       try { const r = await api('/master/sync', { method: 'POST' }); toast(r.changes.length ? `${r.changes.length} change${r.changes.length === 1 ? '' : 's'} brought in from the list` : 'The list has no new changes'); pages.employees(v); }
