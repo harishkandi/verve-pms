@@ -1118,6 +1118,40 @@ tr.sub>td{background:var(--vr-pms-blue-50)}
 .tile,.stat{border:0;border-radius:10px;background:var(--vr-pms-blue-50);box-shadow:none}
 .tile::before,.stat::before{display:none}
 .stat[data-st]:hover,button.tile:hover{background:var(--vr-pms-blue)}
+/* side panel: one flat deep navy (Harish 2026-11-18: no lighter glow, no light-blue highlight, darker than the logo
+   blue); the open page is the logo blue with the white bar on its left */
+.side{background:var(--vr-navy-900)}
+.side .orb{display:none}
+.links a:hover,.ngrp-btn:hover,.links .nsub a:hover{background:var(--vr-navy-700)}
+.links a.on,.links .nsub a.on,.ngrp.open>.ngrp-btn{background:var(--vr-navy-800)}
+.ucard{background:var(--vr-navy-800)}
+/* shrink to icons (Harish 2026-11-18): round button on the panel's right edge; shrunk = 72px wide, icons only, names on
+   hover, menu groups open as a small menu beside the panel (.fly, placed by navFly in app.js) */
+.side{z-index:20;overflow:visible;transition:width .2s}
+.side-in{overflow-x:hidden}
+.links a span,.ngrp-btn span{white-space:nowrap}
+.side-tog{position:absolute;top:26px;right:12px;z-index:2;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:8px;background:none;color:rgba(255,255,255,.75);cursor:pointer;transition:background-color .15s,color .15s}
+.side-tog svg{width:20px;height:20px}
+.side-tog:hover{background:var(--vr-navy-700);color:var(--vr-pms-on)}
+.side-tog:focus-visible{outline:2px solid rgba(255,255,255,.6);outline-offset:-2px}
+.nsub-h{display:none}
+#app.mini .side{width:72px}
+#app.mini .wordmark{height:76px;padding:0}
+#app.mini .wordmark>*{display:none}
+#app.mini .side-tog{top:20px;right:19px}
+#app.mini .eyebrow{height:1px;margin:14px 18px 10px;padding:0;overflow:hidden;font-size:0;background:rgba(255,255,255,.15)}
+#app.mini .eyebrow:first-of-type{margin-top:0}
+#app.mini .links a,#app.mini .ngrp-btn{justify-content:center;padding:11px 0}
+#app.mini .links a>span,#app.mini .ngrp-btn>span,#app.mini .ngrp-btn>svg:last-child{display:none}
+#app.mini .links a>svg,#app.mini .ngrp-btn>svg{width:18px;height:18px}
+#app.mini .ngrp.open:not(.has-on)>.ngrp-btn{background:none}
+#app.mini .ngrp.has-on>.ngrp-btn{background:var(--vr-navy-800)}
+#app.mini .ngrp.fly>.ngrp-btn{background:var(--vr-navy-700)}
+#app.mini .nsub{display:none}
+#app.mini .ngrp.fly>.nsub{position:fixed;z-index:60;display:flex;min-width:210px;margin:0;padding:6px;border-radius:8px;background:var(--vr-navy-900);box-shadow:var(--vr-shadow-lg)}
+#app.mini .nsub-h{display:block;padding:6px 10px 8px;font-size:10px;line-height:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+#app.mini .links .nsub a{justify-content:flex-start;padding:8px 10px}
+#app.mini .links .nsub a>span{display:inline}
 .hero{border-radius:10px}
 .info{border-color:var(--vr-pms-blue);background:var(--vr-pms-blue-50)}
 .chip.on,.seg a.on{background:var(--vr-navy-800);color:var(--vr-pms-on)}
@@ -1153,9 +1187,11 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
    like this"), more compact than the portal. Its colours are --vr-pms-* tokens (yellow buttons, grey KRA band, cream
    section bars, navy table heads). KRA ratings are tinted by value: 75+ green, 50-74 yellow, 25-49 orange, 24 and below red. */
 :root{--vr-rate-y-50:#fdf8dc;--vr-rate-y-200:#efe08a;--vr-rate-y-800:#6b5a06;
+  --vr-rate-g:#1e8449;--vr-rate-y:#f1c40f;--vr-rate-o:#e67e22;--vr-rate-r:#c0392b;--vr-rate-on:#ffffff;--vr-rate-y-on:#1f1a00;
   --vr-pms-y:#ffc107;--vr-pms-y-hover:#f0b400;--vr-pms-y-soft:#ffd966;--vr-pms-y-text:#212529;--vr-pms-band:#6c757d;--vr-pms-band-text:#212529;
   --vr-pms-cream:#fff2dc;--vr-pms-cream-line:#f0e0c0;--vr-pms-navy:#23408b;--vr-pms-head-text:#ffffff;--vr-pms-grid:#dee2e6;--vr-pms-field:#ececec;--vr-pms-link:#0d6efd}
 .dark{--vr-rate-y-50:#2e2a12;--vr-rate-y-200:#5c5220;--vr-rate-y-800:#ede08f;
+  --vr-rate-g:#1a7a43;--vr-rate-y:#d4a90c;--vr-rate-o:#d4701c;--vr-rate-r:#b03427;--vr-rate-on:#ffffff;--vr-rate-y-on:#1f1a00;
   --vr-pms-y:#f2b705;--vr-pms-y-hover:#ffc61a;--vr-pms-y-soft:#c99a1c;--vr-pms-y-text:#1a1404;--vr-pms-band:#3d4554;--vr-pms-band-text:#e3e7ef;
   --vr-pms-cream:#2c2618;--vr-pms-cream-line:#433824;--vr-pms-navy:#24438f;--vr-pms-head-text:#ffffff;--vr-pms-grid:#2f3a55;--vr-pms-field:#222c44;--vr-pms-link:#7fb0ff}
 .opf{font-size:14px;line-height:21px;color:var(--vr-n-900)}
@@ -1202,10 +1238,14 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 .opf-t textarea{min-height:36px;padding:6px 8px;font-size:13px;line-height:18px}
 .opf-t input.num,.opf-t select.num{width:100%;max-width:84px;padding-top:5px;padding-bottom:5px;font-size:13px}
 .opf-no{display:inline-flex;align-items:center;gap:2px}
-.opf-t .num.r-g{border-color:var(--vr-green-200);background-color:var(--vr-green-50);color:var(--vr-green-700)}
-.opf-t .num.r-y{border-color:var(--vr-rate-y-200);background-color:var(--vr-rate-y-50);color:var(--vr-rate-y-800)}
-.opf-t .num.r-o{border-color:var(--vr-warn-200);background-color:var(--vr-warn-50);color:var(--vr-warn-700)}
-.opf-t .num.r-r{border-color:var(--vr-danger-200);background-color:var(--vr-danger-50);color:var(--vr-danger-700)}
+/* Solid, full-strength fills (Harish 2026-11-18: "darker, not this light colour"); ratings are typed boxes (Vidya) */
+.opf-t .num.r-g,.opf-t .num.r-y,.opf-t .num.r-o,.opf-t .num.r-r{opacity:1;font-weight:700;color:var(--vr-rate-on)}
+.opf-t .num.r-g{border-color:var(--vr-rate-g);background-color:var(--vr-rate-g)}
+.opf-t .num.r-y{border-color:var(--vr-rate-y);background-color:var(--vr-rate-y);color:var(--vr-rate-y-on)}
+.opf-t .num.r-o{border-color:var(--vr-rate-o);background-color:var(--vr-rate-o)}
+.opf-t .num.r-r{border-color:var(--vr-rate-r);background-color:var(--vr-rate-r)}
+.opf-t .num.r-g:disabled,.opf-t .num.r-o:disabled,.opf-t .num.r-r:disabled{color:var(--vr-rate-on)}
+.opf-t .num.r-y:disabled{color:var(--vr-rate-y-on)}
 .opf-qr{border-collapse:collapse;table-layout:fixed;border:1px solid var(--vr-n-700);border-radius:0}
 .opf-qr th{padding:5px 8px;border:0;letter-spacing:normal;text-transform:none;background:var(--vr-pms-navy);font-size:14px;line-height:20px;font-weight:700;color:var(--vr-pms-head-text);white-space:normal}
 .opf-qr td{padding:8px;border:1px solid var(--vr-n-700);vertical-align:middle}
