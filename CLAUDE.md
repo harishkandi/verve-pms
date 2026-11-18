@@ -111,6 +111,14 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
   incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
   "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
+- Small add-ons (Harish 2026-11-18): the dashboard's Filter pill + panel is also on Review status report (`report`),
+  Team report (`yearly`), Scheduling team members (`sched`) and Audit log (`audit`): all `local` cards in `CF_CARDS`,
+  page choices in `PF`, the page's own state (RF / YF) stays the truth; `cfClear` / `clearLink` for empty lists.
+  Search = top bar button / Ctrl+K (`palOpen`: side menu links + `/api/report` rows; Enter opens the person's form).
+  Side panel starts shrunk under 1100px (`sideNarrow`). Leaving the monthly form with an answer typed but not ticked
+  asks first (`navGuard` / `formUnsaved`, also `beforeunload`). Every CSV goes through `csvSave` / `fileSave` (Export
+  CSV on Employees and Team report too). Scheduling has a List / Calendar switch (`calView`, `pms.schView`). Team
+  report shows a rating trend per person (`trend` in `pages.yearly`: own-range line + change vs the month before).
 - People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
   member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
 - Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,

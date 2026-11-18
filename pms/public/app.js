@@ -1908,7 +1908,20 @@ pages.yearly = async (v, id) => {
   // the months shown: the whole year, or the three months of the chosen quarter (Quarter I = Apr-Jun)
   const qi = YF.q === '' ? null : +YF.q, cols = qi == null ? d.months.map((_, i) => i) : [qi * 3, qi * 3 + 1, qi * 3 + 2];
   const pick = arr => cols.map(i => arr[i]);
-  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · Reporting manager ${esc(p.manager)}` : ''}</span></div>
+  // rating trend (Harish 2026-11-18): the year's monthly Totals as a small line, and the change from the rated month before
+  const mon3 = i => d.months[i].label.split(' ')[0].slice(0, 3);
+  const trend = p => {
+    const pts = d.months.map((_, i) => [i, p.cells[i] && p.cells[i].total != null ? p.cells[i].total : null]).filter(x => x[1] != null);
+    if (!pts.length) return '';
+    // the line uses this person's own range (10 points around their lowest and highest month), so small changes still show
+    const vs = pts.map(q => q[1]), lo = Math.max(0, Math.floor((Math.min(...vs) - 5) / 10) * 10), hi = Math.min(100, Math.max(lo + 20, Math.ceil((Math.max(...vs) + 5) / 10) * 10));
+    const W = 132, H = 32, n = Math.max(1, d.months.length - 1), x = i => 4 + i * (W - 8) / n, y = v => H - 4 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * (H - 8);
+    const line = pts.map(([i, v], k) => `${k ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+    const [li, lv] = pts[pts.length - 1], prev = pts[pts.length - 2], diff = prev ? lv - prev[1] : null, dir = diff == null ? '' : diff > 0.05 ? 'up' : diff < -0.05 ? 'down' : 'same';
+    const chg = diff == null ? `First rated month: ${mon3(li)}` : `${{ up: '▲', down: '▼', same: '=' }[dir]} ${Math.abs(diff).toFixed(1)} vs ${mon3(prev[0])}`;
+    return `<span class="ytr" title="Monthly rating: ${esc(pts.map(([i, v]) => `${mon3(i)} ${v.toFixed(1)}`).join(', '))}"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${lo < 75 && hi > 75 ? `<line x1="4" x2="${W - 4}" y1="${y(75).toFixed(1)}" y2="${y(75).toFixed(1)}"/>` : ''}<path d="${line}"/>${pts.map(([i, v]) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5"/>`).join('')}</svg><small class="${dir}">${chg}</small></span>`;
+  };
+  const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · Reporting manager ${esc(p.manager)}` : ''}</span></div>${trend(p)}
       ${S.me.role === 'admin' ? `<a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a>` : ''}<span class="sp"></span>
       ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}">${ico('team')}Their team</a>` : ''}</div>
     <div class="tablewrap"><table class="ytab"><tr><th>KRA name</th>${pick(d.months).map(m => `<th class="nr ${m.open ? '' : 'off'}">${mh(m)}</th>`).join('')}</tr>

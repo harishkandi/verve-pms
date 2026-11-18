@@ -1201,6 +1201,16 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--vr-n-300);border
 .scal-open{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;font-size:13px}
 .scal-o{display:inline-flex;align-items:center;gap:8px;padding:4px 4px 4px 10px;border:1px solid var(--vr-pms-line);border-radius:6px;background:var(--vr-card)}
 @media (max-width:900px){.scal-d{min-height:72px;padding:4px}.scal-ev b{display:none}}
+/* Team report: rating trend beside each name (navy line, dashed 75% guide), change from the month before */
+.ytr{display:inline-flex;align-items:center;gap:8px;margin-left:16px;padding:2px 10px 2px 6px;border:1px solid var(--vr-pms-line);border-radius:6px;background:var(--vr-card)}
+.ytr svg{flex:none}
+.ytr path{fill:none;stroke:var(--vr-navy-800);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.ytr circle{fill:var(--vr-navy-800)}
+.ytr line{stroke:var(--vr-n-300);stroke-width:1;stroke-dasharray:3 3}
+.ytr small{font-size:12px;font-weight:600;white-space:nowrap;color:var(--vr-n-500)}
+.ytr small.up{color:var(--vr-success-600)}
+.ytr small.down{color:var(--vr-danger-600)}
+@media (max-width:900px){.ytr svg{display:none}}
 .hero{border-radius:10px}
 .info{border-color:var(--vr-pms-blue);background:var(--vr-pms-blue-50)}
 .chip.on,.seg a.on{background:var(--vr-navy-800);color:var(--vr-pms-on)}
