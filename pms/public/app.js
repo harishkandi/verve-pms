@@ -86,9 +86,10 @@ const fyMonthsOf = y => Array.from({ length: 12 }, (_, i) => { const m = (i + 3)
 const monthLabel = key => { const [y, m] = (key || '').split('-').map(Number); return m ? `${MONTHS[m - 1]} ${y}` : ''; };
 const monthOpts = sel => fyMonthsOf(fyOf(sel || S.me.currentMonth)).filter(m => m.started).map(m => `<option value="${m.key}" ${m.key === sel ? 'selected' : ''}>${m.label.split(" ")[0]}</option>`).join('');
 // ratings are 0-5 picked from a dropdown; a manager remark is needed when self and manager ratings differ
-// KRA ratings are percentages (10% to 100%); questionnaire ratings use the 0-5 parameter scale
-const RATINGS = [0, 1, 2, 3, 4, 5], KRA_RATINGS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-const rateSel = (val, attrs, enabled, cls = '', scale = RATINGS, unit = '') => `<select class="num ${cls}" ${attrs} ${enabled ? '' : 'disabled'}><option value="">–</option>${scale.map(n => `<option value="${n}" ${val != null && val !== '' && +val === n ? 'selected' : ''}>${n}${unit}</option>`).join('')}</select>`;
+// KRA ratings are percentages (0 to 100, typed); questionnaire ratings use the 0-5 parameter scale
+const RATINGS = [0, 1, 2, 3, 4, 5], KRA_RATINGS = [0, 100];
+// ratings are typed (any whole number up to the max) with the browser's up / down arrows; no pick list (Vidya, 2026-11-18)
+const rateSel = (val, attrs, enabled, cls = '', scale = RATINGS, title = '') => `<input type="number" class="num ${cls}" min="0" max="${scale[scale.length - 1]}" step="1" inputmode="numeric" placeholder="–" value="${val != null && val !== '' ? +val : ''}" ${attrs} ${title && !enabled ? `title="${esc(title)}"` : ''} ${enabled ? '' : 'disabled'}>`;
 // a percentage rating for display
 const pc = x => x == null ? 'N/A' : `${x}%`;
 const errBox = e => `<div class="warn">${(e.data?.errors || [e.message]).map(esc).join('<br>')}</div>`;
@@ -513,7 +514,7 @@ async function route() {
   const [, page, ...args] = (location.hash || '#/home').split('/');
   markNav();
   const v = $('#view'); if (!v.firstElementChild) v.innerHTML = spinner();
-  v.onclick = v.oninput = v.onchange = v.onkeydown = null; SC().onscroll = null;
+  v.onmousedown = v.onclick = v.oninput = v.onchange = v.onkeydown = null; SC().onscroll = null;
   v.classList.add('routing');
   try { await (pages[page] || pages.home)(v, ...args); } catch (e) { v.innerHTML = head('Something went wrong', 'The page could not be loaded.') + errBox(e); }
   v.classList.remove('routing'); SC().scrollTop = 0;
@@ -748,12 +749,26 @@ function pickOpen(sel) {
   const label = o => o.value === '' && !/\w/.test(o.text) ? (sel.classList.contains('num') ? 'Not rated' : 'None') : o.text;
   box.className = 'pick'; box.setAttribute('role', 'listbox');
   box.innerHTML = opts.map((o, i) => `<button type="button" role="option" tabindex="-1" class="pick-i ${o.selected ? 'on' : ''} ${o.value === '' ? 'blank' : ''}" data-i="${i}" aria-selected="${o.selected}" ${o.disabled ? 'disabled' : ''}><span>${esc(label(o))}</span>${ico('tick')}</button>`).join('');
+  // a long list (people, teams...) gets a search box: typing narrows it to the names with a word starting with what was typed
+  const searchable = opts.length > 8;
+  if (searchable) box.insertAdjacentHTML('afterbegin', '<input type="text" class="pick-q" placeholder="Type to search…" aria-label="Search the list" autocomplete="off" spellcheck="false">');
+  if (searchable) box.insertAdjacentHTML('beforeend', '<div class="pick-none" hidden>No match</div>');
   document.body.append(box);
-  popPlace(box, sel, 220); // about 7 rows, then the list scrolls
+  popPlace(box, sel, searchable ? 260 : 220); // about 7 rows, then the list scrolls
   const items = [...box.querySelectorAll('.pick-i')], cur = items.find(b => b.classList.contains('on')) || items.find(b => !b.disabled);
-  pick = { sel, box, opts, items };
+  const q = box.querySelector('.pick-q');
+  pick = { sel, box, opts, items, q };
   sel.classList.add('picking');
-  if (cur) { box.scrollTop = cur.offsetTop - (box.clientHeight - cur.offsetHeight) / 2; cur.focus({ preventScroll: true }); }
+  if (cur) box.scrollTop = cur.offsetTop - (box.clientHeight - cur.offsetHeight) / 2;
+  if (q) {
+    q.focus({ preventScroll: true });
+    q.oninput = () => {
+      const t = q.value.trim().toLowerCase();
+      let n = 0;
+      items.forEach(b => { const x = b.textContent.trim().toLowerCase(), hit = !t || x.startsWith(t) || x.split(/[\s,.()\-/]+/).some(w => w.startsWith(t)) || (t.includes(' ') && x.includes(t)); b.hidden = !hit; if (hit) n++; });
+      box.querySelector('.pick-none').hidden = n > 0; box.scrollTop = 0;
+    };
+  } else if (cur) cur.focus({ preventScroll: true });
   box.onclick = e => {
     const b = e.target.closest('.pick-i'); if (!b || b.disabled) return;
     const o = opts[+b.dataset.i];
@@ -773,7 +788,16 @@ document.addEventListener('keydown', e => {
     if (e.target.tagName === 'SELECT' && pickable(e.target) && [' ', 'Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); pickOpen(e.target); }
     return;
   }
-  const on = pick.items.filter(b => !b.disabled), i = on.indexOf(document.activeElement);
+  const on = pick.items.filter(b => !b.disabled && !b.hidden), i = on.indexOf(document.activeElement);
+  if (pick.q) { // search box: letters go into it (from anywhere in the list); Down / Enter pick from the matches
+    const typing = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (typing && document.activeElement !== pick.q) { pick.q.focus({ preventScroll: true }); return; }
+    if (document.activeElement === pick.q) {
+      if (e.key === 'ArrowDown' && on[0]) { e.preventDefault(); on[0].focus({ preventScroll: true }); return; }
+      if (e.key === 'Enter') { e.preventDefault(); const b = on.find(x => x.classList.contains('on')) && !pick.q.value.trim() ? null : on[0]; if (b) b.click(); return; }
+      if (e.key.length === 1 || ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    }
+  }
   const go = b => { if (b) { e.preventDefault(); b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'nearest' }); } };
   if (e.key === 'ArrowDown') go(on[(i + 1) % on.length]);
   else if (e.key === 'ArrowUp') go(on[(i - 1 + on.length) % on.length]);
@@ -781,7 +805,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'End') go(on[on.length - 1]);
   else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pickClose(); }
   else if (e.key === 'Tab') pickClose();
-  else if (e.key.length === 1 && e.key !== ' ') go([...on.slice(i + 1), ...on.slice(0, i + 1)].find(b => b.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase())));
+  else if (!pick.q && e.key.length === 1 && e.key !== ' ') go([...on.slice(i + 1), ...on.slice(0, i + 1)].find(b => b.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase())));
 }, true);
 // Every date field opens this styled calendar. Focus stays in the field, so typing a date by hand still works.
 let cal = null; // the open calendar: { input, box, y, m, view: 'days' | 'months' }
@@ -1147,7 +1171,9 @@ pages.home = async (v, opts = {}) => {
 
 // ---------- monthly form ----------
 let FP = null, attempted = false, resultNoteOff = false; // resultNoteOff: the "Monthly result is not available" note was closed
+const KRA_LABEL = { operational: 'Operational', process: 'Process', people: 'People' };
 pages.form = async (v, emp, month) => {
+  for (const k in kraErr) delete kraErr[k];
   if (/^annual/.test(month || '')) return drawAppraisal(v, emp, month.split('-')[1]); // annual or annual-2026
   S.month = month || S.month;
   attempted = false; resultNoteOff = false; editingQ.clear(); editingW.clear(); folded.clear(); focusQ = null; formDirty.clear();
@@ -1161,6 +1187,10 @@ pages.form = async (v, emp, month) => {
 };
 
 const editingQ = new Set();
+// the three KRA weightages (Operational + Process + People) should add up to 100
+const kraTotal = f => Object.values(f.kras).reduce((q, x) => q + (+x.weight || 0), 0);
+const kraTotalMsg = f => { const t = kraTotal(f); return `Total KRA weightage is ${t}%: ${t < 100 ? `${100 - t}% is still remaining` : `${t - 100}% over`}. It must be exactly 100%: update a KRA above so Operational + Process + People add up to 100%.`; };
+const kraErr = {}; // KRA key -> weightage error from its last Save, shown next to its "Weightage Of KRA"
 const editingW = new Set(); // KRAs whose "Weightage of KRA" box is open (the pencil opens it)
 const folded = new Set(); // form sections folded with the arrow on their heading (operational, process, people, qa)
 const foldBtn = (k, label) => `<button type="button" class="ibtn opf-fold" data-fold="${k}" aria-expanded="${!folded.has(k)}" title="${folded.has(k) ? 'Show' : 'Hide'} ${label}" aria-label="${folded.has(k) ? 'Show' : 'Hide'} ${label}">${CHEV}</button>`;
@@ -1182,12 +1212,14 @@ function drawForm(v, errors) {
     const head = `<div class="opf-sec ${shut ? 'shut' : ''}" id="sec-${k}"><h3>${label} : (${desc})</h3>${foldBtn(k, label)}</div>`;
     if (shut) return head;
     const top = !rows.length && FP.newJoiner ? '<div class="info">New joiner: no KRAs set yet. Only the questionnaire is checked.</div>' : '';
-    const w = `<div class="opf-w"><b>Weightage Of KRA:</b>${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<span>${kr.weight}</span>`}${ed ? `<button type="button" class="ibtn opf-pen" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}</div>`;
+    const w = `<div class="opf-w"><b>Weightage Of KRA:</b>${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<span>${kr.weight}</span>`}${ed ? `<button type="button" class="ibtn opf-pen" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}${kraErr[k] ? `<div class="opf-werr" role="alert">${esc(kraErr[k])}</div>` : ''}${ed && k === 'people' && kraTotal(f) !== 100 ? `<div class="opf-wwarn" role="alert">${esc(kraTotalMsg(f))}</div>` : ''}</div>`;
     const btns = ed ? `<div class="opf-btns"><button type="button" class="opf-y sq" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">+</button><button type="button" class="opf-y soft" data-savek="${k}" title="Save the ${label} KRA">save</button></div>` : '';
     return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:60px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col></colgroup><tr><th>Sr.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th></tr>
     ${rows.map((r, i) => {
       // every rated sub-KRA needs a manager remark; after a Submit attempt, unrated ones are marked too
-      const needRemark = (r.mgr != null || (attempted && p.canSubmit)) && !(r.mgrRemark || '').trim();
+      const needRemark = r.mgr != null && r.self != null && +r.mgr !== +r.self && !(r.mgrRemark || '').trim();
+      // the manager starts only after the employee's self rating and self remark are in
+      const selfDone = r.self != null && !!(r.selfRemark || '').trim(), mOK = p.editManager && selfDone; 
       const needSelf = attempted && (r.self == null || !(r.selfRemark || '').trim());
       // SOP (Process) and learning (People) sub-KRAs need the document link in the self remark
       const linkKind = !FP.newJoiner && (k === 'process' && /sop/i.test(r.kpi) ? 'SOP' : k === 'people' && /learn/i.test(r.kpi) ? 'learning' : '');
@@ -1197,11 +1229,11 @@ function drawForm(v, errors) {
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="target">${esc(r.target)}</textarea>` : esc(r.target)}</td>
       <td>${ed ? `<input class="num" type="number" data-k="${k}" data-i="${i}" data-f="weight" value="${r.weight}">` : r.weight}</td>
       <td>${rateSel(r.self, `data-k="${k}" data-i="${i}" data-f="self" aria-label="Self rating"`, p.editSelf, `${rateCol(r.self)} ${needSelf && r.self == null ? 'err' : ''}`, KRA_RATINGS)}</td>
-      <td>${rateSel(r.mgr, `data-k="${k}" data-i="${i}" data-f="mgr" aria-label="Manager rating"`, p.editManager, rateCol(r.mgr), KRA_RATINGS)}</td>
+      <td>${rateSel(r.mgr, `data-k="${k}" data-i="${i}" data-f="mgr" aria-label="Manager rating" ${p.editManager && !selfDone ? 'readonly data-locked="k"' : ''}`, p.editManager, rateCol(r.mgr), KRA_RATINGS)}</td>
       <td><textarea class="${(needSelf && !(r.selfRemark || '').trim()) || needLink ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="selfRemark" ${p.editSelf ? '' : 'disabled'} ${linkKind ? `placeholder="What you did, and the ${linkKind} document link"` : ''}>${esc(r.selfRemark)}</textarea>
       ${needLink ? `<div class="flag">Add the ${linkKind} document link (https://…) in this remark.</div>` : ''}</td>
-      <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'}>${esc(r.mgrRemark)}</textarea>
-      ${needRemark ? '<div class="flag">Manager remark is required for every sub-KRA.</div>' : ''}</td></tr>`;
+      <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'} ${p.editManager && !selfDone ? 'readonly data-locked="k"' : ''}>${esc(r.mgrRemark)}</textarea>
+      ${needRemark ? '<div class="flag">Manager remark is required: the manager rating differs from the self rating.</div>' : ''}</td></tr>`;
     }).join('')}
     <tr class="sub"><td></td><td></td><td>Totals</td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td>Total Calculation : ${calc}</td><td></td></tr></table></div>` + btns;
   };
@@ -1216,7 +1248,7 @@ function drawForm(v, errors) {
   // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
   v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
-    ${f.locked ? '<div class="info">This review is completed and submitted. The form is locked and can no longer be changed by anyone.</div>'
+    ${f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The form is locked and can no longer be changed.'}</div>`
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="opf-bar">${fyPick(S.month)}<button type="button" class="opf-y" id="toqa">View Question-Answer</button></div>
     <div class="opf-card"><div class="opf-band">KRA : ${esc(FP.fy || '')} ${esc(mon)},${esc(yr)}</div>
@@ -1232,14 +1264,14 @@ function drawForm(v, errors) {
     ${sec('people', 'People', 'Self updating of skills')}
     ${ratingBox(f)}
     <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
-    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved automatically">${esc(f.qa[q.id] || '')}</textarea><div class="opf-saved" data-qstat="${q.id}" aria-live="polite"></div>`
-      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${p.editSelf || p.editManager ? pen(q.id, 'Edit answer') : ''}${Date.now() - (qSavedAt[q.id] || 0) < 4000 ? `<div class="opf-saved on">${ico('tick')}Saved automatically</div>` : ''}`}${shortAns(f.qa[q.id], q.id) ? `<div class="flag">Please answer in more detail: at least ${FP.rules.qMinWords} words (now ${words(f.qa[q.id])}).</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
+    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer, then click the tick to save it">${esc(f.qa[q.id] || '')}</textarea><div class="opf-qbtns"><button type="button" class="ibtn opf-pen" data-qsave="${q.id}" title="Save the answer" aria-label="Save the answer">${ico('tick')}</button></div>`
+      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${(p.editSelf || p.editManager) && !f.locked ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id]) ? `<div class="flag">A single word is not enough. Please write a short answer in a few words.</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       // the Self Rating / Manager Rating / Remark heading only above the first rated question
-      return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text)}${/rate out of/i.test(q.text) ? '' : ' (Rate out of 5)'}</td><td><table class="opf-qr"><colgroup><col style="width:25%"><col style="width:25%"><col></colgroup>${i ? '' : '<tr><th>Self Rating</th><th>Manager Rating</th><th>Remark</th></tr>'}<tr>
+      return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text.replace(/\s*\(rate out of 5\)/i, ''))}</td><td><table class="opf-qr"><colgroup><col style="width:25%"><col style="width:25%"><col></colgroup>${i ? '' : '<tr><th>Self Rating</th><th>Manager Rating</th><th>Remark</th></tr>'}<tr>
         <td>${rateSel(a.self, `data-qr="${q.id}" data-f="self" aria-label="Self rating"`, p.editSelf)}</td>
-        <td>${rateSel(a.mgr, `data-qr="${q.id}" data-f="mgr" aria-label="Manager rating"`, p.editManager)}</td>
-        <td><textarea class="${need ? 'err' : ''}" rows="2" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'} aria-label="Manager remark">${esc(a.remark || '')}</textarea>${need ? '<div class="flag">Manager remark required: ratings differ.</div>' : ''}</td></tr></table></td></tr>`;
+        <td>${rateSel(a.mgr, `data-qr="${q.id}" data-f="mgr" aria-label="Manager rating" ${p.editManager && a.self == null ? 'readonly data-locked="q"' : ''}`, p.editManager)}</td>
+        <td><textarea class="${need ? 'err' : ''}" rows="2" data-qr="${q.id}" data-f="remark" ${p.editManager ? '' : 'disabled'} ${p.editManager && a.self == null ? 'readonly data-locked="q"' : ''} aria-label="Manager remark">${esc(a.remark || '')}</textarea>${need ? '<div class="flag">Manager remark required: ratings differ.</div>' : ''}</td></tr></table></td></tr>`;
     }).join('')}</table></div>`}
     <div class="opf-end"><button type="button" class="opf-y soft" id="totop">Back To Top</button><span class="sp"></span>
     ${p.canReturn ? '<button type="button" class="btn" id="giveback" title="Let the employee change their self ratings, remarks and answers again">Send back to employee</button>' : ''}
@@ -1251,7 +1283,8 @@ function drawForm(v, errors) {
 // same rules as the server (logic.js): a document link, and the word count of an answer without its links
 const HAS_LINK = /(https?:\/\/|www\.)\S+/i;
 const words = s => (String(s || '').replace(/(https?:\/\/|www\.)\S+/gi, ' ').match(/[\p{L}\p{N}]+/gu) || []).length;
-const shortAns = (a, id) => { if (['q2', 'q5'].includes(id)) return false; const t = String(a || '').trim(); return !!t && !/^(n\/a|not added)$/i.test(t) && words(t) < ((FP.rules || {}).qMinWords || 0); };
+// any length is fine; a single word ("Yes", "No", "Done") gets a warning
+const shortAns = a => { const t = String(a || '').trim(); return !!t && !/^(n\/a|not added)$/i.test(t) && words(t) < 2; };
 // the monthly rating worked out KRA by KRA from the form as it is on screen (same sums as the server: 30% self + 70% manager,
 // weighted by sub-KRA, then by KRA weight)
 function formSummary(f) {
@@ -1329,8 +1362,9 @@ function wireForm(v) {
     else if (t.dataset.k) {
       const r = f.kras[t.dataset.k].rows[+t.dataset.i]; r[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value;
       if (RATING_FIELDS.includes(t.dataset.f)) formDirty.add(`k|${t.dataset.k}|${r.id}|${t.dataset.f}`);
+      if (t.dataset.f === 'self' || t.dataset.f === 'mgr') { t.classList.remove('r-g', 'r-y', 'r-o', 'r-r'); const c = rateCol(t.value); if (c) t.classList.add(c); }
     }
-    else if (t.dataset.qt) { const id = t.dataset.qt; f.qa[id] = t.value; formDirty.add(`qt|${id}`); clearTimeout(qTimer); qTimer = setTimeout(() => qSave(id), 800); }
+    else if (t.dataset.qt) f.qa[t.dataset.qt] = t.value; // a draft: stored only when the tick is clicked
     else if (t.dataset.qr) { const a = f.qa[t.dataset.qr] ||= {}; a[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value; formDirty.add(`qr|${t.dataset.qr}|${t.dataset.f}`); }
   };
   // re-render on blur-ish changes so remark requirements update
@@ -1338,12 +1372,27 @@ function wireForm(v) {
     if (e.target.id === 'msel' || e.target.dataset.qt) return;
     if (e.target.id === 'reviewDate' && e.target.value && +e.target.value.slice(0, 4) < 1000) return; // still typing the year
     // employees' entries are also saved as they type (Save draft just confirms and shows the summary)
+    // a typed rating is kept to a whole number inside its range (the arrows already are)
+    const t0 = e.target;
+    if (t0.type === 'number' && (t0.dataset.f === 'self' || t0.dataset.f === 'mgr') && t0.value !== '') {
+      const c = Math.min(+t0.max, Math.max(0, Math.round(+t0.value)));
+      if (c !== +t0.value) { t0.value = c; t0.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
     const mine = ++changeSeq;
     if (FP.perms.editSelf || FP.perms.editManager) { try { await save(); } catch (er) { toast(er.message, 'err'); } }
     if (mine !== changeSeq) return; // a newer change is in flight; it will redraw (and keep any remark focus)
     // a typed date fires change after every digit, and a redraw would throw the cursor out of the field
     if (e.target.id === 'reviewDate' && e.target.value && !e.target.classList.contains('err')) return;
+    // the click that started this change already moved to another field; the redraw below replaces every field, so put the
+    // cursor back in the same one (otherwise that first click is lost and the field only opens on a second click)
+    const ae = document.activeElement, d = ae && v.contains(ae) ? ae.dataset : null;
+    const aSel = !d ? null : ae.id ? `#${ae.id}` : d.k !== undefined && d.f ? `[data-k="${d.k}"][data-i="${d.i}"][data-f="${d.f}"]` : d.qr && d.f ? `[data-qr="${d.qr}"][data-f="${d.f}"]` : d.kw ? `[data-kw="${d.kw}"]` : null;
+    const aPos = aSel && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
     const y = SC().scrollTop; drawForm(v); SC().scrollTop = y;
+    if (aSel) {
+      const nb = v.querySelector(aSel);
+      if (nb && !nb.disabled) { nb.focus({ preventScroll: true }); if (aPos) { try { nb.setSelectionRange(aPos[0], aPos[1]); } catch { /* number / date inputs have no selection */ } } }
+    }
     // a manager remark is now needed: move straight to it (every rated sub-KRA; a question only when the ratings differ)
     const t = e.target;
     if (t.tagName === 'SELECT' && (t.dataset.f === 'self' || t.dataset.f === 'mgr')) {
@@ -1376,34 +1425,25 @@ function wireForm(v) {
         o[c] = row[c];
       }
     }
+    const local = f.kras;
     FP = await api('/form', { method: 'PUT', body });
     keys.forEach(k => formDirty.delete(k));
+    keepUnsaved(local);
+  };
+  // Autosave and a single KRA's save send only part of the form; what is typed but not yet stored (KPI / target / weightage,
+  // added or removed sub-KRAs, in any section) is put back after the server's copy arrives, or the redraw would blank it.
+  // Ratings and remarks always come from the server. `only` = the section the server just stored (take that one as it is).
+  const keepUnsaved = (local, only) => {
+    editingQ.forEach(id => { if (!formDirty.has(`qt|${id}`)) FP.form.qa[id] = f.qa[id]; }); // answers still being typed
+    for (const k of Object.keys(local || {})) {
+      const sk = FP.form.kras[k]; if (!sk || k === only) continue;
+      const srv = new Map(sk.rows.map(r => [r.id, r]));
+      sk.weight = local[k].weight;
+      sk.rows = local[k].rows.map(lr => { const sr = srv.get(lr.id); return sr ? { ...lr, ...Object.fromEntries(RATING_FIELDS.map(x => [x, sr[x]])) } : lr; });
+    }
   };
   const redraw = () => { const y = SC().scrollTop; drawForm(v); SC().scrollTop = y; };
-  // question answers save themselves (Harish, 2026-11-17: no Save button): a short pause in typing saves and shows
-  // "Saved automatically"; leaving the box saves too and closes it
-  const qSave = async id => {
-    clearTimeout(qTimer); qTimer = null;
-    if (!formDirty.has(`qt|${id}`)) return;
-    const st = v.querySelector(`[data-qstat="${id}"]`), ta = v.querySelector(`textarea[data-qt="${id}"]`);
-    if (st) { st.className = 'opf-saved'; st.textContent = 'Saving…'; }
-    try {
-      await save(); qSavedAt[id] = Date.now();
-      if (st) { st.className = 'opf-saved on'; st.innerHTML = `${ico('tick')}Saved automatically`; }
-      if (ta) { ta.classList.add('saved'); setTimeout(() => ta.classList.remove('saved'), 1200); }
-    } catch (er) { if (st) st.textContent = ''; toast(er.message, 'err'); }
-  };
-  // (Chrome has no onfocusout property, so a listener; the previous draw's one is removed first)
-  if (v._qfo) v.removeEventListener('focusout', v._qfo);
-  v.addEventListener('focusout', v._qfo = e => {
-    const id = e.target.dataset && e.target.dataset.qt; if (!id) return;
-    // wait a moment so a click elsewhere (another pencil, a button) still lands before the form is redrawn
-    qSave(id).then(() => setTimeout(() => {
-      if (!v.querySelector(`textarea[data-qt="${id}"]`) || document.activeElement?.dataset?.qt === id) return; // page changed, or back in the box
-      editingQ.delete(id); if (focusQ === id) focusQ = null; redraw();
-    }, 150));
-  });
-  // question answers: the pencil opens a box; the Save button stores the answer (ratings and remarks still save automatically)
+  // question answers are NOT saved automatically (Vidya, 2026-11-18): the pencil opens a box, the tick stores the answer
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   $('#expk').onclick = () => exportKpi();
   const showErrors = e => { drawForm(v, e.data?.errors ? [e.message, ...e.data.errors] : [e.message]); SC().scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -1428,6 +1468,9 @@ function wireForm(v) {
     try { await save(); FP = await api('/form/return', { method: 'POST', body: { empId: f.empId, month: f.month } }); toast('Form sent back to the employee'); drawForm(v); }
     catch (e) { showErrors(e); }
   };
+  // pressing a button must not blur the field being typed in: that fires an autosave + redraw which replaced the button
+  // before the click landed, so Save needed two clicks (the click handlers save what is typed themselves)
+  v.onmousedown = e => { if (e.target.closest('button')) e.preventDefault(); };
   v.onclick = async e => {
     const t = e.target, post = (u, b) => api(u, { method: 'POST', body: { empId: f.empId, month: f.month, ...b } });
     try {
@@ -1435,9 +1478,17 @@ function wireForm(v) {
       const kw = t.closest('[data-kwedit]'); // KRA weightage pencil: opens the box; the tick closes it (save stores it)
       const fb = t.closest('[data-fold]'); // − / + on a section bar folds or opens that section
       if (t.closest('#resx')) { resultNoteOff = true; return redraw(); }
+      const lk = t.closest('[data-locked]'); // a manager field the employee has not unlocked yet
+      if (lk) return toast(lk.dataset.locked === 'q' ? 'The employee has not added their self rating yet. It is needed before the manager rating or remark.' : 'The employee has not added their self rating and self remark yet. Both are needed before the manager rating or remark.', 'err');
       if (fb) { const k = fb.dataset.fold; folded.has(k) ? folded.delete(k) : folded.add(k); redraw(); }
       else if (kw) { const k = kw.dataset.kwedit; editingW.has(k) ? editingW.delete(k) : editingW.add(k); redraw(); const box = v.querySelector(`[data-kw="${k}"]`); if (box) { box.focus(); box.select(); } }
       else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; redraw(); }
+      else if (t.closest('[data-qsave]')) {
+        const id = t.closest('[data-qsave]').dataset.qsave;
+        formDirty.add(`qt|${id}`);
+        try { await save(); editingQ.delete(id); if (focusQ === id) focusQ = null; toast('Answer saved', 'ok'); redraw(); }
+        catch (er) { toast(er.message, 'err'); }
+      }
       else if (t.dataset.kreq) {
         FP = await post('/kra-request', {}); toast('Request sent to your manager'); drawForm(v);
       }
@@ -1448,13 +1499,30 @@ function wireForm(v) {
         FP = await post('/kra-request/decide', { approve, reply }); toast(approve ? 'Approved' : 'Rejected'); drawForm(v);
       }
       else if (t.dataset.add) { const k = t.dataset.add; f.kras[k].rows.push({ id: k[0] + Date.now(), kpi: '', target: '', weight: 0, self: null, selfRemark: '', mgr: null, mgrRemark: '' }); drawForm(v); }
-      else if (t.dataset.del) { const [k, i] = t.dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); drawForm(v); }
+      else if (t.closest('[data-del]')) { const [k, i] = t.closest('[data-del]').dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); drawForm(v); }
       else if (t.dataset.savek) {
         const k = t.dataset.savek;
         // the old portal asks first and confirms after (same words)
+        // check first, before asking: the sub-KRA weightages must add up to the KRA weightage
+        const kr = f.kras[k], tot = kr.rows.reduce((q, r) => q + (+r.weight || 0), 0);
+        if (kr.rows.length && tot !== +kr.weight) {
+          kraErr[k] = `KRA weightage is not matching. The total weightage of Sub-KRAs under ${KRA_LABEL[k]} must be ${+kr.weight}%. The current total is ${tot}%. Please correct the weightage before saving.`;
+          redraw(); v.querySelector(`#sec-${k} ~ .opf-w`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); return;
+        }
+        // the three KRAs must add up to exactly 100%: no saving otherwise
+        if (kraTotal(f) !== 100) { kraErr[k] = kraTotalMsg(f); redraw(); v.querySelector(`#sec-${k} ~ .opf-w`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
         if (!await confirmBox('Are you sure?', 'You want to add all these KPI?', { ok: 'Yes, Add it!' })) return;
-        try { await save(); FP = await api('/kras', { method: 'PUT', body: { empId: f.empId, month: f.month, kras: { [k]: f.kras[k] } } }); editingW.delete(k); toast('Added! Your KPI has been added.'); drawForm(v); }
-        catch (er) { drawForm(v, er.data?.errors || [er.message]); SC().scrollTo({ top: 0, behavior: 'smooth' }); }
+        delete kraErr[k];
+        try { await save(); const local = f.kras; const kb = {}; for (const x of Object.keys(f.kras)) kb[x] = x === k ? f.kras[x] : { weight: f.kras[x].weight }; // the other two: weight only
+          FP = await api('/kras', { method: 'PUT', body: { empId: f.empId, month: f.month, kras: kb } }); keepUnsaved(local, k); editingW.delete(k); toast('Added! Your KPI has been added.'); drawForm(v); }
+        catch (er) {
+          // the weightage message belongs next to this KRA's "Weightage Of KRA"; anything else goes to the top as before
+          const all = er.data?.errors || [er.message], mine = all.filter(m => m.includes(`under ${KRA_LABEL[k]}`)), rest = all.filter(m => !mine.includes(m));
+          if (mine.length) kraErr[k] = mine.join(' ');
+          drawForm(v, rest.length ? rest : undefined);
+          if (rest.length) SC().scrollTo({ top: 0, behavior: 'smooth' });
+          else v.querySelector(`#sec-${k} ~ .opf-w`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
       }
       else if (t.id === 'copyk') {
         if (!await confirmBox('Copy KRAs from last month?', 'This replaces this month\'s KRAs with last month\'s. Ratings and remarks for this month will be cleared.', { ok: 'Copy KRAs', danger: true })) return;
