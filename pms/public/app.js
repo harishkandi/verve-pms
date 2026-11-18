@@ -2343,16 +2343,16 @@ pages.reporting = async (v, arg) => {
   const prog = t => t.scheduled ? `<div style="min-width:150px">${stackBar(t)}</div>` : '<span class="small">No reviews</span>';
   const progCell = r => r.total ? prog(r.teamCounts) : '<span class="small">N/A</span>';
   const own = r => r ? `${badge(r.status)}${r.rating != null ? ` <b title="Monthly rating">${pc(r.rating)}</b>` : ''}` : '<span class="small">No form this month</span>';
-  const forms = r => `<span class="acts"><a class="btn sm" href="#/form/${r.id}/${S.month}" title="${mon} review form">${ico('file')}View report</a><a class="btn sm" href="#/empforms/${r.id}" title="Every month's review">${ico('chart')}Monthly report</a></span>`;
-  // square icon buttons for the table rows: View report = this month's form, Monthly report = every month
-  const viewBtn = r => `<a class="sqbtn" href="#/form/${r.id}/${S.month}" title="View ${mon} report: ${esc(r.name)}" aria-label="View ${mon} report for ${esc(r.name)}">${ico('file')}</a>`;
+  const forms = r => `<span class="acts"><a class="btn sm" href="#/empforms/${r.id}" title="Every month's review">${ico('chart')}Monthly report</a></span>`;
+  // square icon button for the table rows: Monthly report = every month (this month's form opens from the name)
   const monthBtn = r => `<a class="sqbtn mo" href="#/empforms/${r.id}" title="Monthly report: ${esc(r.name)}, every month" aria-label="Monthly report for ${esc(r.name)}">${ico('chart')}</a>`;
   const team = r => r.direct ? `<a class="btn sm" href="#/reporting/${r.id}" title="Open the people who report to ${esc(r.name)}">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
-  const nameCell = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${r.direct ? `<a class="nm" href="#/reporting/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`}<div class="small">${esc(r.team)}</div></div></div>`;
+  // the name opens this month's form, like My team; the count button opens the people under them (Harish, 2026-11-17: no View report column)
+  const nameCell = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div><a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} review form">${esc(r.name)}</a><div class="small">${esc(r.team)}</div></div></div>`;
   const emailCell = r => r.email ? `<span class="small em">${esc(r.email)}</span>` : '<span class="small">N/A</span>';
-  // the columns depend on what is listed: [header, cell, class]; every list starts Sr. no, Name, Email, Designation and ends View report, Monthly report
+  // the columns depend on what is listed: [header, cell, class]; every list starts Sr. no, Name, Email, Designation and ends Monthly report
   const lead = [['Sr. no', (r, i) => i + 1, 'sr'], ['Name', nameCell], ['Email', emailCell], ['Designation', r => esc(r.designation)]];
-  const tail = [['View report', viewBtn, 'c'], ['Monthly report', monthBtn, 'c']];
+  const tail = [['Monthly report', monthBtn, 'c']];
   const COLS = [...lead, ...{
     director: [['Managers', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)]],
     manager: [['Director', r => pname(r.director)], ['Employees', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)]],
@@ -2365,7 +2365,7 @@ pages.reporting = async (v, arg) => {
   const scope = p ? `${mon} reviews of everyone under ${esc(p.name)} (all levels)` : `${mon} reviews across the organisation`;
   v.innerHTML = head('Reporting flow', crumbs) + `
   <div class="row">${monthSel()}${searchBox('orgq', 'Search name, team or email', S.orgq)}<span class="sp"></span>${p ? `<a class="btn" href="${up}">← Back</a>` : ''}<a class="btn" href="#/employees">Edit people on Employees</a></div>
-  ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div><div class="row" style="margin:0;flex-basis:100%;justify-content:flex-end">${reportLinks(p)}</div></div>` : ''}
+  ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><a class="on" href="#/form/${p.id}/${S.month}" title="Open ${esc(p.name)}'s ${mon} review form">${esc(p.name)}</a><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div><div class="row" style="margin:0;flex-basis:100%;justify-content:flex-end">${reportLinks(p)}</div></div>` : ''}
   <h2>${title}</h2>
   <div class="tablewrap"><table class="orgt"><tr>${COLS.map(([h, , c]) => `<th class="${c || ''}">${h}</th>`).join('')}</tr>
   ${d.rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.designation} ${r.team} ${r.email} ${r.manager ? r.manager.name : ''} ${r.director ? r.director.name : ''}`.toLowerCase())}">${COLS.map(([, cell, c]) => `<td class="${c || ''}">${cell(r, i)}</td>`).join('')}</tr>`).join('')
