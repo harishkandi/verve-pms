@@ -489,7 +489,7 @@ async function start() {
   $('#root').innerHTML = `<div id="app"${sideMini ? ' class="mini"' : ''}><nav class="side">${ORBS}<div class="side-in">${WORDMARK}
     ${groups.map(g => `<div class="eyebrow">${esc(g.label)}</div><div class="links">${g.links.map(navItem).join('')}</div>`).join('')}
     <div class="side-sp"></div></div><button type="button" class="side-tog" id="sidetog"></button></nav>
-    <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span>
+    <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span><button type="button" class="tb-search" id="tbsearch" aria-haspopup="dialog" title="Search people and pages (Ctrl+K)">${ico('search')}<span>Search</span><kbd>Ctrl K</kbd></button>
       ${S.me.real.role === 'admin' && !S.me.viewingAs ? `<button class="btn sm" id="asbtn" title="See PMS exactly as another person sees it">${ico('eye')}View as…</button>` : ''}<span class="tbn"><button type="button" class="ibtn tb-bell" id="tbbell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${ico('bell')}<b class="tb-cnt" id="tbcnt" hidden></b></button><div class="tb-notes" id="tbnotes" role="dialog" aria-label="Notifications" hidden></div></span>${themeBtn()}
       <span class="tb-div"></span>
       <span class="tbm"><button type="button" class="tb-user" id="tbuser" aria-haspopup="menu" aria-expanded="false" title="Profile and sign out"><span class="tb-who"><b>${esc(S.me.name)}</b><small>${(S.me.designation || '').toLowerCase() === ROLE_LABEL[S.me.role].toLowerCase() || !S.me.designation ? esc(ROLE_LABEL[S.me.role]) : dotJoin(S.me.designation, ROLE_LABEL[S.me.role])}</small></span><span class="avatar" id="tbav">${initials(S.me.name)}</span>${CHEV}</button>
@@ -498,7 +498,7 @@ async function start() {
         ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
     <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
-  sideSet(sideMini);
+  sideSet(sideMini); palPeople = null; // a new sign-in or View as: search fetches its people again
   $('.side-in').onscroll = navFlyClose;
   $('#root').onclick = e => {
     if (e.target.closest('#sidetog')) sideSet(!sideMini);
@@ -508,6 +508,7 @@ async function start() {
     if (e.target.closest('[data-um="out"]')) { userMenu(false); signOut(); }
     if (e.target.closest('[data-um="pw"]')) { userMenu(false); changePassword(); }
     if (e.target.closest('[data-um="profile"]')) { userMenu(false); if (location.hash === '#/profile') route(); else location.hash = '#/profile'; }
+    if (e.target.closest('#tbsearch')) palOpen();
     if (e.target.closest('#asbtn')) pickViewAs().catch(er => toast(er.message, 'err'));
     if (e.target.closest('#asback')) viewAs(null).catch(er => toast(er.message, 'err'));
   };
@@ -526,6 +527,56 @@ async function route() {
   v.classList.remove('routing'); SC().scrollTop = 0;
 }
 const head = (t, c) => `<div class="phd"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>`;
+// ---------- search (Ctrl+K) ----------
+// One box for pages (the side menu's links) and people in your access (the review status report's rows: managers see
+// their people, admins and directors everyone reviewed). Enter opens the page, or the person's form for this month;
+// "Report" opens their Team report. Arrow keys move, Esc closes. Employees only get the pages.
+let palPeople = null, palEl = null;
+function palClose() { if (palEl) { palEl.remove(); palEl = null; } }
+async function palOpen() {
+  if (palEl) return palEl.querySelector('input').focus();
+  palEl = document.createElement('div'); palEl.className = 'pal'; palEl.setAttribute('role', 'dialog'); palEl.setAttribute('aria-label', 'Search');
+  palEl.innerHTML = `<div class="pal-b"><label class="pal-q">${ico('search')}<input type="search" placeholder="Search people or pages" aria-label="Search people or pages" autocomplete="off"><kbd>Esc</kbd></label><div class="pal-l" role="listbox"></div><div class="pal-f"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span></div></div>`;
+  document.body.appendChild(palEl);
+  const inp = palEl.querySelector('input'), list = palEl.querySelector('.pal-l');
+  const pages = [...document.querySelectorAll('.side .links a[data-h]')].map(a => ({ kind: 'page', label: a.textContent.trim(), sub: a.closest('.ngrp') ? a.closest('.ngrp').querySelector('.ngrp-btn span').textContent : 'Page', href: a.dataset.h }));
+  const canPeople = S.me.role !== 'employee';
+  let sel = 0, items = [];
+  const draw = () => {
+    const q = inp.value.trim().toLowerCase(), has = s => s.toLowerCase().includes(q);
+    const pg = pages.filter(p => !q || has(p.label) || has(p.sub)).slice(0, q ? 5 : 8);
+    const pp = !q || !palPeople ? [] : palPeople.filter(p => has(p.name) || has(p.designation || '') || has(tl(p.team) || '')).slice(0, 8);
+    items = [...pg, ...pp]; sel = Math.min(sel, Math.max(0, items.length - 1));
+    const row = (it, i) => it.kind === 'page'
+      ? `<a class="pal-i ${i === sel ? 'on' : ''}" role="option" aria-selected="${i === sel}" href="${it.href}" data-i="${i}">${ico('right')}<span><b>${esc(it.label)}</b><small>${esc(it.sub)}</small></span></a>`
+      : `<div class="pal-i ${i === sel ? 'on' : ''}" role="option" aria-selected="${i === sel}" data-i="${i}"><span class="avatar s">${initials(it.name)}</span><span><b>${esc(it.name)}</b><small>${dotJoin(it.designation, tl(it.team))}</small></span><a class="btn sm" href="#/form/${it.empId}/${S.month}" title="Open ${esc(it.name)}'s form for this month">Form</a><a class="btn sm" href="#/yearly/${it.empId}" title="Open ${esc(it.name)}'s Team report">Report</a></div>`;
+    list.innerHTML = (pg.length ? `<div class="pal-g">Pages</div>${pg.map(row).join('')}` : '')
+      + (pp.length ? `<div class="pal-g">People</div>${pp.map((p, i) => row(p, pg.length + i)).join('')}` : '')
+      + (!items.length ? `<div class="pal-none">Nothing found for "${esc(inp.value.trim())}"</div>` : '')
+      + (q && canPeople && !palPeople ? `<div class="pal-none">${ico('loader')}Loading people…</div>` : '')
+      + (!q && canPeople ? '<div class="pal-none">Type a name to find a person.</div>' : '');
+    const on = list.querySelector('.pal-i.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+  };
+  const go = it => { if (!it) return; palClose(); location.hash = it.kind === 'page' ? it.href : `#/form/${it.empId}/${S.month}`; };
+  inp.oninput = () => { sel = 0; draw(); };
+  inp.onkeydown = e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, items.length - 1); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); go(items[sel]); }
+  };
+  palEl.onmousedown = e => { if (e.target === palEl) palClose(); };
+  palEl.onclick = e => { if (e.target.closest('a')) return palClose(); const r = e.target.closest('[data-i]'); if (r) go(items[+r.dataset.i]); };
+  draw(); inp.focus();
+  if (canPeople && !palPeople) {
+    try { palPeople = (await apiCall('/report?month=' + S.me.currentMonth, {})).rows; } catch { palPeople = []; }
+    if (palEl) draw();
+  }
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && document.querySelector('#app')) { e.preventDefault(); palOpen(); }
+  else if (e.key === 'Escape' && palEl) palClose();
+});
+addEventListener('hashchange', palClose);
 // side panel shrinks to icons only (Harish 2026-11-18): the round button on its right edge, remembered in this browser.
 // Shrunk, each icon shows its name on hover and a menu group opens as a small menu beside the panel (navFly).
 let sideMini = false; try { sideMini = localStorage.getItem('pms.sideMini') === '1'; } catch {}
