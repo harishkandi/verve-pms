@@ -932,10 +932,20 @@ function qualityBody(h, c, p) {
 // progress opens a two-step panel (the card's filters with coloured tiles, then the choices of the one clicked, Verveflow
 // style). Each card filters on its own; the choices are remembered in this browser. A card with no filter on shows the
 // /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
-const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any' };
+const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any',
+  rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sinv: 'any', sst: [], aper: 'all', awho: [], aact: [] };
 const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review quality', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
   // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
-  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true } };
+  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true },
+  // the same pill on the report pages, Scheduling and the Audit log (Harish 2026-11-18: one filter look everywhere)
+  report: { title: 'Review status report', keys: ['rteam', 'rmgr', 'rst'], local: true },
+  yearly: { title: 'Team report', keys: ['yfy', 'yq', 'yteam', 'yper'], local: true },
+  sched: { title: 'Team members', keys: ['steam', 'sslot', 'sinv', 'sst'], local: true },
+  audit: { title: 'Audit log', keys: ['aper', 'awho', 'aact'], local: true } };
+// choices of the page filters that depend on the data (each page sets its own as it draws); PF.hide[card] = fields not
+// shown on that page right now (e.g. Team on a manager's Team report)
+const PF = { hide: {} };
+const optCount = (rows, key, label = x => x) => { const n = {}; rows.forEach(r => { const k = key(r); if (k == null || k === '') return; n[k] = (n[k] || 0) + 1; }); return Object.keys(n).map(k => [k, label(k), n[k]]).sort((x, y) => x[1].localeCompare(y[1])); };
 let empFO = { desig: [], role: [], mgr: [] }; // the Employees page's choices with counts, set each time it draws
 const cfLocalRedraw = {}; // card -> redraw of a page that filters in the browser
 let cfOptions = null; // teams and managers to pick from (sent with every card answer, or fetched when the panel needs them)
@@ -951,6 +961,20 @@ const CF_F = {
   emgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', multi: true, opts: () => empFO.mgr },
   email: { label: 'Work email', icon: 'mail', tone: 'n', opts: () => [['any', 'Any'], ['set', 'Has a work email'], ['missing', 'No work email yet']] },
   ews: { label: 'Work status', icon: 'clock', tone: 'g', opts: () => [['any', 'Any'], ['working', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']] },
+  rteam: { label: 'Team', icon: 'team', tone: 'p', opts: () => PF.rteam || [] },
+  rmgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', opts: () => PF.rmgr || [] },
+  rst: { label: 'Status', icon: 'check', tone: 'g', opts: () => PF.rst || [] },
+  yfy: { label: 'Financial year', icon: 'calendar', tone: 'n', opts: () => PF.yfy || [] },
+  yq: { label: 'Quarter', icon: 'clock', tone: 'a', opts: () => [['', 'Whole year'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']] },
+  yteam: { label: 'Team', icon: 'team', tone: 'p', opts: () => PF.yteam || [] },
+  yper: { label: 'Person', icon: 'idcard', tone: 's', opts: () => PF.yper || [] },
+  steam: { label: 'Team', icon: 'team', tone: 'p', multi: true, opts: () => PF.steam || [] },
+  sslot: { label: 'Review slot', icon: 'calendar', tone: 'n', opts: () => [['any', 'Any'], ['booked', 'Booked'], ['open', 'Not booked yet']] },
+  sinv: { label: 'Calendar invite', icon: 'mail', tone: 'a', opts: () => [['any', 'Any'], ['sent', 'Invite sent'], ['none', 'No invite']] },
+  sst: { label: 'Status', icon: 'check', tone: 'g', multi: true, opts: () => PF.sst || [] },
+  aper: { label: 'When', icon: 'calendar', tone: 'n', opts: () => [['all', 'Any time'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']] },
+  awho: { label: 'Who', icon: 'idcard', tone: 's', multi: true, opts: () => PF.awho || [] },
+  aact: { label: 'Action', icon: 'list', tone: 'p', multi: true, opts: () => PF.aact || [] },
 };
 const CF = (() => {
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('pms.cardFilters') || '{}') || {}; } catch {}
@@ -962,7 +986,7 @@ const HC = {}; // filtered card answers from the server; none = the card shows t
 const empPreset = grp => { Object.keys(CF.emp).forEach(k => { CF.emp[k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); if (grp) CF.emp.edesig = [grp]; cfSave(); };
 let homeRedraw = null; // redraws the dashboard cards from the last /api/home answer and HC
 // the admin's team tabs above the cards already pick one team: the cards' Team filter steps aside while one is picked
-const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam));
+const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam) && !(PF.hide[c] || []).includes(k));
 const cfOn = (c, k) => Array.isArray(CF_DEF[k]) ? CF[c][k].length > 0 : CF[c][k] !== CF_DEF[k];
 const cfCount = c => cfKeys(c).filter(k => cfOn(c, k)).length;
 const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}Filter${n ? ` · ${n}` : ''}</button>`; };
@@ -1017,6 +1041,8 @@ async function cfChanged(c) {
   if (JSON.stringify(CF[c]) !== want) return; // another choice came in meanwhile; its own fetch redraws
   HC[c] = r; if (homeRedraw) homeRedraw();
 }
+// "Clear filters" in a list that the filters left empty
+function cfClear(c) { cfClose(); CF_CARDS[c].keys.forEach(k => { CF[c][k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); cfSave(); if (cfLocalRedraw[c]) cfLocalRedraw[c](); }
 function cfOpen(btn) {
   const c = btn.dataset.cf, same = cfPop && cfPop.card === c; cfClose(); if (same) return;
   const el = document.createElement('div'); el.className = 'cfp'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', `Filter ${CF_CARDS[c].title}`);
@@ -1758,6 +1784,18 @@ pages.yearly = async (v, id) => {
   const pool = d.people.filter(p => !YF.team || p.team === YF.team);
   if (YF.person && !pool.some(p => String(p.id) === YF.person)) YF.person = '';
   const list = pool.filter(p => !YF.person || String(p.id) === YF.person);
+  // Financial year, Quarter, Team and Person sit behind the Filter pill; '' = this financial year
+  const curFy = fyOf(S.me.currentMonth);
+  PF.yfy = d.fys.map(y => [y === curFy ? '' : String(y), `FY ${y}-${y + 1}${y === curFy ? ' (this year)' : ''}`]);
+  PF.yteam = [['', 'All teams'], ...d.teams.map(teamOpt)];
+  PF.yper = [['', 'All people'], ...pool.map(p => [String(p.id), p.name])];
+  PF.hide.yearly = [!d.org && 'yteam', d.people.length < 2 && 'yper'].filter(Boolean);
+  Object.assign(CF.yearly, { yfy: d.fy === curFy ? '' : String(d.fy), yq: YF.q, yteam: YF.team, yper: YF.person });
+  cfLocalRedraw.yearly = () => {
+    const f = CF.yearly; S.yfy = f.yfy ? +f.yfy : curFy;
+    if (f.yteam !== YF.team) f.yper = '';
+    Object.assign(YF, { q: f.yq, team: f.yteam, person: f.yper }); return pages.yearly(v, id);
+  };
   const n2 = x => x == null ? '' : x.toFixed(2);
   const mh = m => { const [mo, y] = m.label.split(' '); return `${mo}<br>${y}`; };
   // the months shown: the whole year, or the three months of the chosen quarter (Quarter I = Apr-Jun)
@@ -1774,18 +1812,12 @@ pages.yearly = async (v, id) => {
   const root = d.person, mgrView = root && d.teamView;
   v.innerHTML = head(d.me ? (mgrView ? 'Team report' : 'My report') : root ? (mgrView ? `Team report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team report',
       root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
-    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(teamOpt)]) : ''}
-    ${d.people.length > 1 ? ddSelect('yper', YF.person, [['', 'All people'], ...pool.map(p => [String(p.id), p.name])], { icon: 'team' }) : ''}
-    ${ddSelect('yq', YF.q, [['', 'All'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']], { icon: 'filter' })}
-    ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
+    `<div class="row">${cfPill('yearly')}
     <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
     ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
-  $('#yfy').onchange = e => { S.yfy = +e.target.value; pages.yearly(v, id); };
-  $('#yq').onchange = e => { YF.q = e.target.value; pages.yearly(v, id); };
-  if ($('#yper')) $('#yper').onchange = e => { YF.person = e.target.value; pages.yearly(v, id); };
-  if ($('#yteam')) $('#yteam').onchange = e => { YF.team = e.target.value; YF.person = ''; pages.yearly(v, id); };
+  v.onclick = e => { const cfb = e.target.closest('[data-cf]'); if (cfb) cfOpen(cfb); };
 };
 
 // ---------- review status report ----------
@@ -1844,12 +1876,19 @@ pages.report = async v => {
   const full = ['director', 'admin'].includes(S.me.role);
   RF.view ||= full ? 'org' : 'team';
   const c = d.counts;
+  // Team, Reporting manager and Status sit behind the Filter pill (same panel as the dashboard cards); RF stays the truth
+  PF.rteam = [['', 'All teams'], ...d.teams.map(teamOpt)];
+  PF.rmgr = [['', 'All managers'], ...d.managers.map(m => [String(m.id), m.name])];
+  PF.rst = REPORT_STATUSES.map(x => [x[0], x[1]]);
+  Object.assign(CF.report, { rteam: RF.team || '', rmgr: String(RF.manager || ''), rst: RF.status || '' });
+  cfLocalRedraw.report = () => {
+    const f = CF.report; if (f.rteam && f.rteam !== RF.team) RF.view = 'team';
+    Object.assign(RF, { team: f.rteam, manager: f.rmgr, status: f.rst }); return pages.report(v);
+  };
   v.innerHTML = head('Review status report', 'One report, two views · ' + d.scope) +
     `<div class="row">${monthSel()}
-    ${full ? `<button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}Organisation-wise</button>` : ''}
-    ${ddSelect('fteam', RF.view === 'team' ? RF.team : null, [['', 'All teams'], ...d.teams.map(teamOpt)], { ph: 'Team-wise', btn: RF.view === 'team' ? `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}` : 'Team-wise', on: RF.view === 'team' })}
-    ${ddSelect('fmgr', RF.manager, [['', 'All managers'], ...d.managers.map(m => [String(m.id), m.name])], { icon: 'idcard' })}
-    ${ddSelect('fst', RF.status, REPORT_STATUSES)}
+    ${full ? `<button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}Organisation-wise</button><button class="chip vchip ${RF.view === 'team' ? 'on' : ''}" data-view="team">${ico('team')}Team-wise</button>` : ''}
+    ${cfPill('report')}
     <span class="sp"></span>${exportMenu()}</div>
     ${countTiles(c)}
     ${RF.view === 'team' ? `<h2>Team-wise</h2><div class="tablewrap"><table><tr><th>Manager</th><th>Team</th><th class="nr">Scheduled</th><th class="nr">Filled</th><th class="nr">Not Filled</th><th class="nr">Review Completed</th><th class="nr">Review Pending</th></tr>${d.teamCounts.map(t => `<tr><td>${esc(t.manager)}</td><td>${teamTag(t.team)}</td><td class="nr">${t.scheduled}</td><td class="nr">${t.filled}</td><td class="nr">${t.notFilled}</td><td class="nr">${t.reviewCompleted}</td><td class="nr">${t.reviewPending}</td></tr>`).join('')}</table></div>` : ''}
@@ -1861,6 +1900,7 @@ pages.report = async v => {
     <p class="small">Directors see the whole organisation. Managers see their own team and everyone under them at every level. Employees do not see this report.</p>`;
   onMonth(() => pages.report(v));
   v.onclick = async e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const b = e.target.closest('[data-view]');
     if (b && RF.view !== b.dataset.view) { RF.view = b.dataset.view; RF.team = ''; pages.report(v); }
     const fb = e.target.closest('[data-full]');
@@ -1874,9 +1914,6 @@ pages.report = async v => {
       if (kind === 'pdf') reportPdf(d, c);
     } catch (er) { toast(er.message, 'err'); }
   };
-  $('#fteam').onchange = e => { RF.view = 'team'; RF.team = e.target.value; pages.report(v); };
-  $('#fmgr').onchange = e => { RF.manager = e.target.value; pages.report(v); };
-  $('#fst').onchange = e => { RF.status = e.target.value; pages.report(v); };
 };
 
 // ---------- scheduling ----------
@@ -1913,17 +1950,23 @@ pages.scheduling = async v => {
     : !r.hasEmail ? `<span class="st no" title="Add a @${esc(S.me.domain)} email on the Employees page">No work email</span>`
     : r.scheduled && r.canManage && cal.connected ? `<button class="btn sm" data-inv="${r.empId}">${ico('send')}Send invite</button>`
     : r.scheduled ? `<span class="st no" title="${r.canManage && !cal.connected ? 'Connect Google Calendar at the top of this page to send invites' : 'No Google Calendar invite for this review'}">Not sent</span>` : '<span class="small">–</span>';
+  // Team members: the same Filter pill as the dashboard (team, booked or not, invite, status), filtered in the browser
+  PF.steam = optCount(d.rows, r => r.team, tl); PF.sst = optCount(d.rows, r => r.status);
+  cfLocalRedraw.sched = () => pages.scheduling(v);
+  const SF = CF.sched, anyOf = (a, x) => !a.length || a.includes(String(x));
+  const rows = d.rows.filter(r => anyOf(SF.steam, r.team) && (SF.sslot === 'any' || (SF.sslot === 'booked') === !!r.scheduled)
+    && (SF.sinv === 'any' || (SF.sinv === 'sent') === !!r.invite) && anyOf(SF.sst, r.status));
   v.innerHTML = head('Review scheduling', d.adminView ? 'Review windows, review rules and where each review stands' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
   ${calCard}
   <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
   ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
   <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
-  <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
-  ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
+  <div class="row" style="align-items:center"><h2 style="margin:0">Team members</h2><span class="sp"></span>${d.rows.length ? cfPill('sched') : ''}</div><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
+  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
   <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="st mv" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">Moved ${r.reschedules}×</span>` : '<span class="small">–</span>'}</td>
-  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}</table></div>
+  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : '<tr><td colspan="7">Nothing matches these filters. <a href="#" data-cfclear="sched">Clear filters</a></td></tr>'}</table></div>
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
@@ -1957,9 +2000,11 @@ pages.scheduling = async v => {
     };
   };
   v.onclick = async e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const t = e.target.closest('button, a'); if (!t) return;
     try {
-      if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
+      if (t.dataset.cfclear) { e.preventDefault(); cfClear(t.dataset.cfclear); }
+      else if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
       else if (t.id === 'sc') {
         const b = {};
         v.querySelectorAll('[data-c]').forEach(i => { const k = i.dataset.c; b[k] = k === 'operationalRange' ? i.value.split(',').map(Number) : Number(i.value); });
@@ -2517,9 +2562,21 @@ pages.teams = async v => {
 };
 
 // ---------- audit ----------
-pages.audit = async v => {
-  const rows = await api('/audit');
-  v.innerHTML = head('Audit log', 'Every change made in PMS, newest first') + `<div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(new Date(r.at).toLocaleString())}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')}</table></div>`;
+// the same Filter pill as the dashboard: when, who, action (filtered in the browser)
+pages.audit = async (v, again) => {
+  const all = Array.isArray(again) ? again : await api('/audit');
+  PF.awho = optCount(all, r => r.who); PF.aact = optCount(all, r => r.action);
+  cfLocalRedraw.audit = () => pages.audit(v, all);
+  const F = CF.audit, anyOf = (a, x) => !a.length || a.includes(String(x));
+  const from = { today: new Date(new Date().setHours(0, 0, 0, 0)), '7d': new Date(Date.now() - 7 * 864e5), '30d': new Date(Date.now() - 30 * 864e5) }[F.aper];
+  const rows = all.filter(r => anyOf(F.awho, r.who) && anyOf(F.aact, r.action) && (!from || new Date(r.at) >= from));
+  v.innerHTML = head('Audit log', 'Every change made in PMS, newest first') + `<div class="row"><span class="small">${rows.length === all.length ? '' : `${rows.length} of `}${all.length} change${all.length === 1 ? '' : 's'}</span><span class="sp"></span>${cfPill('audit')}</div>
+    <div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(new Date(r.at).toLocaleString())}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')
+      || `<tr><td colspan="4">${all.length ? 'Nothing matches these filters. <a href="#" data-cfclear="audit">Clear filters</a>' : 'No changes yet.'}</td></tr>`}</table></div>`;
+  v.onclick = e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); cfClear(cl.dataset.cfclear); }
+  };
 };
 pages.config = () => location.replace('#/scheduling'); // Settings now live on the Scheduling page (Review rules)
 
