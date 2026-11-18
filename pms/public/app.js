@@ -1115,7 +1115,11 @@ async function cfChanged(c) {
   HC[c] = r; if (homeRedraw) homeRedraw();
 }
 // "Clear filters" in a list that the filters left empty
-function cfClear(c) { cfClose(); CF_CARDS[c].keys.forEach(k => { CF[c][k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); cfSave(); if (cfLocalRedraw[c]) cfLocalRedraw[c](); }
+function cfClear(c) {
+  cfClose(); CF_CARDS[c].keys.forEach(k => { CF[c][k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); cfSave();
+  if (CF_CARDS[c].local) { if (cfLocalRedraw[c]) cfLocalRedraw[c](); } else { HC[c] = null; if (homeRedraw) homeRedraw(); }
+}
+const clearLink = c => `<a href="#" data-cfclear="${c}">Clear filters</a>`;
 function cfOpen(btn) {
   const c = btn.dataset.cf, same = cfPop && cfPop.card === c; cfClose(); if (same) return;
   const el = document.createElement('div'); el.className = 'cfp'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', `Filter ${CF_CARDS[c].title}`);
@@ -1200,7 +1204,7 @@ pages.home = async (v, opts = {}) => {
     <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
       ${widget('award', 'Review quality' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
-      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? 'Nothing matches these filters.' : 'No teams in your scope.'}</div>`}</div>`)}
+      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? `Nothing matches these filters. ${clearLink('progress')}` : 'No teams in your scope.'}</div>`}</div>`)}
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>`;
     };
@@ -1250,7 +1254,7 @@ pages.home = async (v, opts = {}) => {
       <ol class="eh-steps">${st.map(([t, s2, ok, pg], i) => `<li class="${ok ? 'done' : i === cur ? 'now' : ''}"><i>${ok ? ico('tick') : i + 1}</i><div><b>${esc(t)}</b><span>${esc(s2)}</span>${pg != null ? `<em class="eh-pg"><u style="width:${pg}%"></u></em>` : ''}</div></li>`).join('')}</ol></div>`;
     // what is left: the server's list, grouped by the part of the form it belongs to
     const groups = groupTodo(issues), SHOWN = 4;
-    const todoBody = !o ? '<div class="mb"><div class="empty">No review form for this month.</div></div>'
+    const todoBody = !o ? `<div class="mb"><div class="empty">No review form for this month yet. It appears here by itself${w && w.start ? ` when your review window opens on ${fmtD(w.start)}` : ' when your review window opens'}.</div></div>`
       : o.submitted ? `<div class="mb"><div class="ok" style="margin:0">Your manager has submitted this review. Nothing left to do.</div></div>`
       : o.selfSubmitted ? `<div class="mb"><div class="ok" style="margin:0">You have sent your part to your manager. Nothing left for you unless they send it back.</div></div>`
       : !issues.length ? `<div class="mb"><div class="ok" style="margin:0">Everything is filled in. Open your review and click <b>Submit to manager</b>.</div></div>`
@@ -1262,7 +1266,7 @@ pages.home = async (v, opts = {}) => {
     const RATE_NOTE = '<p class="ed-note">Monthly rating = 30% your rating + 70% your manager’s, weighted by sub-KRA and then by KRA.</p>';
     const recent = yr && yr.people[0] ? yr.months.map((m, i) => ({ m, t: yr.people[0].cells[i] && yr.people[0].cells[i].total })).filter(x => x.t != null).slice(-5).reverse() : [];
     const recentBody = recent.length ? `<div class="mb">${recent.map(x => `<div class="ed-rate"><span>${esc(x.m.label.split(' ')[0].slice(0, 3))} ${x.m.label.split(' ')[1].slice(2)}</span><div class="ed-bar"><i class="${rateCls(x.t)}" style="width:${x.t}%"></i></div><b class="rt ${rateCls(x.t)}">${x.t.toFixed(1)}%</b></div>`).join('')}
-      <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a>${RATE_NOTE}</div>` : `<div class="mb"><div class="empty">No submitted reviews yet this year.</div>${RATE_NOTE}</div>`;
+      <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a>${RATE_NOTE}</div>` : `<div class="mb"><div class="empty">No ratings yet this year. They show here once your manager submits your first review.${o ? ` <a href="#/form/${S.me.id}/${S.month}">Open my ${esc(monthLabel(S.month).split(' ')[0])} form</a>` : ''}</div>${RATE_NOTE}</div>`;
     html = `${head(`My ${monthSel('msel', { heading: true })} review`, `Welcome back, ${esc(S.me.name.split(' ')[0])} · ${esc(S.me.designation || ROLE_LABEL[S.me.role])}${S.me.team ? ` · ${esc(tl(S.me.team))}` : ''}`)}
     ${hero}
     ${kraAccessCard(o)}
@@ -1277,6 +1281,7 @@ pages.home = async (v, opts = {}) => {
   onMonth(() => pages.home(v));
   v.onclick = async e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // a card's Filter pill
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     const kd = e.target.closest('[data-kdash]');
     if (kd) {
       try { await api('/kra-request/decide', { method: 'POST', body: { empId: +kd.dataset.emp, month: kd.dataset.mon, approve: kd.dataset.kdash === '1' } }); toast(kd.dataset.kdash === '1' ? 'Access given' : 'Request rejected'); pages.home(v, { partial: true }); }
@@ -1841,7 +1846,7 @@ pages.kpi = async (v, id) => {
 const NIL = '<span class="nil">–</span>';
 const rDate = d => d ? fmtD(d) : NIL;
 const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th class="nr">Rating</th><th>Flags</th></tr>
-  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.due)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${badge(r.form)} ${badge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || '<tr><td colspan="9">No reviews in your access for this month.</td></tr>'}</table></div>`;
+  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.due)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${badge(r.form)} ${badge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || `<tr><td colspan="9">${cfCount('report') ? `Nothing matches these filters. ${clearLink('report')}` : `No reviews in your access for ${esc(monthLabel(S.month))}. Pick another month above.`}</td></tr>`}</table></div>`;
 // a review's flags: the first one, the rest behind "+N" (click to open), so one row stays one line tall; numbered 1, 2, 3
 const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
   : flags.length === 1 ? `<td class="rflag">${esc(flags[0])}</td>`
@@ -1892,10 +1897,11 @@ pages.yearly = async (v, id) => {
     `<div class="row">${cfPill('yearly')}
     <span class="sp"></span>${list.length ? `<button type="button" class="btn" id="yx" title="Download the scores shown (CSV for Excel)">${ico('download')}Export CSV</button>` : ''}${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
-    ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
+    ${list.map(block).join('') || `<div class="empty card">No one to show for this filter. ${clearLink('yearly')}</div>`}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
   v.onclick = e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     if (e.target.closest('#yx')) csvSave(`Team_report_FY${d.fy}${qi == null ? '' : '_Q' + (qi + 1)}.csv`, [['Employee', 'Designation', 'Team', 'Reporting manager', 'KRA', ...pick(d.months).map(m => m.label)],
       ...list.flatMap(p => [['operational', 'Operational'], ['process', 'Process'], ['people', 'People'], ['total', 'Total']].map(([k, l]) => [p.name, p.designation, tl(p.team), p.manager || '', l, ...pick(p.cells).map(c => c && c[k] != null ? c[k].toFixed(2) : '')]))]);
   };
@@ -1982,6 +1988,7 @@ pages.report = async v => {
   onMonth(() => pages.report(v));
   v.onclick = async e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     const b = e.target.closest('[data-view]');
     if (b && RF.view !== b.dataset.view) { RF.view = b.dataset.view; RF.team = ''; pages.report(v); }
     const fb = e.target.closest('[data-full]');
@@ -2047,7 +2054,7 @@ pages.scheduling = async v => {
   <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="st mv" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">Moved ${r.reschedules}×</span>` : '<span class="small">–</span>'}</td>
-  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : '<tr><td colspan="7">Nothing matches these filters. <a href="#" data-cfclear="sched">Clear filters</a></td></tr>'}</table></div>
+  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
@@ -2657,7 +2664,7 @@ pages.audit = async (v, again) => {
   const rows = all.filter(r => anyOf(F.awho, r.who) && anyOf(F.aact, r.action) && (!from || new Date(r.at) >= from));
   v.innerHTML = head('Audit log', 'Every change made in PMS, newest first') + `<div class="row"><span class="small">${rows.length === all.length ? '' : `${rows.length} of `}${all.length} change${all.length === 1 ? '' : 's'}</span><span class="sp"></span>${cfPill('audit')}</div>
     <div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(new Date(r.at).toLocaleString())}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')
-      || `<tr><td colspan="4">${all.length ? 'Nothing matches these filters. <a href="#" data-cfclear="audit">Clear filters</a>' : 'No changes yet.'}</td></tr>`}</table></div>`;
+      || `<tr><td colspan="4">${all.length ? `Nothing matches these filters. ${clearLink('audit')}` : 'No changes yet.'}</td></tr>`}</table></div>`;
   v.onclick = e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); cfClear(cl.dataset.cfclear); }
