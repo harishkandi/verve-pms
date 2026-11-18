@@ -512,11 +512,29 @@ async function start() {
     if (e.target.closest('#asbtn')) pickViewAs().catch(er => toast(er.message, 'err'));
     if (e.target.closest('#asback')) viewAs(null).catch(er => toast(er.message, 'err'));
   };
-  window.onhashchange = route;
+  window.onhashchange = navGuard;
   route();
   loadNotes(); clearInterval(notePoll); notePoll = setInterval(loadNotes, 60000);
 }
 
+// Leaving the monthly form with an answer typed but not stored (its tick not clicked), or a change still saving, asks
+// first (Harish 2026-11-18). KRA edits are not asked about: they are kept as a draft in this browser (Vidya).
+function formUnsaved() {
+  if (!FP || !FP.form) return [];
+  const qs = [...editingQ].filter(id => String(FP.form.qa[id] ?? '') !== String(qOrig[id] ?? ''));
+  return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved (click the tick to save)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
+}
+let navSkip = false;
+async function navGuard(e) {
+  if (navSkip) { navSkip = false; return; }
+  const from = e && e.oldURL ? new URL(e.oldURL).hash : '';
+  const left = from.startsWith('#/form/') ? formUnsaved() : []; // another month of the same person is another form too
+  if (left.length && !await confirmBox('Leave without saving?', `This form has ${left.join(' and ')}. If you leave now, ${left.length > 1 || formDirty.size ? 'these are' : 'it is'} lost.`, { ok: 'Leave anyway', danger: true })) {
+    navSkip = true; location.hash = from; return;
+  }
+  route();
+}
+addEventListener('beforeunload', e => { if (location.hash.startsWith('#/form/') && formUnsaved().length) { e.preventDefault(); e.returnValue = ''; } });
 async function route() {
   const [, page, ...args] = (location.hash || '#/home').split('/');
   markNav();
@@ -1301,6 +1319,7 @@ pages.form = async (v, emp, month) => {
 };
 
 const editingQ = new Set();
+const qOrig = {}; // question id -> its stored answer when the pencil opened it (to tell a typed change from an open box)
 // the three KRA weightages (Operational + Process + People) should add up to 100
 const kraTotal = f => Object.values(f.kras).reduce((q, x) => q + (+x.weight || 0), 0);
 const kraTotalMsg = f => { const t = kraTotal(f); return `Total KRA weightage is ${t}%: ${t < 100 ? `${100 - t}% is still remaining` : `${t - 100}% over`}. It must be exactly 100%: update a KRA above so Operational + Process + People add up to 100%.`; };
@@ -1631,7 +1650,7 @@ function wireForm(v) {
       if (lk) return toast(lk.dataset.locked === 'q' ? 'The employee has not added their self rating yet. It is needed before the manager rating or remark.' : 'The employee has not added their self rating and self remark yet. Both are needed before the manager rating or remark.', 'err');
       if (fb) { const k = fb.dataset.fold; folded.has(k) ? folded.delete(k) : folded.add(k); redraw(); }
       else if (kw) { const k = kw.dataset.kwedit; editingW.has(k) ? editingW.delete(k) : editingW.add(k); redraw(); const box = v.querySelector(`[data-kw="${k}"]`); if (box) { box.focus(); box.select(); } }
-      else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); focusQ = id; redraw(); }
+      else if (qe) { const id = qe.dataset.qedit; qOrig[id] = f.qa[id] ?? ''; editingQ.add(id); focusQ = id; redraw(); }
       else if (t.closest('[data-qsave]')) {
         const id = t.closest('[data-qsave]').dataset.qsave;
         formDirty.add(`qt|${id}`);
