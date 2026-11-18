@@ -74,7 +74,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   the "Old PMS portal look" block in `index.html` re-points the tokens to the portal's colours (navy `#23408b` = "the blue in
   My review", light blue `#cbdaff`, grey `#ececec` fields, yellow main buttons, plain dropdown lists and date picker). Side panel = one
   flat deep navy `--vr-navy-900` (Harish 2026-11-18: darker than the logo blue `#234788`, no glow orbs, no see-through
-  white highlight; open page = logo blue `--vr-navy-800`). A round button on its right edge shrinks it to icons
+  white highlight; open page = logo blue `--vr-navy-800`). A panel-icon button at its top right (next to the logo; Harish picked it over an arrow) shrinks it to icons
   (`sideSet` / `navFly` in `app.js`, `#app.mini`, stored as `pms.sideMini`): names on hover, menu groups open as a pop-out.
   The count cards stay light-tinted (he rejected solid navy cards the same day). Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on

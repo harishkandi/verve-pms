@@ -149,6 +149,7 @@ const ICON = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   tick: '<path d="m5 12 4.5 4.5L19 7"/>',
   left: '<path d="m15 6-6 6 6 6"/>', right: '<path d="m9 6 6 6-6 6"/>',
+  panelClose: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>', panelOpen: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/>',
   hourglass: '<path d="M6 3h12M6 21h12M7 3v4a5 5 0 0 0 10 0V3M7 21v-4a5 5 0 0 1 10 0v4"/>',
   draft: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14h6"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -533,7 +534,7 @@ function sideSet(mini) {
   $('#app').classList.toggle('mini', mini);
   try { localStorage.setItem('pms.sideMini', mini ? '1' : '0'); } catch {}
   const t = $('#sidetog'), label = mini ? 'Show the full menu' : 'Shrink the menu to icons';
-  t.innerHTML = ico(mini ? 'right' : 'left'); t.title = label; t.setAttribute('aria-label', label); t.setAttribute('aria-expanded', String(!mini));
+  t.innerHTML = ico(mini ? 'panelOpen' : 'panelClose'); t.title = label; t.setAttribute('aria-label', label); t.setAttribute('aria-expanded', String(!mini));
   document.querySelectorAll('.side .links a, .side .ngrp-btn').forEach(a => {
     if (a.closest('.nsub')) return;
     if (mini) a.title = a.querySelector('span').textContent; else a.removeAttribute('title');

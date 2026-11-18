@@ -1130,15 +1130,15 @@ tr.sub>td{background:var(--vr-pms-blue-50)}
 .side{z-index:20;overflow:visible;transition:width .2s}
 .side-in{overflow-x:hidden}
 .links a span,.ngrp-btn span{white-space:nowrap}
-.side-tog{position:absolute;top:46px;right:-13px;z-index:2;display:grid;place-items:center;width:26px;height:26px;padding:0;border:1px solid var(--vr-pms-line);border-radius:50%;background:var(--vr-card);color:var(--vr-navy-800);box-shadow:var(--vr-shadow);cursor:pointer;transition:background-color .15s,color .15s}
-.side-tog svg{width:15px;height:15px}
-.side-tog:hover{border-color:var(--vr-pms-y);background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
-.side-tog:focus-visible{outline:2px solid var(--vr-pms-y);outline-offset:2px}
+.side-tog{position:absolute;top:26px;right:12px;z-index:2;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:8px;background:none;color:rgba(255,255,255,.75);cursor:pointer;transition:background-color .15s,color .15s}
+.side-tog svg{width:20px;height:20px}
+.side-tog:hover{background:var(--vr-navy-700);color:var(--vr-pms-on)}
+.side-tog:focus-visible{outline:2px solid rgba(255,255,255,.6);outline-offset:-2px}
 .nsub-h{display:none}
 #app.mini .side{width:72px}
-#app.mini .wordmark{padding:28px 10px 18px}
-#app.mini .logo-w{width:52px;margin:0 auto}
-#app.mini .wordmark .wr,#app.mini .wordmark .wa{display:none}
+#app.mini .wordmark{height:76px;padding:0}
+#app.mini .wordmark>*{display:none}
+#app.mini .side-tog{top:20px;right:19px}
 #app.mini .eyebrow{height:1px;margin:14px 18px 10px;padding:0;overflow:hidden;font-size:0;background:rgba(255,255,255,.15)}
 #app.mini .eyebrow:first-of-type{margin-top:0}
 #app.mini .links a,#app.mini .ngrp-btn{justify-content:center;padding:11px 0}
