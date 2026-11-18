@@ -18,7 +18,8 @@ const noKras = f => KRAS.every(([k]) => !f.kras[k].rows.length);
 const textAnswer = a => !blank(a) && !/^(n\/a|not added)$/i.test(String(a).trim());
 // q2 (issues faced) and q5 (suggestions) can be answered briefly, e.g. "No", so they have no minimum
 const SHORT_OK = ['q2', 'q5'];
-const shortAnswer = (a, id) => !SHORT_OK.includes(id) && textAnswer(a) && wordCount(a) < config.qMinWords;
+// any length is fine, but a single word ("Yes", "No", "Done") is not an answer (Vidya, 2026-11-18; it used to be 15 words)
+const shortAnswer = a => textAnswer(a) && wordCount(a) < 2;
 const prevMonth = m => { let [y, mo] = m.split('-').map(Number); mo--; if (!mo) { mo = 12; y--; } return `${y}-${D.pad(mo)}`; };
 
 // ---------- hierarchy ----------
@@ -80,7 +81,7 @@ const paramsFor = month => {
 
 const isNewJoiner = f => KRAS.every(([k]) => f.kras[k].rows.length === 0) && !!emp(f.empId).newJoiner;
 // KRA ratings are percentages (10 to 100 in steps of 10); questionnaire ratings stay on the 1-5 parameter scale (0 allowed)
-const KRA_SCALE = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const KRA_SCALE = Array.from({ length: 101 }, (_, i) => i); // any whole percentage 0-100 (typed, not picked from a list)
 const Q_SCALE = [0, 1, 2, 3, 4, 5];
 const kraAvg = (rows, key) => { const v = rows.map(r => r[key]).filter(has); return v.length ? v.reduce((a, b) => a + +b, 0) / v.length : null; };
 
@@ -139,12 +140,11 @@ function validate(f) {
       const miss = [], noRemark = [];
       rows.forEach(r => {
         if (!has(r.self) || blank(r.selfRemark)) miss.push(r.kpi);
-        // every sub-KRA the manager has rated needs a manager remark (2026-11-13; it used to be only when the ratings differed).
-        // Rows not rated yet are caught at submit by "manager rating missing", so unstarted forms are not flagged twice.
-        if (has(r.mgr) && blank(r.mgrRemark)) noRemark.push(r.kpi);
+        // a manager remark is needed only where the manager's rating differs from the self rating (2026-11-18)
+        if (has(r.mgr) && has(r.self) && +r.mgr !== +r.self && blank(r.mgrRemark)) noRemark.push(r.kpi);
       });
       if (miss.length) add('block', label, 'SELF_MISSING', `Self rating and self remark are mandatory. Missing in ${label}: ${miss.join(', ')}.`, `Self rating/remark missing in ${label}: ${miss.join(', ')}`);
-      if (noRemark.length) add('block', label, 'MGR_REMARK', `Manager remark is mandatory for every sub-KRA. Missing in ${label}: ${noRemark.join(', ')}.`, `Manager remark missing in ${label}: ${noRemark.join(', ')}`);
+      if (noRemark.length) add('block', label, 'MGR_REMARK', `Manager remark is mandatory where the manager rating differs from the self rating. Missing in ${label}: ${noRemark.join(', ')}.`, `Manager remark missing in ${label}: ${noRemark.join(', ')}`);
       const sum = rows.reduce((a, r) => a + (+r.weight || 0), 0);
       if (rows.length && sum !== +weight) add('flag', label, 'SUBKRA_SUM', `The total weightage of Sub-KRAs under ${label} must be ${weight}%. The current total is ${sum}%.`);
       // the rating gap is flagged per sub-KRA, so the flag says which one
@@ -192,7 +192,7 @@ function validate(f) {
   let qComplete = true;
   const short = [];
   qs.filter(q => q.type === 'text').forEach((q, i) => { if (shortAnswer(f.qa[q.id], q.id)) short.push(i + 1); });
-  if (short.length) add('flag', 'Questionnaire', 'Q_SHORT', `Questionnaire not properly filled: answer${short.length > 1 ? 's to questions' : ' to question'} ${short.join(', ')} ${short.length > 1 ? 'are' : 'is'} under ${config.qMinWords} words.`, `Questionnaire answer under ${config.qMinWords} words`);
+  if (short.length) add('flag', 'Questionnaire', 'Q_SHORT', `Questionnaire not properly filled: answer${short.length > 1 ? 's to questions' : ' to question'} ${short.join(', ')} ${short.length > 1 ? 'are' : 'is'} only a single word.`, 'Questionnaire answer is a single word');
   for (const q of qs) {
     const a = f.qa[q.id];
     if (q.type === 'text') {
@@ -227,7 +227,7 @@ function todoItems(f) {
     const a = f.qa[q.id];
     if (q.type === 'text') {
       if (q.mandatory && !textAnswer(a)) out.push(`Answer question ${i + 1}: ${cut(q.text)}`);
-      else if (shortAnswer(a, q.id)) out.push(`Answer question ${i + 1} in more detail (at least ${config.qMinWords} words)`);
+      else if (shortAnswer(a, q.id)) out.push(`Answer question ${i + 1} in more than a single word`);
     }
     else if (!a || !has(a.self)) out.push(`Self rating for question ${i + 1}: ${cut(q.text)}`);
   });

@@ -55,8 +55,8 @@ const questions = [
   { id: 'q8', text: 'Teamwork', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 8 },
   { id: 'q9', text: 'General conduct', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 9 },
   { id: 'q10', text: 'Initiative and motivation', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 10 },
-  { id: 'q11', text: 'Grooming parameters', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 11 },
-  { id: 'q12', text: 'Health parameters', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 12 },
+  { id: 'q11', text: 'Grooming', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 11 },
+  { id: 'q12', text: 'Health', type: 'rating', mandatory: true, from: '2026-04', to: null, order: 12 },
 ];
 
 // full wording of the Grooming and Health parameters (as on the old PMS portal)
@@ -172,6 +172,10 @@ function migrate() {
   // Grooming and Health parameters: replace the short labels with their full wording (only items still exactly as seeded)
   const full = [...PARAM_TEXT.grooming, ...PARAM_TEXT.health], byLabel = Object.fromEntries(full.map(t => [t.split(':')[0], t]));
   for (const v of paramsVersions) for (const sec of v.data.sections || []) sec.items = sec.items.map(it => byLabel[it] || it);
+  // the word "parameters" is dropped from the Grooming and Health questions (2026-11-18); saved questions and the copies kept on submitted forms follow
+  const rn = { 'Grooming parameters': 'Grooming', 'Health parameters': 'Health' };
+  for (const q of questions) if (rn[q.text]) q.text = rn[q.text];
+  for (const f of Object.values(forms)) for (const q of f.qSnapshot || []) if (rn[q.text]) q.text = rn[q.text];
   // KRA ratings: 0-5 -> 10%-100% (forms and thresholds saved before the change)
   if (config.ratingScale !== 100) {
     KRA_TO_PERCENT();

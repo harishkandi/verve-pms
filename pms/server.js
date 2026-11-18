@@ -44,7 +44,8 @@ function formPayload(viewer, f) {
   const open = !f.locked;
   const valid = L.validate(f);
   // once the employee has sent their part to the manager, it is read-only for them until the manager sends it back
-  const selfOpen = open && (!f.selfSubmitted || manage);
+  // a submitted (locked) review stays open for the reviewing managers (Vidya, 2026-11-18); everyone else is locked out
+  const selfOpen = (open || manage) && (!f.selfSubmitted || manage);
   return {
     // a submitted form names the manager who reviewed it, even if the person reports to someone else now
     form: f, employee: view(e), manager: f.reviewedBy && f.reviewedBy.managerId && L.emp(f.reviewedBy.managerId) ? view(L.emp(f.reviewedBy.managerId)) : e.managerId ? view(L.emp(e.managerId)) : null,
@@ -66,7 +67,7 @@ function formPayload(viewer, f) {
 // the employee and their reviewers (managers, directors, admin) edit KRAs directly until the review is submitted
 // employees cannot change their own KRAs; they send a request, and once their manager approves it they can make the change (one save)
 const kraGrant = (viewer, f) => viewer.id === f.empId && !f.selfSubmitted && !!f.kraRequest && f.kraRequest.status === 'approved';
-const canEditKras = (viewer, f) => !f.locked && (L.canManage(viewer, f.empId) || kraGrant(viewer, f));
+const canEditKras = (viewer, f) => L.canManage(viewer, f.empId) || (!f.locked && kraGrant(viewer, f));
 // admins and directors set their own KRAs (no manager to approve), so they never request a change
 const canRequestKra = (viewer, f) => !['admin', 'director'].includes(viewer.role) && !!viewer.managerId && !f.locked && !f.selfSubmitted && viewer.id === f.empId && !L.canManage(viewer, f.empId) && !(f.kraRequest && ['pending', 'approved'].includes(f.kraRequest.status));
 const canDecideKra = (viewer, f) => !f.locked && viewer.id !== f.empId && L.canManage(viewer, f.empId) && !!f.kraRequest && f.kraRequest.status === 'pending';
@@ -454,20 +455,36 @@ route('GET', '/api/form',({ user, q }) => formPayload(user, mustForm(user, q.emp
 
 route('PUT', '/api/form', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
-  if (f.locked) throw bad(LOCKED_MSG);
   const manage = L.canManage(user, f.empId), selfEdit = L.canSelfEdit(user, f.empId);
+  if (f.locked && !manage) throw bad(LOCKED_MSG);
+  // answers to the questionnaire cannot change once the final review is saved, for anyone (managers can still change KRAs and ratings)
+  if (f.locked && Object.values(body.qa || {}).some(a => typeof a === 'string')) throw bad(LOCKED_MSG);
   if (!manage && !selfEdit) throw forbid();
   if (f.selfSubmitted && !manage) throw bad(SENT_MSG);
   // managers often give ratings and remarks verbally, so the team member may enter those too
   const mgrFields = manage || selfEdit;
   const kraR = L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r.self, r.mgr]));
   const qR = Object.values(body.qa || {}).filter(a => a && typeof a === 'object').flatMap(a => [a.self, a.mgr]);
-  if (!kraR.every(okIn(L.KRA_SCALE))) throw bad('KRA ratings must be a percentage from 10% to 100% in steps of 10.');
+  if (!kraR.every(okIn(L.KRA_SCALE))) throw bad('KRA ratings must be a whole percentage from 0 to 100.');
   if (!qR.every(okIn(L.Q_SCALE))) throw bad('Questionnaire ratings must be a whole number from 0 to 5.');
   if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
   // only the fields that are sent change: the employee and the manager can have the form open at the same time,
   // and one person's autosave must not wipe what the other entered meanwhile (the page sends just what was edited)
   const sent = (o, key) => o && Object.prototype.hasOwnProperty.call(o, key);
+  // the employee's self rating and self remark come first: the manager rating and remark of a sub-KRA (or the manager
+  // rating of a question) are accepted only once those exist (Vidya, 2026-11-18)
+  const SELF_FIRST = "The employee's self rating and self remark must be added before the manager rating or remark.";
+  for (const [k] of L.KRAS) for (const br of (body.kras?.[k]?.rows || [])) {
+    const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) continue;
+    const self = selfEdit && sent(br, 'self') ? num(br.self) : r.self, sr = selfEdit && sent(br, 'selfRemark') ? br.selfRemark : r.selfRemark;
+    const mgrGiven = (sent(br, 'mgr') && num(br.mgr) !== null) || (sent(br, 'mgrRemark') && String(br.mgrRemark || '').trim());
+    if (mgrGiven && (self === null || self === undefined || !String(sr || '').trim())) throw bad(SELF_FIRST);
+  }
+  for (const [id, a] of Object.entries(body.qa || {})) {
+    if (!a || typeof a !== 'object' || !sent(a, 'mgr') || num(a.mgr) === null) continue;
+    const cur = (f.qa[id] || {}).self, self = selfEdit && sent(a, 'self') ? num(a.self) : cur;
+    if (self === null || self === undefined || self === '') throw bad(SELF_FIRST);
+  }
   for (const [k] of L.KRAS) (body.kras?.[k]?.rows || []).forEach(br => {
     const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) return;
     if (selfEdit) { if (sent(br, 'self')) r.self = num(br.self); if (sent(br, 'selfRemark')) r.selfRemark = br.selfRemark ?? ''; }
@@ -545,14 +562,17 @@ const SENT_MSG = 'You have sent this form to your manager, so your part can no l
 // KRA settings: sub-KRA totals must equal the parent KRA weight
 route('PUT', '/api/kras', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
-  if (f.locked) throw bad(LOCKED_MSG);
+  if (f.locked && !L.canManage(user, f.empId)) throw bad(LOCKED_MSG);
   if (!canEditKras(user, f)) throw new HttpError(403, 'You cannot change KRA settings or weightage for this person.');
   const errors = [];
   for (const [k, label] of L.KRAS) {
-    const nk = body.kras[k]; if (!nk) continue;
+    const nk = body.kras[k]; if (!nk || !nk.rows) continue; // weight-only entries are checked in the total below
     const sum = nk.rows.reduce((a, r) => a + (Number(r.weight) || 0), 0);
-    if (nk.rows.length && sum !== Number(nk.weight)) errors.push(`The total weightage of Sub-KRAs under ${label} must be ${nk.weight}%. The current total is ${sum}%. Please correct the weightage before saving.`);
+    if (nk.rows.length && sum !== Number(nk.weight)) errors.push(`KRA weightage is not matching. The total weightage of Sub-KRAs under ${label} must be ${nk.weight}%. The current total is ${sum}%. Please correct the weightage before saving.`);
   }
+  // the three KRA weightages must add up to 100 (the page sends the other two as weight-only entries)
+  const wsum = L.KRAS.reduce((a, [k]) => a + (Number(body.kras[k] ? body.kras[k].weight : f.kras[k].weight) || 0), 0);
+  if (wsum !== 100) errors.push(`KRA weightage must add up to 100%: Operational + Process + People is now ${wsum}%.`);
   if (errors.length) throw bad('Sub-KRAs not saved.', { errors });
   const old = f.kras;
   const apply = target => {
@@ -560,6 +580,7 @@ route('PUT', '/api/kras', ({ user, body }) => {
       if (!body.kras[k]) continue;
       const prev = target.kras[k].rows;
       target.kras[k].weight = Number(body.kras[k].weight);
+      if (!body.kras[k].rows) continue;
       target.kras[k].rows = body.kras[k].rows.map((r, i) => {
         const keep = prev.find(p => p.id === r.id) || { self: num(r.self), selfRemark: r.selfRemark || '', mgr: num(r.mgr), mgrRemark: r.mgrRemark || '' };
         return { ...keep, id: r.id || `${k[0]}${Date.now()}${i}`, kpi: r.kpi, target: r.target, weight: Number(r.weight) };
@@ -568,7 +589,7 @@ route('PUT', '/api/kras', ({ user, body }) => {
   };
   const usedGrant = kraGrant(user, f);
   apply(f);
-  if (usedGrant) { audit(user.name, 'KRA change made after approval', `${L.emp(f.empId).name} ${f.month}`); delete f.kraRequest; const m = mgrOf(f.empId); if (m) N.push(m.id, { type: 'request', link: N.formLink(f.empId, f.month), text: `${user.name} changed their KRAs for ${D.monthLabel(f.month)} (after your approval).` }, user); }
+  if (usedGrant) { audit(user.name, 'KRA change made after approval', `${L.emp(f.empId).name} ${f.month}`); /* the approval stays until the employee sends the form to the manager, so + / save stay available */ const m = mgrOf(f.empId); if (m) N.push(m.id, { type: 'request', link: N.formLink(f.empId, f.month), text: `${user.name} changed their KRAs for ${D.monthLabel(f.month)} (after your approval).` }, user); }
   else if (user.id !== f.empId) N.push(f.empId, { type: 'change', key: `kras|${f.empId}|${f.month}`, link: N.formLink(f.empId, f.month), text: `${user.name} updated your KRAs for ${D.monthLabel(f.month)}.` }, user);
   // later unsubmitted months follow the new structure
   Object.keys(D.forms).filter(k => k.startsWith(f.empId + '|')).map(k => k.split('|')[1]).filter(m => m > f.month && m <= config.currentMonth).forEach(m => { const g = D.forms[`${f.empId}|${m}`]; if (g && !g.locked) apply(g); });
