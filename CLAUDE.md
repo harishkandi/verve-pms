@@ -73,7 +73,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - UI = the old PMS portal's look (Harish 2026-11-17: employees know that UI; layouts and functions stay, only the look):
   the "Old PMS portal look" block in `index.html` re-points the tokens to the portal's colours (navy `#23408b` = "the blue in
   My review", light blue `#cbdaff`, grey `#ececec` fields, yellow main buttons, plain dropdown lists and date picker). Side panel = one
-  flat navy (Harish 2026-11-18: no glow orbs, no see-through white highlight; open page = darker navy `--vr-navy-900`).
+  flat deep navy `--vr-navy-900` (Harish 2026-11-18: darker than the logo blue `#234788`, no glow orbs, no see-through
+  white highlight; open page = logo blue `--vr-navy-800`).
   The count cards stay light-tinted (he rejected solid navy cards the same day). Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
