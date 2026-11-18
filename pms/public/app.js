@@ -484,10 +484,10 @@ async function start() {
   items.forEach(i => typeof i === 'string' ? groups.push({ label: i.slice(2), links: [] }) : groups[groups.length - 1].links.push(i));
   const navItem = i => Array.isArray(i) ? `<a data-h="${i[1]}" href="${i[1]}">${ico(i[2])}<span>${i[0]}</span></a>`
     : `<div class="ngrp" data-g="${i.key}"><button type="button" class="ngrp-btn" aria-expanded="false">${ico(i.icon)}<span>${i.label}</span>${ico('right')}</button>
-      <div class="nsub">${i.kids.map(([l, h]) => `<a data-h="${h}" href="${h}"><i></i><span>${l}</span></a>`).join('')}</div></div>`;
-  $('#root').innerHTML = `<div id="app"><nav class="side">${ORBS}<div class="side-in">${WORDMARK}
+      <div class="nsub"><div class="nsub-h">${i.label}</div>${i.kids.map(([l, h]) => `<a data-h="${h}" href="${h}"><i></i><span>${l}</span></a>`).join('')}</div></div>`;
+  $('#root').innerHTML = `<div id="app"${sideMini ? ' class="mini"' : ''}><nav class="side">${ORBS}<div class="side-in">${WORDMARK}
     ${groups.map(g => `<div class="eyebrow">${esc(g.label)}</div><div class="links">${g.links.map(navItem).join('')}</div>`).join('')}
-    <div class="side-sp"></div></div></nav>
+    <div class="side-sp"></div></div><button type="button" class="side-tog" id="sidetog"></button></nav>
     <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span>
       ${S.me.real.role === 'admin' && !S.me.viewingAs ? `<button class="btn sm" id="asbtn" title="See PMS exactly as another person sees it">${ico('eye')}View as…</button>` : ''}<span class="tbn"><button type="button" class="ibtn tb-bell" id="tbbell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${ico('bell')}<b class="tb-cnt" id="tbcnt" hidden></b></button><div class="tb-notes" id="tbnotes" role="dialog" aria-label="Notifications" hidden></div></span>${themeBtn()}
       <span class="tb-div"></span>
@@ -497,8 +497,13 @@ async function start() {
         ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
     <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
+  sideSet(sideMini);
+  $('.side-in').onscroll = navFlyClose;
   $('#root').onclick = e => {
-    const g = e.target.closest('.ngrp-btn'); if (g) navOpen(g.parentNode, !g.parentNode.classList.contains('open'));
+    if (e.target.closest('#sidetog')) sideSet(!sideMini);
+    const g = e.target.closest('.ngrp-btn');
+    if (g && sideMini) navFly(g.parentNode); else if (g) navOpen(g.parentNode, !g.parentNode.classList.contains('open'));
+    if (!e.target.closest('.ngrp') || e.target.closest('.nsub a')) navFlyClose();
     if (e.target.closest('[data-um="out"]')) { userMenu(false); signOut(); }
     if (e.target.closest('[data-um="pw"]')) { userMenu(false); changePassword(); }
     if (e.target.closest('[data-um="profile"]')) { userMenu(false); if (location.hash === '#/profile') route(); else location.hash = '#/profile'; }
@@ -520,6 +525,31 @@ async function route() {
   v.classList.remove('routing'); SC().scrollTop = 0;
 }
 const head = (t, c) => `<div class="phd"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>`;
+// side panel shrinks to icons only (Harish 2026-11-18): the round button on its right edge, remembered in this browser.
+// Shrunk, each icon shows its name on hover and a menu group opens as a small menu beside the panel (navFly).
+let sideMini = false; try { sideMini = localStorage.getItem('pms.sideMini') === '1'; } catch {}
+function sideSet(mini) {
+  sideMini = mini; navFlyClose();
+  $('#app').classList.toggle('mini', mini);
+  try { localStorage.setItem('pms.sideMini', mini ? '1' : '0'); } catch {}
+  const t = $('#sidetog'), label = mini ? 'Show the full menu' : 'Shrink the menu to icons';
+  t.innerHTML = ico(mini ? 'right' : 'left'); t.title = label; t.setAttribute('aria-label', label); t.setAttribute('aria-expanded', String(!mini));
+  document.querySelectorAll('.side .links a, .side .ngrp-btn').forEach(a => {
+    if (a.closest('.nsub')) return;
+    if (mini) a.title = a.querySelector('span').textContent; else a.removeAttribute('title');
+  });
+}
+function navFly(g) {
+  const open = !g.classList.contains('fly'); navFlyClose(); if (!open) return;
+  const r = g.querySelector('.ngrp-btn').getBoundingClientRect(), sub = g.querySelector('.nsub');
+  g.classList.add('fly'); g.querySelector('.ngrp-btn').setAttribute('aria-expanded', 'true');
+  sub.style.left = `${$('.side').getBoundingClientRect().right + 8}px`;
+  sub.style.top = `${Math.max(8, Math.min(r.top - 6, innerHeight - sub.offsetHeight - 8))}px`;
+}
+function navFlyClose() {
+  document.querySelectorAll('.ngrp.fly').forEach(g => { g.classList.remove('fly'); g.querySelector('.ngrp-btn').setAttribute('aria-expanded', String(g.classList.contains('open'))); });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.ngrp.fly')) navFlyClose(); });
 // menu groups: open or close one (remembered for this visit)
 const navOpenKeys = new Set();
 function navOpen(g, open) {
