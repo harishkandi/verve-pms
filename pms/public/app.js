@@ -2047,7 +2047,35 @@ const slotCell = r => {
   return `<span class="slot ${pen ? '' : 'np'}">${ico('calendar')}${esc(day)}<i>·</i><em>${r.time ? fmtT(r.time) : 'Time not set'}${len}</em>${pen}</span>`;
 };
 const reschedDates = r => { const out = []; [r.history[0] && r.history[0].from, ...r.history.map(h => h.to)].forEach(x => { if (x && !out.includes(x)) out.push(x); }); return out; };
+// Scheduling › Team members as a calendar (Harish 2026-11-18): the same rows (and Filter) as the list, Monday to Sunday
+// weeks from the first review window day to the last booked or window day; window days are shaded, today is outlined.
+// A booked review is a chip (time + name): a manager's opens Reschedule, others open the form. Not booked yet: below.
+function calView(rows, windows) {
+  const wins = windows.filter(w => rows.some(r => r.winKey === w.key) && w.start && w.end), booked = rows.filter(r => r.scheduled);
+  const ds = [...wins.flatMap(w => [w.start, w.end]), ...booked.map(r => r.scheduled)].sort();
+  if (!ds.length) return '<div class="empty card">No review window or booked review to show.</div>';
+  const day = s => new Date(s + 'T00:00:00Z'), iso = x => x.toISOString().slice(0, 10), today = new Date().toLocaleDateString('en-CA');
+  const a = day(ds[0]), b = day(ds[ds.length - 1]);
+  a.setUTCDate(a.getUTCDate() - (a.getUTCDay() + 6) % 7); b.setUTCDate(b.getUTCDate() + (7 - b.getUTCDay()) % 7);
+  const by = {}; booked.forEach(r => (by[r.scheduled] ||= []).push(r));
+  const chip = r => {
+    const t = `${r.time ? fmtT(r.time) : 'No time'} · ${r.name}`;
+    return r.canManage ? `<button type="button" class="scal-ev" data-resch="${r.empId}" title="${esc(t)}: click to reschedule">${r.time ? `<b>${esc(fmtT(r.time))}</b>` : ''}${esc(r.name)}</button>`
+      : `<a class="scal-ev" href="#/form/${r.empId}/${S.month}" title="${esc(t)}: open the form">${r.time ? `<b>${esc(fmtT(r.time))}</b>` : ''}${esc(r.name)}</a>`;
+  };
+  const cells = [];
+  for (const x = new Date(a); x <= b; x.setUTCDate(x.getUTCDate() + 1)) {
+    const k = iso(x), list = (by[k] || []).sort((p, q) => (p.time || '').localeCompare(q.time || '')), inWin = wins.some(w => k >= w.start && k <= w.end);
+    const lab = x.getUTCDate() === 1 || k === iso(a) ? x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : x.getUTCDate();
+    cells.push(`<div class="scal-d ${inWin ? 's-win' : ''} ${k === today ? 's-today' : ''} ${x.getUTCDay() % 6 === 0 ? 's-we' : ''}"><span class="scal-n">${lab}</span>${list.map(chip).join('')}</div>`);
+  }
+  const open = rows.filter(r => !r.scheduled);
+  return `<div class="scal"><div class="scal-h">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(x => `<span>${x}</span>`).join('')}</div><div class="scal-g">${cells.join('')}</div>
+    <div class="scal-k"><span><i class="s-win"></i>Review window</span><span><i class="s-today"></i>Today</span><span>${booked.length} booked · ${open.length} not booked yet</span></div></div>
+    ${open.length ? `<div class="scal-open"><b>Not booked yet (${open.length})</b>${open.map(r => `<span class="scal-o">${esc(r.name)}${r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : ''}</span>`).join('')}</div>` : ''}`;
+}
 pages.scheduling = async v => {
+  if (!S.schView) { try { S.schView = localStorage.getItem('pms.schView'); } catch {} S.schView ||= 'list'; } // List or Calendar, remembered in this browser
   const d = await api('/scheduling?month=' + S.month), cal = d.calendar;
   const rules = d.canEditWindows ? await api('/config') : null;
   // admins only watch the schedule (no booking, no calendar): the reporting managers schedule the reviews
@@ -2074,12 +2102,12 @@ pages.scheduling = async v => {
   <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
   ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
   <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
-  <div class="row" style="align-items:center"><h2 style="margin:0">Team members</h2><span class="sp"></span>${d.rows.length ? cfPill('sched') : ''}</div><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
+  <div class="row" style="align-items:center"><h2 style="margin:0">Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
   ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
   <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="st mv" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">Moved ${r.reschedules}×</span>` : '<span class="small">–</span>'}</td>
-  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>
+  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>`}
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
@@ -2117,6 +2145,7 @@ pages.scheduling = async v => {
     const t = e.target.closest('button, a'); if (!t) return;
     try {
       if (t.dataset.cfclear) { e.preventDefault(); cfClear(t.dataset.cfclear); }
+      else if (t.dataset.sv) { S.schView = t.dataset.sv; try { localStorage.setItem('pms.schView', S.schView); } catch {} pages.scheduling(v); }
       else if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
       else if (t.id === 'sc') {
         const b = {};
