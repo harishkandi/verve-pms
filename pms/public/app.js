@@ -497,7 +497,7 @@ async function start() {
     ['Employees', '#/employees/active', 'idcard'],
     ['Scheduling', '#/scheduling', 'calendar'],
     { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['One pager document', `#/annual/${S.me.id}`]] },
-    { key: 'set', label: 'Settings', icon: 'sliders', kids: [['Teams', '#/teams'], ['Questionnaire', '#/params/questions'], ['Parameters summary', '#/params']] },
+    { key: 'set', label: 'Settings', icon: 'sliders', kids: [['Teams', '#/teams'], ['Questionnaire', '#/questions'], ['Parameters summary', '#/params']] },
     '--Admin',
     ['Audit log', '#/audit', 'clock'],
   ] : [
@@ -2275,10 +2275,11 @@ pages.annual = async (v, emp) => {
 // ---------- parameters summary ----------
 pages.params = async (v, arg) => {
   const admin = S.me.role === 'admin';
+  // the questionnaire used to sit below the parameters; it is its own page now (Settings › Questionnaire)
+  if (arg === 'questions') { location.replace('#/questions'); return; }
   const d = await api('/params?month=' + S.month);
   let P = JSON.parse(JSON.stringify(d.data));
-  // admins also get the questionnaire editor below the parameters (own box, so a question save keeps unsaved parameter edits)
-  v.innerHTML = '<div id="pbox"></div>' + (admin ? '<div id="qbox"></div>' : '');
+  v.innerHTML = '<div id="pbox"></div>';
   const pb = $('#pbox');
   const draw = (dirty) => {
     pb.innerHTML = head('Parameters summary', 'Soft parameters reviewed alongside the KRAs' + (admin ? ' · admin view' : '')) + `<div class="row"><span class="small">Wording for ${esc(monthLabel(S.month))} (change the month in the calendar at the top) · applies from ${esc(monthLabel(d.from) || d.from)}</span><span class="sp"></span>${admin ? `<button class="btn pri" data-a="addsec">${ico('plus')}Add section</button>` : ''}</div>
@@ -2307,12 +2308,14 @@ pages.params = async (v, arg) => {
       m.querySelector('#ok').onclick = async () => { await api('/params', { method: 'PUT', body: { from: m.querySelector('#eff').value, data: P } }); m.remove(); toast('Saved'); pages.params(v); };
     }
   };
-  // the page may have been left while the questions loaded, so look the box up again before scrolling to it
-  if (admin) { await questionsBox($('#qbox')); if (arg === 'questions') requestAnimationFrame(() => { const b = $('#qbox'); if (b) SC().scrollTop = b.offsetTop - 24; }); }
 };
 
-// ---------- questionnaire (admin, shown inside Parameters Summary) ----------
-pages.questions = () => location.replace('#/params'); // old link
+// ---------- questionnaire (admin, Settings › Questionnaire) ----------
+pages.questions = async v => {
+  if (S.me.role !== 'admin') { location.replace('#/params'); return; }
+  v.innerHTML = head('Questionnaire', 'Questions on the monthly review form') + '<div id="qbox"></div>';
+  await questionsBox($('#qbox'));
+};
 async function questionsBox(v) {
   const qs = await api('/questions');
   const tab = S.qtab || 'text';
@@ -2525,7 +2528,7 @@ pages.employees = async (v, arg, grp) => {
     }
     if (t.dataset.stat) {
       const k = t.dataset.stat;
-      if (k === 'questions') { location.hash = '#/params'; return; }
+      if (k === 'questions') { location.hash = '#/questions'; return; }
       S.etab = k === 'inactive' ? 'inactive' : 'active'; empPreset('');
       const h = '#/employees/' + S.etab; // keep the address (and the menu highlight) in step with the tile
       if (location.hash !== h) { location.hash = h; return; }

@@ -100,7 +100,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Reporting line card (director down to the person), read-only, the admin keeps the details. Code and joining date from the list are placeholders (shown "Not set yet") until the
   admin sets them in Employees › Edit (`codeSet` / `joinedSet` flags). The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
   removed it, 2026-11-12). Admins get a grouped menu (Reporting / Questions
-  open as sub-menus). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
+  open as sub-menus). Settings › Questionnaire is its own page (`#/questions`, `pages.questions` → `questionsBox`);
+  Parameters summary (`#/params`) shows only the parameters (Harish 2026-11-19; old `#/params/questions` redirects). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
   duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
   reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
   click to drill down; opened from the Employees page button and names, highlights Employees › Active in the menu (Employees is a menu group with Active / Inactive, 2026-11-16);
