@@ -3,27 +3,27 @@
 const fs = require('fs');
 const { LIST_FILE, importList } = require('./employees');
 
-// rules behind the PMS report format (2026-11-13): learning counts as properly done from this manager rating (%),
-// questionnaire text answers need at least this many words, and the Operational KRA needs at least this many sub-KRAs
-function REPORT_RULES() { return { learningDoneMin: 60, qMinWords: 15, opMinSubKras: 3 }; }
+// The review rules are fixed here, not settings (Harish 2026-11-19: no Review rules form in the app). KRA ratings are
+// percentages, so the thresholds are % and the gaps percentage points. One learning threshold (60%) is used both for
+// the "manager rating below" flag and for "learning properly done" in the PMS report.
+const RULES = Object.freeze({
+  operationalRange: Object.freeze([40, 80]), // Operational KRA weightage outside this range is flagged
+  peopleMin: 10, peopleMax: 20,              // People KRA weightage
+  clickupMin: 60,                            // ClickUp manager rating below this is flagged
+  learningMin: 60,                           // learning manager rating below this is flagged / not properly done
+  ratingGapFlag: 20,                         // self vs manager rating gap flagged on the form (section 8.4 O3)
+  emailGapFlag: 15,                          // gap highlighted in the manager email (section 11)
+  selfShare: 0.3, mgrShare: 0.7,             // monthly rating = 30% self + 70% manager
+  qMinWords: 15,                             // questionnaire text answers shorter than this are flagged
+  opMinSubKras: 3,                           // Operational KRA needs at least this many sub-KRAs
+});
 
 const config = {
   currentMonth: '2026-11',     // review month being run; its forms are open from the 1st of the month
   fyStartMonth: '2026-04',
   today: '2026-11-04',
   weights: { operational: 60, process: 20, people: 20 },
-  operationalRange: [40, 80],
-  peopleMin: 10,
-  peopleMax: 20,
-  // KRA ratings are percentages (10-100); these thresholds are percentages / percentage points
-  ratingScale: 100,
-  clickupMin: 60,
-  learningMin: 40,
-  ...REPORT_RULES(),
-  ratingGapFlag: 20,           // section 8.4 O3
-  emailGapFlag: 15,            // section 11
-  selfShare: 0.3,
-  mgrShare: 0.7,
+  ratingScale: 100,            // KRA ratings are percentages (10-100); the review rules are RULES above
   lookbackMonths: 5,
   timeZone: 'Asia/Kolkata',    // calendar invites use this time zone
   windows: {
@@ -179,7 +179,6 @@ function migrate() {
   // KRA ratings: 0-5 -> 10%-100% (forms and thresholds saved before the change)
   if (config.ratingScale !== 100) {
     KRA_TO_PERCENT();
-    for (const k of ['clickupMin', 'learningMin', 'ratingGapFlag', 'emailGapFlag']) if (typeof config[k] === 'number' && config[k] <= 5) config[k] = Math.round(config[k] * 20);
     config.ratingScale = 100;
     audit('System', 'migration', 'KRA ratings converted from 0-5 to percentages (x20)');
   }
@@ -189,8 +188,8 @@ function migrate() {
   // the Directors team always has a window (top-level people); other teams come from the employee list (employees.js)
   config.windows.Directors ||= { start: 25, end: 30 };
   config.managerWindows ||= {};
-  // rules added after the state was first saved (the saved config replaces the defaults above)
-  for (const [k, v] of Object.entries(REPORT_RULES())) if (typeof config[k] !== 'number') config[k] = v;
+  // the review rules used to be saved settings; they are fixed in RULES now, so saved copies are dropped
+  for (const k of [...Object.keys(RULES), 'learningDoneMin']) delete config[k];
   // one-off: windows still at the old 25th-31st / 25th-30th defaults become 25th to the 2nd of the next month
   if (!config.windowsV2) {
     for (const [t, w] of Object.entries(config.windows)) if (w.start === 25 && (w.end === 31 || w.end === 30)) config.windows[t] = { start: 25, end: 2 };
@@ -217,4 +216,4 @@ if (fs.existsSync(LIST_FILE)) {
   catch (e) { console.error(`Employee list not loaded (${LIST_FILE}): ${e.message}`); }
 }
 
-module.exports = { DEFAULT_WINDOW, migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, notifications, passwords, audit, fyMonths, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad, fyStartOf, validMonth, prevMonth };
+module.exports = { DEFAULT_WINDOW, RULES, migrate, config, employees, questions, paramsVersions, forms, annualForms, auditLog, emailsOutbox, appraisals, calendarLinks, notifications, passwords, audit, fyMonths, daysIn, monthLabel, windowFor, windowOf, windowSource, addDays, defaultRows, emptyKras, pad, fyStartOf, validMonth, prevMonth };

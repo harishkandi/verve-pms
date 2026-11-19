@@ -110,10 +110,16 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate).
   Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
   captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
-  There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
-  admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
-  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
-  "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
+  There is no Settings page: review windows are on the Scheduling page (admin); admins can also edit a window from the
+  dashboard. The review rules (thresholds) are NOT settings since 2026-11-19 (Harish): fixed in `RULES` in `data.js`
+  (Operational 40-80, People 10-20, ClickUp 60, learning 60 = one value for the flag and "properly done", gap flag 20,
+  email gap 15, 30% self / 70% manager, 15 words, 3 Operational sub-KRAs); no Review rules form, no `PUT /api/config`,
+  `migrate()` drops older saved copies. Status names shown to users: "Review Not Completed" = "Form
+  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments. Top-level directors
+  carry the team name "Directors" (was "Leadership") internally, but it is NOT a team (Harish 2026-11-19): left out of
+  `teamNames()`, `/api/me` teams, the dashboard team tabs, Teams page and Employees chips (team shows "–"); the name
+  cannot be used for a new team. The dashboard's "Review quality" card is now called "Review insights" and the All stats
+  numbers are all plain white (role colour only in the dot), 2026-11-19. `migrate()` in `data.js` updates older saved state on boot.
 - Small add-ons (Harish 2026-11-18): the dashboard's Filter pill + panel is also on Review status report (`report`),
   Team report (`yearly`), Scheduling team members (`sched`) and Audit log (`audit`): all `local` cards in `CF_CARDS`,
   page choices in `PF`, the page's own state (RF / YF) stays the truth; `cfClear` / `clearLink` for empty lists.
@@ -169,8 +175,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   reschedule's `from`). Final Status: Review Done / Questionnaire Done / Pending, "PMS form incomplete/errors/queries" (all
   ratings in but a blocker), "Employee on leave" / "Serving Notice" (admin sets `e.workStatus = {type, from}` in Employees ›
   Edit, from that review month on). Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
-  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules in
-  Review rules: `learningDoneMin` 60, `qMinWords` 15, `opMinSubKras` 3 (defaults filled by `migrate()`).
+  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules
+  (fixed, `RULES` in `data.js`): `learningMin` 60, `qMinWords` 15, `opMinSubKras` 3.
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
 - Reports ported from the old portal (pms.verveadvisory.com): Team report / My report (`#/yearly`, `/api/yearly`,
@@ -239,7 +245,7 @@ repeats such calls (non-JSON 502/503/504 = never reached PMS) every 4 s for up t
 `render.yaml` describes the planned org-repo Blueprint (`verve-pms-staging`, branch `feature/pms`); the live Render
 service was created by hand from the personal repo and does not use it.
 
-Check Vercel really forwards to Render: change a value on Render (`PUT /api/config {"clickupMin":4}` signed in as admin),
+Check Vercel really forwards to Render: change something on Render (e.g. a team's review window, signed in as admin),
 read it back through Vercel, then restore it. Different values = Vercel is running its own copy.
 
 ## Git workflow

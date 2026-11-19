@@ -1031,7 +1031,7 @@ const widget = (icon, title, extra, body, cls = '') => `<div class="m ${cls}"><d
 let lastHome = {};
 // decorative half circle at the right end of the navy banner
 const HALO = '<i class="halo" aria-hidden="true"><i></i></i>';
-// Review quality widget: facts the status cards do not show
+// Review insights widget (was "Review quality", renamed 2026-11-19): facts the status cards do not show
 // p = the period before (card filter "Compare"): its value shows small next to each number, e.g. "Oct 7"
 function qualityBody(h, c, p) {
   const was = v => p ? `<em class="was" title="${esc(p.label)}">${esc(p.short)} ${v}</em>` : '';
@@ -1050,7 +1050,7 @@ function qualityBody(h, c, p) {
 // /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
 const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any',
   rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sinv: 'any', sst: [], aper: 'all', awho: [], aact: [] };
-const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review quality', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
+const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review insights', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
   // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
   emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true },
   // the same pill on the report pages, Scheduling and the Audit log (Harish 2026-11-18: one filter look everywhere)
@@ -1248,7 +1248,7 @@ pages.home = async (v, opts = {}) => {
       return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
     <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
-      ${widget('award', 'Review quality' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
+      ${widget('award', 'Review insights' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
       ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? `Nothing matches these filters. ${clearLink('progress')}` : 'No teams in your scope.'}</div>`}</div>`)}
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>`;
@@ -2042,7 +2042,7 @@ pages.report = async v => {
       <div class="row" style="margin:0;gap:8px" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
     ${noDetail ? '<div class="warn">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
     ${RF.full ? fullTable(d) : reportTable(d.rows)}
-    ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningDoneMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}
+    ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}
     <p class="small">Directors see the whole organisation. Managers see their own team and everyone under them at every level. Employees do not see this report.</p>`;
   onMonth(() => pages.report(v));
   v.onclick = async e => {
@@ -2067,10 +2067,6 @@ pages.report = async v => {
 // "11:00" -> "11:00 am"
 const fmtT = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
 const calStart = () => { location.href = `/api/auth/google/start?calendar=1&origin=${encodeURIComponent(location.origin)}`; };
-// the thresholds that used to sit on a separate Settings page (admin), shown on the Scheduling page under the review windows
-const RULES = [['operationalRange', 'Operational weightage range (min,max)'], ['peopleMin', 'People weightage minimum'], ['peopleMax', 'People weightage maximum'], ['clickupMin', 'ClickUp manager rating minimum (%)'],
-  ['learningMin', 'Learning manager rating minimum (%)'], ['ratingGapFlag', 'Self vs manager gap flag (points)'], ['emailGapFlag', 'Gap highlighted in the email (points)'],
-  ['learningDoneMin', 'Learning properly done from (%)'], ['qMinWords', 'Questionnaire answer minimum words'], ['opMinSubKras', 'Operational sub-KRAs minimum']];
 // dates a review was moved to, without repeats: first date, then each new date once
 // a booked review (option A of the designs, Harish 2026-11-17): date and time in one light-blue chip, the pencil inside reschedules
 const slotCell = r => {
@@ -2111,11 +2107,10 @@ function calView(rows, windows) {
 pages.scheduling = async v => {
   if (!S.schView) { try { S.schView = localStorage.getItem('pms.schView'); } catch {} S.schView ||= 'list'; } // List or Calendar, remembered in this browser
   const d = await api('/scheduling?month=' + S.month), cal = d.calendar;
-  const rules = d.canEditWindows ? await api('/config') : null;
   // admins only watch the schedule (no booking, no calendar): the reporting managers schedule the reviews
   const asMgr = d.adminView && d.rows.some(r => r.managerOnly);
   const calCard = asMgr ? `<div class="info">You are viewing as ${esc(S.me.name)}. ${esc(S.me.name.split(' ')[0])} sees these Schedule buttons and books the reviews from their own sign-in; they are greyed out for you because admins do not schedule reviews.</div>`
-    : d.adminView ? `<div class="info">Reporting managers schedule the reviews. As admin you set the review windows and rules here; the team list shows only the people who report to ${S.me.viewingAs ? esc(S.me.name) : 'you'} directly. Use Review status report for everyone.</div>`
+    : d.adminView ? `<div class="info">Reporting managers schedule the reviews. As admin you set the review windows here; the team list shows only the people who report to ${S.me.viewingAs ? esc(S.me.name) : 'you'} directly. Use Review status report for everyone.</div>`
     : !cal.google ? `<div class="info">Calendar invites are off on this server: Google sign-in is not set up yet. Reviews can still be scheduled here.</div>`
     : cal.connected ? `<div class="calcard on">${ico('calendar')}<div><b>Google Calendar connected</b><span>Invites go out from ${esc(cal.email)}, Google emails the employee, and their manager if someone else schedules.</span></div><span class="sp"></span><button class="btn sm" id="caloff">Disconnect</button></div>`
     : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
@@ -2131,11 +2126,9 @@ pages.scheduling = async v => {
   const SF = CF.sched, anyOf = (a, x) => !a.length || a.includes(String(x));
   const rows = d.rows.filter(r => anyOf(SF.steam, r.team) && (SF.sslot === 'any' || (SF.sslot === 'booked') === !!r.scheduled)
     && (SF.sinv === 'any' || (SF.sinv === 'sent') === !!r.invite) && anyOf(SF.sst, r.status));
-  v.innerHTML = head('Review scheduling', d.adminView ? 'Review windows, review rules and where each review stands' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
+  v.innerHTML = head('Review scheduling', d.adminView ? 'Review windows and where each review stands' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
   ${calCard}
   <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
-  ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
-  <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
   <div class="row" style="align-items:center"><h2 style="margin:0">Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
   ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
   <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
@@ -2181,11 +2174,6 @@ pages.scheduling = async v => {
       if (t.dataset.cfclear) { e.preventDefault(); cfClear(t.dataset.cfclear); }
       else if (t.dataset.sv) { S.schView = t.dataset.sv; try { localStorage.setItem('pms.schView', S.schView); } catch {} pages.scheduling(v); }
       else if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
-      else if (t.id === 'sc') {
-        const b = {};
-        v.querySelectorAll('[data-c]').forEach(i => { const k = i.dataset.c; b[k] = k === 'operationalRange' ? i.value.split(',').map(Number) : Number(i.value); });
-        btnBusy(t); try { await api('/config', { method: 'PUT', body: b }); toast('Review rules saved'); } finally { btnIdle(t); }
-      }
       else if (t.id === 'calon') calStart();
       else if (t.id === 'caloff') { if (await confirmBox('Disconnect Google Calendar?', 'Invites already sent stay in calendars, but you cannot move or cancel them from PMS until you connect again.', { ok: 'Disconnect', danger: true })) { await api('/calendar/disconnect', { method: 'POST' }); toast('Google Calendar disconnected'); pages.scheduling(v); } }
       else if (t.dataset.sch) slotDialog(row(t.dataset.sch), 'schedule');
@@ -2399,7 +2387,7 @@ function allStats(st) {
     ['exe', 'review', 'Executives', by['Executive'] ?? '–', '', ['active', 'Executive']],
     ['ina', 'list', 'Article / Intern', by['Article/Intern'] ?? '–', '', ['active', 'Article/Intern']],
   ];
-  // big numbers fading into each role's colour, a faint icon in the corner (Harish picked this design, 2026-11-13)
+  // big white numbers (one colour for all, 2026-11-19), the role's colour only in the dot, a faint icon in the corner
   return `<section class="hero allstats" aria-label="All stats">${ORBS}${cards.map(([c, ic, label, n, sub, to]) =>
     `<a class="bstat ${c}" href="#/employees/${to[0]}${to[1] ? '/' + encodeURIComponent(to[1]) : ''}" data-role="${to[1]}" title="Open: ${esc(label)}"><i class="wm">${ico(ic)}</i><span class="bl">${esc(label)}</span><b class="bn">${n}</b><span class="bs">${esc(sub)}</span></a>`).join('')}</section>`;
 }
@@ -2434,7 +2422,8 @@ pages.employees = async (v, arg, grp) => {
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
   const inScope = all.filter(passF);
-  const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
+  // top-level directors carry "Directors" as their team, but it is not a team: no chip for it (they are under All departments)
+  const teamN = inScope.filter(e => e.team !== 'Directors').reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
   const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(tl(t))}: ${teamN[t]}">${teamIco(t)}${esc(tl(t))}</button>`).join('')}</div></div>`;
   const opts = (list, cur, lab = x => x) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option value="${esc(x)}" ${x === cur ? 'selected' : ''}>${esc(lab(x))}</option>`).join('');
   // anyone active can be picked: people who already lead first, then everyone else (picking one makes them a manager)
@@ -2481,7 +2470,7 @@ pages.employees = async (v, arg, grp) => {
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
   ${rows.map(e => `<tr><td><a href="${tab === 'active' ? `#/form/${e.id}/${S.month}` : `#/empforms/${e.id}`}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a>${e.workStatus ? ` <span class="badge b-amber" title="Since ${esc(monthLabel(e.workStatus.from))}">${esc((WORK_STATUS.find(w => w[0] === e.workStatus.type) || [])[1] || '')}</span>` : ''}<div class="small" style="max-width:220px;overflow-wrap:anywhere">${esc(e.code)} · ${e.email ? esc(e.email) : 'No work email'}</div></td>
   <td title="${e.role === 'director' ? 'Top level, not reviewed' : e.role === 'employee' ? 'Is reviewed by their reporting manager' : 'Has people reporting to them: reviews their team'}">${roleBadge(e.role)}</td>
-  <td>${cell(e, 'team', opts(byLabel(d.teams), e.team, tl), tl(e.team))}</td>
+  <td>${e.team === 'Directors' ? '<span class="small" title="Top-level director, not in a team">–</span>' : cell(e, 'team', opts(byLabel(d.teams), e.team, tl), tl(e.team))}</td>
   <td>${cell(e, 'designation', opts(d.designations, e.designation) + '<option value="__new">Other…</option>', e.designation)}</td>
   <td>${cell(e, 'managerId', mgrOpts(e), e.manager || 'No manager')}${e.pending ? `<div class="small" title="Planned: the current manager finishes this month's review">Moves to ${esc(e.pending.to)} from ${esc(e.pending.from)}</div>` : ''}</td>
   ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
@@ -2517,7 +2506,7 @@ pages.employees = async (v, arg, grp) => {
     const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // the Filter pill
     if (e.target.closest('#empx')) return csvSave(`Employees_${tab}_${new Date().toISOString().slice(0, 10)}.csv`, [['Code', 'Name', 'Work email', 'Designation', 'Team', 'Role', 'Reporting manager', 'Joining date', 'Work status'],
-      ...rows.map(r => [r.codeSet === false ? '' : r.code, r.name, r.email, r.designation, tl(r.team), ROLE_LABEL[r.role] || r.role, r.manager, r.joinedSet === false ? '' : r.joined, r.workStatus ? (r.workStatus.type === 'leave' ? 'On leave' : 'Serving notice') : 'Working'])]);
+      ...rows.map(r => [r.codeSet === false ? '' : r.code, r.name, r.email, r.designation, r.team === 'Directors' ? '' : tl(r.team), ROLE_LABEL[r.role] || r.role, r.manager, r.joinedSet === false ? '' : r.joined, r.workStatus ? (r.workStatus.type === 'leave' ? 'On leave' : 'Serving notice') : 'Working'])]);
     const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
     if (a === 'mdsync') {
       try { const r = await api('/master/sync', { method: 'POST' }); toast(r.changes.length ? `${r.changes.length} change${r.changes.length === 1 ? '' : 's'} brought in from the list` : 'The list has no new changes'); pages.employees(v); }
@@ -2764,7 +2753,7 @@ pages.audit = async (v, again) => {
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); cfClear(cl.dataset.cfclear); }
   };
 };
-pages.config = () => location.replace('#/scheduling'); // Settings now live on the Scheduling page (Review rules)
+pages.config = () => location.replace('#/scheduling'); // old Settings link (the review rules are fixed in the server now)
 
 boot();
 

@@ -10,7 +10,7 @@ const N = require('./notify');
 // notification helpers: the person's reporting manager, and "November 2026 review"
 const mgrOf = id => N.managerOf(id);
 const revOf = f => `${D.monthLabel(f.month)} review`;
-const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, appraisals, audit } = D;
+const { config, employees, forms, annualForms, questions, paramsVersions, auditLog, emailsOutbox, appraisals, audit, RULES } = D;
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
@@ -60,7 +60,7 @@ function formPayload(viewer, f) {
     },
     kraRequest: f.kraRequest || null,
     fy: fyLabel(month),
-    rules: { qMinWords: config.qMinWords }, // the form marks answers shorter than this
+    rules: { qMinWords: RULES.qMinWords }, // the form marks answers shorter than this
 
   };
 }
@@ -278,7 +278,7 @@ const calendarState = real => { const l = C.linked(real.id); return { google: A.
 const passwordState = (real, session) => { const rec = D.passwords[real.id]; return { has: !!rec, mustChange: !!(rec && rec.temp && session && session.pv != null) }; };
 route('GET', '/api/me', ({ user, realUser, session }) => (ensureMonthForms(), {
   password: passwordState(realUser, session),
-  ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(Boolean))].sort(),
+  ...view(user), teams: [...new Set(employees.filter(e => e.active && e.role !== 'admin').map(e => e.team).filter(t => t && t !== DIRECTORS))].sort(),
   teamLabels: Object.fromEntries([...teamNames(), 'Directors'].map(t => [t, teamLabel(t)])), months: D.fyMonths().map(m => ({ key: m, label: D.monthLabel(m), started: m <= config.currentMonth })), currentMonth: config.currentMonth, firstMonth: config.fyStartMonth, today: config.today, fy: fyLabel(config.currentMonth),
   real: { id: realUser.id, name: realUser.name, role: realUser.role }, viewingAs: realUser.id !== user.id, domain: A.ORG_DOMAIN, calendar: calendarState(realUser),
 }));
@@ -293,7 +293,7 @@ route('GET', '/api/profile', ({ user }) => {
   const unset = k => e.src === 'list' && !e[k + 'Set'];
   const w = e.managerId ? D.windowFor(e.team, config.currentMonth) : null;
   return {
-    name: e.name, code: unset('code') ? '' : e.code, email: e.email || '', designation: e.designation || '', team: e.team || '',
+    name: e.name, code: unset('code') ? '' : e.code, email: e.email || '', designation: e.designation || '', team: e.team === DIRECTORS ? '' : e.team || '',
     role: e.role, manager: mgr ? { name: mgr.name, designation: mgr.designation || '' } : null,
     director: top.id !== e.id ? top.name : '', joined: unset('joined') ? '' : e.joined || '', active: e.active !== false,
     reports: employees.filter(x => x.active && x.managerId === e.id).length,
@@ -357,7 +357,7 @@ route('GET', '/api/home', ({ user, q }) => {
     return { key: g.key, team: g.team, label: g.label, managerId: g.managerId, ...L.counts(tr), collected: tr.filter(r => r.scheduled).length, total: tr.length, window: g.window, startDay: g.days.start, endDay: g.days.end, ...windowState(g.window) };
   });
   // an admin sees every team on the dashboard, including ones just added that nobody has joined yet
-  if (user.role === 'admin') for (const t of Object.keys(config.windows).sort()) if (!teams.some(x => x.team === t)) {
+  if (user.role === 'admin') for (const t of Object.keys(config.windows).sort()) if (t !== DIRECTORS && !teams.some(x => x.team === t)) {
     const w = D.windowFor(t, month), days = config.windows[t];
     teams.push({ key: 't:' + t, team: t, label: teamLabel(t), managerId: null, ...L.counts([]), collected: 0, total: 0, window: w, startDay: days.start, endDay: days.end, ...windowState(w) });
   }
@@ -852,7 +852,7 @@ route('GET', '/api/report', ({ user, q }) => {
   const byTeam = {};
   rows.forEach(r => (byTeam[`${r.manager} / ${r.team}`] ||= []).push(r));
   return {
-    view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers, ...(q.detail === '1' && { columns: PMS_COLUMNS, rules: { opWeight: config.weights.operational, opMinSubKras: config.opMinSubKras, learningDoneMin: config.learningDoneMin, qMinWords: config.qMinWords } }),
+    view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers, ...(q.detail === '1' && { columns: PMS_COLUMNS, rules: { opWeight: config.weights.operational, opMinSubKras: RULES.opMinSubKras, learningMin: RULES.learningMin, qMinWords: RULES.qMinWords } }),
     teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, manager: rs[0].manager, team: rs[0].team, ...L.counts(rs) })),
     scope: user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
   };
@@ -1390,7 +1390,7 @@ route('GET', '/api/kpi', ({ user, q }) => {
       const rs = f.kras[k].rows;
       const wavg = key => { const w = rs.filter(r => L.has(r[key])), tw = w.reduce((a, r) => a + (+r.weight || 0), 0); return tw ? w.reduce((a, r) => a + r.weight * r[key], 0) / tw : null; };
       const s = wavg('self'), mg = wavg('mgr');
-      return [k, { weight: f.kras[k].weight, subKras: rs.length, self: round1(s), mgr: round1(mg), score: s != null && mg != null ? round1(config.selfShare * s + config.mgrShare * mg) : null }];
+      return [k, { weight: f.kras[k].weight, subKras: rs.length, self: round1(s), mgr: round1(mg), score: s != null && mg != null ? round1(RULES.selfShare * s + RULES.mgrShare * mg) : null }];
     }));
     return { month: m, label: D.monthLabel(m), status: L.reviewStatus(f), reviewDate: f.reviewDate || null, kra, rating: f.submitted ? L.monthlyRating(f) : null, submitted: f.submitted };
   });
@@ -1476,17 +1476,7 @@ function renumber() {
 
 route('GET', '/api/audit', ({ user }) => { adminOnly(user); return auditLog.slice(0, 200); });
 route('GET', '/api/config', ({ user }) => { adminOnly(user); return config; });
-route('PUT', '/api/config', ({ user, body }) => {
-  adminOnly(user);
-  // the PMS report rules are checked: a blank box would otherwise turn into 0 and switch the check off
-  const RANGE = { learningDoneMin: [10, 100, 'Learning properly done from (%)'], qMinWords: [1, 200, 'Questionnaire answer minimum words'], opMinSubKras: [1, 10, 'Operational sub-KRAs minimum'] };
-  for (const [k, [lo, hi, label]] of Object.entries(RANGE)) if (body[k] !== undefined && !(Number.isInteger(body[k]) && body[k] >= lo && body[k] <= hi)) throw bad(`${label} must be a whole number from ${lo} to ${hi}.`);
-  for (const k of ['operationalRange', 'peopleMin', 'peopleMax', 'clickupMin', 'learningMin', 'ratingGapFlag', 'emailGapFlag', 'selfShare', 'mgrShare', ...Object.keys(RANGE)]) if (body[k] !== undefined) config[k] = body[k];
-  if (body.windows) config.windows = body.windows;
-  audit(user.name, 'config updated', 'thresholds / windows');
-  employees.filter(e => e.active && ['manager', 'teamlead', 'director'].includes(e.role)).forEach(e => N.push(e.id, { type: 'change', key: `rules|${config.currentMonth}`, link: '#/report', text: `The review rules (thresholds for flags such as ClickUp, learning and rating gaps) were updated by ${user.name}.` }, user));
-  return config;
-});
+// the review rules are fixed in data.js (RULES) and cannot be changed through the API; windows use /api/windows
 // one team's review window (day of month, same every month), edited from the Scheduling page
 route('PUT', '/api/windows', ({ user, body }) => {
   adminOnly(user);
@@ -1630,10 +1620,12 @@ function watchMaster() {
 // in the app, used by the next import) and a team added here is in config.teamsAdded, so it stays while nobody is in it.
 const DIRECTORS = 'Directors'; // top-level directors; the code relies on this name
 const teamKey = t => String(t || '').trim().toLowerCase();
-const teamNames = () => [...new Set([...Object.keys(config.windows), ...employees.filter(e => e.active && e.role !== 'admin').map(e => e.team)])].filter(Boolean).sort();
+// "Directors" holds the top-level directors (not reviewed); it is kept on them but is not a team anywhere in the app (Harish 2026-11-19)
+const teamNames = () => [...new Set([...Object.keys(config.windows), ...employees.filter(e => e.active && e.role !== 'admin').map(e => e.team)])].filter(t => t && t !== DIRECTORS).sort();
 function teamName(raw, self) {
   const name = String(raw || '').trim().replace(/\s+/g, ' ');
   if (!name) throw bad('Team name is required.');
+  if (teamKey(name) === teamKey(DIRECTORS)) throw bad('Directors is not a team name in PMS (it is the role of the top-level people). Pick another name.');
   if (name.length > 40) throw bad('Keep the team name to 40 characters or fewer.');
   const clash = teamNames().find(t => t !== self && teamKey(t) === teamKey(name));
   if (clash) throw bad(`There is already a team called ${clash}.`);
