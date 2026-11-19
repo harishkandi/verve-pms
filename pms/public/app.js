@@ -2318,11 +2318,11 @@ pages.questions = async v => {
 };
 async function questionsBox(v) {
   const qs = await api('/questions');
-  const tab = S.qtab || 'text';
+  // only the text-answer questions are managed here; the rating questions stay on the review form (Harish 2026-11-19)
+  const tab = 'text';
   const list = qs.filter(q => q.type === tab && !q.to).sort((a, b) => a.order - b.order);
   v.innerHTML = `<div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico('question')}</i>Questionnaire (monthly review form):</b><span class="acts"><button class="btn sm pri" data-a="new">${ico('plus')}Add new question</button></span></div>
-  <div class="row"><div class="seg" style="margin:0"><button class="chip ${tab === 'text' ? 'on' : ''}" data-tab="text">Questions 1 to 5 (text answers)</button><button class="chip ${tab === 'rating' ? 'on' : ''}" data-tab="rating">Rating questions</button></div></div>
-  <div class="tablewrap"><table class="qtab"><tr><th>No.</th><th>Question</th><th>Answer type</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.type === 'text' ? 'Text answer' : 'Rating (0 to 5)'}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
+  <div class="tablewrap"><table class="qtab"><tr><th>No.</th><th>Question</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
   <p class="small">Changes apply from the review month you choose. Forms already submitted keep the question and answers as they were. No limit on the number of questions.</p></div>`;
   // reorder by drag-and-drop (the row moves live under the mouse) or, on the grip, with the arrow keys; saved when dropped
   const tbl = v.querySelector('table.qtab'), order = () => [...tbl.querySelectorAll('tr[data-q]')].map(r => r.dataset.q), start = order();
@@ -2352,19 +2352,17 @@ async function questionsBox(v) {
   const monthSelHtml = (sel) => `<select id="eff">${S.me.months.map(x => `<option value="${x.key}" ${x.key === sel ? 'selected' : ''}>${x.label}</option>`).join('')}</select>`;
   const dialog = (title, q) => {
     const m = modal(`<h2>${title}</h2><label class="f">Question text <i>*</i></label><textarea id="qt">${esc(q?.text || '')}</textarea>
-    <label class="f">Answer type</label><select id="qty" ${q ? 'disabled' : ''}><option value="text" ${tab === 'text' ? 'selected' : ''}>Text answer</option><option value="rating" ${tab === 'rating' ? 'selected' : ''}>Rating</option></select>
     <label class="f">Mandatory</label><select id="qm"><option value="true" ${q?.mandatory !== false ? 'selected' : ''}>Yes</option><option value="false" ${q?.mandatory === false ? 'selected' : ''}>No</option></select>
     <label class="f">Applies from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="info">Forms already submitted keep the old wording.</div>
     <div class="row"><button class="btn pri" id="ok">Save question</button><button class="btn" id="no">Cancel</button></div>`);
     m.querySelector('#no').onclick = () => m.remove();
     m.querySelector('#ok').onclick = async () => {
-      const body = { id: q?.id, text: m.querySelector('#qt').value.trim(), type: m.querySelector('#qty').value, mandatory: m.querySelector('#qm').value === 'true', from: m.querySelector('#eff').value };
+      const body = { id: q?.id, text: m.querySelector('#qt').value.trim(), type: 'text', mandatory: m.querySelector('#qm').value === 'true', from: m.querySelector('#eff').value };
       try { await api('/questions', { method: q ? 'PUT' : 'POST', body }); m.remove(); questionsBox(v); } catch (e) { toast(e.message, 'err'); }
     };
   };
   v.onclick = async e => {
     const t = e.target, a = t.dataset.a;
-    if (t.dataset.tab) { S.qtab = t.dataset.tab; questionsBox(v); }
     if (a === 'new') dialog('Add new question');
     if (a === 'edit') dialog('Edit question', qs.find(q => q.id === t.dataset.id));
     if (a === 'del') {

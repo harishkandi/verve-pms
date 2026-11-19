@@ -1411,17 +1411,15 @@ route('PUT', '/api/params', ({ user, body }) => {
 });
 
 // Questions
-// questions 6-10 (Attendance, Skills set, Teamwork, General conduct, Initiative) stay on the review form but are not
-// shown or changed on the Questionnaire page (Harish 2026-11-19); they keep their place when the others are reordered
-const NOT_IN_EDITOR = new Set(['q6', 'q7', 'q8', 'q9', 'q10']);
-const editable = q => !NOT_IN_EDITOR.has(q.id);
+// the rating questions stay on the review form but are not shown, added or changed on the Questionnaire page
+// (Harish 2026-11-19); only the text-answer questions are managed there
+const editable = q => q.type === 'text';
 const mustEditable = q => { if (!editable(q)) throw bad('This question is not changed on the Questionnaire page.'); };
 route('GET', '/api/questions', ({ user }) => { adminOnly(user); return questions.filter(editable).sort((a, b) => a.order - b.order); });
 route('POST', '/api/questions', ({ user, body }) => {
   adminOnly(user);
   if (!body.text || !body.from) throw bad('Question text and the month it applies from are required.');
-  const type = body.type === 'rating' ? 'rating' : 'text';
-  const grp = questions.filter(q => q.type === type);
+  const type = 'text'; // rating questions are not added on the Questionnaire page
   const q = { id: 'q' + Date.now(), text: body.text, type, mandatory: body.mandatory !== false, from: body.from, to: null, order: Math.max(...questions.map(x => x.order)) + 1 };
   questions.push(q); renumber();
   audit(user.name, 'question added', `${q.text} from ${q.from}`);
