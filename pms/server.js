@@ -25,12 +25,12 @@ const mustEmp = id => { const e = L.emp(+id); if (!e) throw notFound('Employee n
 
 class Redirect { constructor(url) { this.url = url; } }
 
-// how a team is shown: its name with no "Team" in front (the page puts a team icon next to it), and a team named after
-// a person uses their first name (only the label; stored names stay as in the list)
+// how a team is shown: "Team <short name>" (Fiza, 2026-11-19: Team Accounts, Team HR, Team <first name>), and a team
+// named after a person uses their first name (only the label; stored names stay as in the list)
 function teamLabel(t) {
-  if (!t) return t;
+  if (!t || t === 'Directors') return t;
   const base = employees.some(e => e.name === t) ? t.split(' ')[0] : t;
-  return base.replace(/^team\s+/i, '') || base;
+  return 'Team ' + (base.replace(/^team\s+/i, '') || base);
 }
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
@@ -293,7 +293,7 @@ route('GET', '/api/profile', ({ user }) => {
   const unset = k => e.src === 'list' && !e[k + 'Set'];
   const w = e.managerId ? D.windowFor(e.team, config.currentMonth) : null;
   return {
-    name: e.name, code: unset('code') ? '' : e.code, email: e.email || '', designation: e.designation || '', team: e.team === DIRECTORS ? '' : e.team || '',
+    name: e.name, code: unset('code') ? '' : e.code, email: e.email || '', designation: e.designation || '', department: e.department || '', team: e.team === DIRECTORS ? '' : e.team || '',
     role: e.role, manager: mgr ? { name: mgr.name, designation: mgr.designation || '' } : null,
     director: top.id !== e.id ? top.name : '', joined: unset('joined') ? '' : e.joined || '', active: e.active !== false,
     reports: employees.filter(x => x.active && x.managerId === e.id).length,
@@ -515,6 +515,7 @@ route('PUT', '/api/form', ({ user, body }) => {
     const cur = f.qa[id] || {};
     f.qa[id] = { self: selfEdit && sent(a, 'self') ? num(a.self) : cur.self, mgr: mgrFields && sent(a, 'mgr') ? num(a.mgr) : cur.mgr, remark: mgrFields && sent(a, 'remark') ? (a.remark ?? '') : cur.remark };
   }
+  L.trackReviewDay(f, config.today); // the day the last KRA manager rating goes in = the actual review date
   audit(user.name, 'save form', `${L.emp(f.empId).name} ${f.month}`);
   return formPayload(user, f);
 });
@@ -689,7 +690,7 @@ const fyName = y => `${y}-${String(y + 1).slice(2)}`;
 const blankAppraisal = () => ({ recap: [{ expectation: '', achievements: '', improvement: '' }], kraProgress: [{ kra: '', progress: '' }], strengths: '', improvements: '', operational: '', process: '', people: '', submittedAt: null });
 const appraisalPayload = (user, empId, fy = fyNow()) => {
   const e = L.emp(empId), m = e.managerId ? L.emp(e.managerId) : null, a = appraisals[`${empId}|${fy}`] || blankAppraisal();
-  return { employee: { id: e.id, name: e.name, designation: e.designation, department: e.team, reviewer: m ? m.name : 'Not assigned' }, fy: fyName(fy), fyStart: fy, form: a,
+  return { employee: { id: e.id, name: e.name, designation: e.designation, department: e.department || '', reviewer: m ? m.name : 'Not assigned' }, fy: fyName(fy), fyStart: fy, form: a,
     perms: { edit: L.canSelfEdit(user, empId) || L.canManage(user, empId) } };
 };
 route('GET', '/api/appraisal', ({ user, q }) => {
@@ -718,18 +719,16 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const month = q.month || config.currentMonth;
   // only people with a reporting manager have a review (same rule as ensureMonthForms); top-level directors are not reviewed
   L.visibleEmployees(user).filter(e => e.managerId && (e.id !== user.id || user.role === 'employee')).forEach(e => L.getForm(e.id, month));
-  // admins and directors see only the people who report to them directly (the reviews they schedule), not the whole company
-  const all = L.reportRows(user, month, { team: q.team }), directOnly = ['admin', 'director'].includes(user.role);
+  // directors see only the people who report to them directly (the reviews they schedule); admins see everyone, because
+  // they can book any review (2026-11-19)
+  const all = L.reportRows(user, month, { team: q.team }), directOnly = user.role === 'director';
   const rows = directOnly ? all.filter(r => r.managerId === user.id) : all;
   // admins keep every team's window here, because they set the windows
   const windows = windowGroups(user.role === 'admin' ? all : rows, month).map(g => ({ key: g.key, team: g.team, label: g.label, managerId: g.managerId, start: g.window.start, end: g.window.end, startDay: g.days.start, endDay: g.days.end, collectedOn: D.addDays(g.window.start, -3), collected: g.rows.filter(r => r.scheduled).length, total: g.rows.length }));
-  // admins (also while viewing as someone) only watch the schedule: the reporting managers book the reviews
   const adminView = realUser.role === 'admin';
   return { windows, canEditWindows: user.role === 'admin', adminView, directOnly, calendar: calendarState(realUser), rows: rows.map(r => {
     const f = L.peek(r.empId, month), e = L.emp(r.empId);
-    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: !adminView && L.canManage(user, r.empId),
-      // an admin viewing as a manager sees that manager's buttons greyed out (the manager books the review, not the admin)
-      managerOnly: adminView && user.role !== 'admin' && L.canManage(user, r.empId) };
+    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: L.canManage(user, r.empId), managerOnly: false };
   }) };
 });
 
@@ -781,8 +780,9 @@ function meetingNote(user, f, text) {
 }
 const meetOf = f => `${D.monthLabel(f.month).split(' ')[0]} review meeting`;
 const slotText = f => `${f.scheduledDate}${f.scheduledTime ? ' at ' + f.scheduledTime : ''}`;
+// admins may book any review too (Fiza, 2026-11-19: a manager on leave or short of time shares the dates on WhatsApp
+// or the sheet, and the admin sends the invites from their own calendar)
 const manageForm = (user, realUser, body) => {
-  if (realUser.role === 'admin') throw bad('Admins do not schedule reviews. The reporting manager schedules them.');
   const f = mustForm(user, body.empId, body.month); if (!L.canManage(user, f.empId)) throw forbid(); return f;
 };
 
@@ -852,10 +852,26 @@ route('GET', '/api/report', ({ user, q }) => {
   const byTeam = {};
   rows.forEach(r => (byTeam[`${r.manager} / ${r.team}`] ||= []).push(r));
   return {
-    view, counts: L.counts(rows), rows, teams: [...new Set(all.map(r => r.team))], managers, ...(q.detail === '1' && { columns: PMS_COLUMNS, rules: { opWeight: config.weights.operational, opMinSubKras: RULES.opMinSubKras, learningMin: RULES.learningMin, qMinWords: RULES.qMinWords } }),
-    teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, manager: rs[0].manager, team: rs[0].team, ...L.counts(rs) })),
+    view, counts: L.counts(rows), managers, teams: [...new Set(all.map(r => r.team))],
+    // Final Status can be picked by admins and by the person's managers (not by the person themself)
+    rows: q.detail === '1' ? rows.map(r => ({ ...r, canSetStatus: r.empId !== user.id && L.canManage(user, r.empId) })) : rows,
+    ...(q.detail === '1' && { columns: PMS_COLUMNS, finalStatuses: L.FINAL_STATUSES, rules: { opWeight: config.weights.operational, opMinSubKras: RULES.opMinSubKras, learningMin: RULES.learningMin, qMinWords: RULES.qMinWords } }),
+    teamCounts: Object.entries(byTeam).map(([name, rs]) => ({ name, manager: rs[0].manager, managerId: rs[0].managerId, team: rs[0].team, ...L.counts(rs) })),
     scope: user.role === 'admin' ? 'Organisation' : 'Your team and everyone under you',
   };
+});
+// Final Status picked by hand for one month (Fiza, 2026-11-19: on leave, serving notice, etc.); '' = automatic again
+route('POST', '/api/report/final-status', ({ user, body }) => {
+  const f = mustForm(user, body.empId, body.month);
+  if (f.empId === user.id || !L.canManage(user, f.empId)) throw forbid();
+  const value = String(body.status || '');
+  if (value && !L.FINAL_STATUSES.includes(value)) throw bad('Pick one of the listed statuses.');
+  const { finalStatus: before, finalStatusAuto: autoNow } = L.pmsDetail(f, L.emp(f.empId));
+  // picking the status the form already gives is the same as "automatic" (Harish 2026-11-19: one list, each status once)
+  if (value && value !== autoNow) f.finalStatusSet = { value, by: user.name, at: config.today }; else delete f.finalStatusSet;
+  const after = L.pmsDetail(f, L.emp(f.empId)).finalStatus;
+  audit(user.name, 'final status', `${L.emp(f.empId).name} ${f.month}: ${before} -> ${f.finalStatusSet ? after : `automatic (${after})`}`);
+  return { finalStatus: after, auto: !f.finalStatusSet };
 });
 // CSV export = the PMS report format sheet (management's column order), plus the flags at the end
 const PMS_COLUMNS = [['code', 'Employee Code'], ['name', 'Name'], ['doj', 'DOJ'], ['designation', 'Designation'], ['department', 'Department'],
@@ -867,7 +883,7 @@ route('GET', '/api/report.csv', ({ user, q }) => {
   const rows = L.reportRows(user, q.month || config.currentMonth, { team: q.team, manager: q.manager, status: q.status }, { detail: true });
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const cell = (k, v) => k === 'percentage' ? (v == null ? '' : `${v}%`) : k === 'escalations' ? v.join('; ') : v;
-  const head = ['Sl No', ...PMS_COLUMNS.map(c => c[1]), 'Flags'];
+  const head = ['S.No', ...PMS_COLUMNS.map(c => c[1]), 'Flags'];
   return { csv: [head, ...rows.map((r, i) => [i + 1, ...PMS_COLUMNS.map(([k]) => cell(k, r.detail[k])), r.flags.join('; ')])].map(r => r.map(esc).join(',')).join('\r\n') };
 });
 
@@ -1379,6 +1395,71 @@ route('GET', '/api/yearly', ({ user, q }) => {
     months: months.map(m => ({ key: m, label: D.monthLabel(m), open: m <= config.currentMonth })), people: blocks };
 });
 
+// Performance Analytics (Fiza, 2026-11-19; layout = Harish's pick "C2", 2026-11-19): charts only, between Review Report and
+// Team Report. Read-only. Per reviewed person: submitted months (total, KRA scores, self and manager side, the manager's
+// 0-5 parameter ratings), whether each past month's review was held on time / late / missed, and where this month's
+// review stands (meeting booked, form filled, ratings in, submitted). The page works out every card from this, and
+// each card filters on its own in the browser. Admins see everyone; directors and managers the people under them.
+const sideScore = (f, key) => { let tw = 0, t = 0;
+  L.KRAS.forEach(([k]) => { const kr = f.kras[k], rs = kr.rows.filter(r => L.has(r[key])), w = rs.reduce((a, r) => a + (+r.weight || 0), 0); if (!w) return; t += kr.weight * rs.reduce((a, r) => a + r.weight * r[key], 0) / w; tw += kr.weight; });
+  return tw ? round2(t / tw) : null; };
+route('GET', '/api/analytics', ({ user, q }) => {
+  if (!['admin', 'director', 'manager', 'teamlead'].includes(user.role)) throw forbid();
+  const curFy = +fyLabel(config.currentMonth).slice(3, 7), firstFy = +config.fyStartMonth.slice(0, 4);
+  const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy), months = D.fyMonths(fy).filter(m => m <= config.currentMonth);
+  const pool = user.role === 'admin' ? employees : L.subordinates(user.id);
+  const people = pool.filter(e => e.active && e.role !== 'admin' && e.managerId);
+  const params = L.activeQuestions(config.currentMonth).filter(x => x.type === 'rating').map(x => ({ id: x.id, label: x.text }));
+  const base = { fy, fyLabel: `FY ${fy}-${fy + 1}`, fys: Array.from({ length: curFy - firstFy + 1 }, (_, i) => firstFy + i),
+    months: months.map(m => ({ key: m, label: D.monthLabel(m) })), current: config.currentMonth, currentLabel: D.monthLabel(config.currentMonth), today: config.today,
+    params, groups: DESIG_GROUPS, scope: user.role === 'admin' ? 'Organisation' : 'Everyone under you' };
+  const who = e => { const m = L.emp(e.managerId); return { team: e.team, designation: e.designation || '', group: desigGroup(e), managerId: e.managerId, manager: m ? m.name : '' }; };
+  if (q.sample === '1') return { ...base, ...sampleAnalytics(people, months, params, who), sample: true };
+  const rows = people.map(e => {
+    const scores = {}, timing = {};
+    for (const m of months) {
+      const f = L.peek(e.id, m);
+      if (!f) continue;
+      if (m < config.currentMonth) { const d = L.dueInfo(f).due; timing[m] = d === 'Within due date' ? 'on' : d === 'After due date' ? 'late' : 'missed'; }
+      if (!f.submitted || L.isNewJoiner(f)) continue;
+      const sm = L.kraSummary(f), k = Object.fromEntries(sm.kras.map(x => [x.key, x.subKras ? round2(x.scoreRaw) : null]));
+      const pr = {}; params.forEach(p => { const a = f.qa[p.id]; if (a && a.mgr != null && a.mgr !== '') pr[p.id] = +a.mgr; });
+      scores[m] = { total: sm.rating, operational: k.operational, process: k.process, people: k.people, self: sideScore(f, 'self'), mgr: sideScore(f, 'mgr'), params: pr };
+    }
+    const f = L.peek(e.id, config.currentMonth);
+    const cycle = f ? { scheduled: !!f.scheduledDate, meeting: f.scheduledDate || null, filled: L.formStatus(f) === 'Filled', rated: L.reviewStatus(f) === 'Review Completed', submitted: !!f.submitted } : null;
+    return { id: e.id, name: e.name, ...who(e), scores, timing, cycle };
+  });
+  return { ...base, people: rows };
+});
+
+// Sample data for Performance Analytics (Harish 2026-11-19: to see the charts before real reviews are submitted).
+// Made up on each request, never saved. Real teams, designation groups and managers, but placeholder names ("Sample
+// person 07"), so invented scores are never shown next to a real colleague. Fixed seed: the same sample every time.
+function sampleAnalytics(people, months, params, who) {
+  let s = 20261119;
+  const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+  const done = months.filter(m => m < config.currentMonth); // completed months only, like real submitted reviews
+  const [cy, cm] = config.currentMonth.split('-').map(Number), last = new Date(cy, cm, 0).getDate();
+  const rows = people.map((e, n) => {
+    const level = 52 + rnd() * 38, slope = (rnd() - 0.35) * 4, kraLean = [rnd() * 12 - 6, rnd() * 12 - 6, rnd() * 12 - 6], bias = rnd() < 0.12 ? 15 + rnd() * 9 : rnd() * 9 - 3;
+    const scores = {}, timing = {};
+    done.forEach((m, i) => {
+      const r = rnd(); timing[m] = r < 0.62 + i * 0.04 ? 'on' : r < 0.9 ? 'late' : 'missed';
+      if (timing[m] === 'missed' || rnd() < 0.04) return;
+      const total = round2(clamp(level + slope * i + (rnd() - 0.5) * 8, 28, 98));
+      const [operational, process, peopleK] = kraLean.map(d => round2(clamp(total + d + (rnd() - 0.5) * 8, 10, 100)));
+      const pr = {}; params.forEach(p => { pr[p.id] = clamp(Math.round(1.2 + total / 100 * 3.6 + (rnd() - 0.5) * 1.6), 1, 5); });
+      scores[m] = { total, operational, process, people: peopleK, self: round2(clamp(total + 0.7 * bias, 10, 100)), mgr: round2(clamp(total - 0.3 * bias, 10, 100)), params: pr };
+    });
+    const st = rnd(), day = Math.min(last, 20 + Math.floor(rnd() * (last - 19)));
+    const cycle = { scheduled: st < 0.9, meeting: st < 0.9 ? `${config.currentMonth}-${String(day).padStart(2, '0')}` : null, filled: st < 0.82, rated: st < 0.63, submitted: st < 0.47 };
+    return { id: null, name: `Sample person ${String(n + 1).padStart(2, '0')}`, ...who(e), scores, timing, cycle };
+  });
+  return { people: rows };
+}
+
 route('GET', '/api/kpi', ({ user, q }) => {
   adminOnly(user);
   const root = scopeRoot(user, q.id);
@@ -1406,7 +1487,7 @@ route('PUT', '/api/params', ({ user, body }) => {
   const v = { from: body.from, data: body.data };
   idx >= 0 ? paramsVersions[idx] = v : paramsVersions.push(v);
   audit(user.name, 'parameters summary updated', `applies from ${body.from}`);
-  N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `params|${body.from}`, link: '#/params', text: `The Parameters summary was updated. It applies from ${D.monthLabel(body.from)}.` }, user));
+  N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `params|${body.from}`, link: '#/params', text: `The Parameters Summary was updated. It applies from ${D.monthLabel(body.from)}.` }, user));
   return { ok: true };
 });
 
@@ -1642,7 +1723,7 @@ function windowDays(body) {
 }
 const teamInfo = () => teamNames().map(t => {
   const R = config.teamRenames || {};
-  return { name: t, members: employees.filter(e => e.active && e.role !== 'admin' && e.team === t).length, window: config.windows[t] || D.DEFAULT_WINDOW,
+  return { name: t, label: teamLabel(t), members: employees.filter(e => e.active && e.role !== 'admin' && e.team === t).length, window: config.windows[t] || D.DEFAULT_WINDOW,
     fixed: t === DIRECTORS, added: (config.teamsAdded || []).includes(t), sheetName: Object.keys(R).filter(k => R[k] === t) };
 });
 // the Teams page (admin menu): every team with its active members, window and sheet name

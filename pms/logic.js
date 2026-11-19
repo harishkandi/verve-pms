@@ -282,8 +282,17 @@ function reviewStatus(f) {
   return f.submitted || ratingsComplete(f) ? 'Review Completed' : 'Review Pending';
 }
 const statusOf = f => ({ status: reviewStatus(f), form: formStatus(f) });
-// the actual review date is the Review Date entered on the monthly form
-const actualDate = f => f.reviewDate || null;
+// the actual review date is the day the manager's ratings were all in (Fiza, 2026-11-19: neither the scheduled date nor
+// the day the form was saved); older forms, and new joiners without KRAs, fall back to the Review Date on the form
+const actualDate = f => f.mgrRatedOn || f.reviewDate || null;
+const allMgrRated = f => !isNewJoiner(f) && KRAS.some(([k]) => f.kras[k].rows.length) && KRAS.every(([k]) => f.kras[k].rows.every(r => has(r.mgr)));
+// called after every form save: the first save with every KRA manager-rated sets the review day (and the form's
+// Review Date to match); taking a rating out again clears it, so the day the last rating goes in counts
+function trackReviewDay(f, today) {
+  if (f.locked) return;
+  if (allMgrRated(f)) { if (!f.mgrRatedOn) { f.mgrRatedOn = today; f.reviewDate = today; } }
+  else delete f.mgrRatedOn;
+}
 function dueInfo(f) {
   const e = emp(f.empId), w = D.windowOf(e, f.month);
   const actual = actualDate(f), due = actual ? (actual <= w.end ? 'Within due date' : 'After due date') : 'Pending';
@@ -308,7 +317,14 @@ function directorOf(e) {
   for (let m = emp(e.managerId); m && !seen.has(m.id); m = emp(m.managerId)) { seen.add(m.id); top = m; }
   return top;
 }
+// the choices an admin or the person's manager can pick in the Review Report (Fiza, 2026-11-19); "Review not done" is
+// the same as Review Pending. A pick is kept for that month (f.finalStatusSet) until someone puts it back to automatic.
+const FINAL_STATUSES = ['Review Pending', 'Review Done', 'Questionnaire Pending', 'Questionnaire Done', 'PMS form incomplete/errors/queries', 'Employee on leave', 'Serving Notice', 'N/A'];
 function finalStatus(f, e) {
+  if (f.finalStatusSet && FINAL_STATUSES.includes(f.finalStatusSet.value)) return f.finalStatusSet.value;
+  return autoFinalStatus(f, e);
+}
+function autoFinalStatus(f, e) {
   if (f.month > config.currentMonth) return 'N/A';
   const nj = isNewJoiner(f);
   if (f.submitted) return nj ? 'Questionnaire Done' : 'Review Done';
@@ -385,8 +401,9 @@ function pmsDetail(f, e) {
   const texts = activeQuestions(f.month, f).filter(q => q.type === 'text');
   return {
     code: e.src === 'list' && !e.codeSet ? '' : e.code || '', name: e.name, doj: e.src === 'list' && !e.joinedSet ? '' : e.joined || '',
-    designation: e.designation || '', department: e.team || '', manager: mgr ? mgr.name : '', director: dir ? dir.name : '',
+    designation: e.designation || '', department: e.department || '', manager: mgr ? mgr.name : '', director: dir ? dir.name : '',
     scheduled: firstScheduled(f), reschedules: rescheduleCount(f), actual: actualDate(f), finalStatus: finalStatus(f, e),
+    finalStatusAuto: autoFinalStatus(f, e), finalStatusBy: f.finalStatusSet ? f.finalStatusSet.by : null,
     opSet: nj ? 'N/A' : yn(opOk),
     sop: nj ? 'N/A' : yn(sop.length), sopKra: sop.map(r => noLinks(r.selfRemark) || r.kpi).filter(Boolean).join('; '),
     sopLink: !sop.length ? 'N/A' : yn(sop.every(r => hasLink(r.selfRemark))),
@@ -463,4 +480,4 @@ function buildEmail(managerId, month) {
   return { to: m.name, subject: `PMS review summary, ${m.team}, ${D.monthLabel(month)}`, team: m.team, managerId, month, counts: counts(rows.map(r => ({ status: r.st }))), sections: sec, attachment: `PMS_${m.team}_${D.monthLabel(month).replace(' ', '')}.csv` };
 }
 
-module.exports = { statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
+module.exports = { FINAL_STATUSES, trackReviewDay, statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
