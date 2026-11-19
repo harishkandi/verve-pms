@@ -211,7 +211,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
-  `private/state.before-codes-2026-11-19.json`); staging not yet. Full details headings are centred, compact, at most
+  `private/state.before-codes-2026-11-19.json`) and to STAGING the same evening (already had them; backup
+  `private/staging-backup-2026-11-19.json`). Full details headings are centred, compact, at most
   two lines; every dropdown arrow uses `--vr-caret` (navy, yellow in dark mode).
   Departments (Harish 2026-11-19, "use department names properly"): the REAL department (Finance & Accounts, HR & Admin,
   Sales Team, Cloud Data, Social Media) from the Department column of "Task_List_HRMS_Tool - Employee_List" is its own
@@ -219,7 +220,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   the codes; kept by list imports). Everything labelled "Department" shows it (Review Report Full details + CSV,
   Annual review, Profile › Work details); the TEAM (`e.team`, team sheet) is unchanged and still drives reporting lines,
   windows, team tabs and filters. Applied to LOCAL data 2026-11-19 (backup `private/state.before-departments-2026-11-19.json`),
-  staging not yet. No department in the PDF: the 4 directors and one consultant. DOJ and April-October
+  and STAGING (2026-11-19, 76 people incl. 5 inactive; Render redeployed with an empty commit right after so its
+  in-memory copy did not save over it). No department in the PDF: the 4 directors and one consultant. DOJ and April-October
   history: Fiza / Vidya still to share. Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
   KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules
   (fixed, `RULES` in `data.js`): `learningMin` 60, `qMinWords` 15, `opMinSubKras` 3.
