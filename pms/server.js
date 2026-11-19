@@ -1411,7 +1411,12 @@ route('PUT', '/api/params', ({ user, body }) => {
 });
 
 // Questions
-route('GET', '/api/questions', ({ user }) => { adminOnly(user); return questions.slice().sort((a, b) => a.order - b.order); });
+// questions 6-10 (Attendance, Skills set, Teamwork, General conduct, Initiative) stay on the review form but are not
+// shown or changed on the Questionnaire page (Harish 2026-11-19); they keep their place when the others are reordered
+const NOT_IN_EDITOR = new Set(['q6', 'q7', 'q8', 'q9', 'q10']);
+const editable = q => !NOT_IN_EDITOR.has(q.id);
+const mustEditable = q => { if (!editable(q)) throw bad('This question is not changed on the Questionnaire page.'); };
+route('GET', '/api/questions', ({ user }) => { adminOnly(user); return questions.filter(editable).sort((a, b) => a.order - b.order); });
 route('POST', '/api/questions', ({ user, body }) => {
   adminOnly(user);
   if (!body.text || !body.from) throw bad('Question text and the month it applies from are required.');
@@ -1426,6 +1431,7 @@ route('POST', '/api/questions', ({ user, body }) => {
 route('PUT', '/api/questions', ({ user, body }) => {
   adminOnly(user);
   const q = questions.find(x => x.id === body.id); if (!q) throw bad('Not found');
+  mustEditable(q);
   if (!body.from) throw bad('Choose the month the change applies from.');
   // keep the earlier wording for earlier months by closing the old one and adding a new one
   if (body.text !== q.text || body.mandatory !== q.mandatory) {
@@ -1444,6 +1450,7 @@ route('PUT', '/api/questions', ({ user, body }) => {
 route('POST', '/api/questions/delete', ({ user, body }) => {
   adminOnly(user);
   const q = questions.find(x => x.id === body.id); if (!q) throw bad('Not found');
+  mustEditable(q);
   if (!body.from) throw bad('Choose the month from which the question is removed.');
   q.to = body.from; audit(user.name, 'question deleted', `${q.text} from ${body.from}`);
   N.reviewPeople().forEach(p => N.push(p.id, { type: 'change', key: `questions|${body.from}`, ...(p.managerId && { link: N.formLink(p.id, config.currentMonth) }), text: `The review questionnaire changes from ${D.monthLabel(body.from)}.` }, user));
@@ -1453,7 +1460,7 @@ route('POST', '/api/questions/delete', ({ user, body }) => {
 route('POST', '/api/questions/reorder', ({ user, body }) => {
   adminOnly(user);
   const type = body.type === 'rating' ? 'rating' : 'text';
-  const grp = questions.filter(q => !q.to && q.type === type).sort((a, b) => a.order - b.order);
+  const grp = questions.filter(q => !q.to && q.type === type && editable(q)).sort((a, b) => a.order - b.order);
   const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
   if (ids.length !== grp.length || new Set(ids).size !== ids.length || !grp.every(q => ids.includes(q.id))) throw bad('The question list changed. Reload the page and try again.');
   const was = Object.fromEntries(grp.map((q, i) => [q.id, i + 1])); // position before the move, for the audit log

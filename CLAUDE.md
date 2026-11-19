@@ -101,7 +101,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   admin sets them in Employees › Edit (`codeSet` / `joinedSet` flags). The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
   removed it, 2026-11-12). Admins get a grouped menu (Reporting / Questions
   open as sub-menus). Settings › Questionnaire is its own page (`#/questions`, `pages.questions` → `questionsBox`);
-  Parameters summary (`#/params`) shows only the parameters (Harish 2026-11-19; old `#/params/questions` redirects). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
+  Parameters summary (`#/params`) shows only the parameters (Harish 2026-11-19; old `#/params/questions` redirects).
+  Questions 6-10 (Attendance ... Initiative, ids q6-q10) stay on the review form but are left out of the Questionnaire
+  page and cannot be edited, deleted or reordered there (`NOT_IN_EDITOR` in `server.js`, Harish 2026-11-19). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
   duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
   reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
   click to drill down; opened from the Employees page button and names, highlights Employees › Active in the menu (Employees is a menu group with Active / Inactive, 2026-11-16);
