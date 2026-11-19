@@ -79,7 +79,12 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   flat deep navy `--vr-navy-900` (Harish 2026-11-18: darker than the logo blue `#234788`, no glow orbs, no see-through
   white highlight; open page = logo blue `--vr-navy-800`). A panel-icon button at its top right (next to the logo; Harish picked it over an arrow) shrinks it to icons
   (`sideSet` / `navFly` in `app.js`, `#app.mini`, stored as `pms.sideMini`): names on hover, menu groups open as a pop-out.
-  The count cards stay light-tinted (he rejected solid navy cards the same day). Built
+  The count cards stay light-tinted (he rejected solid navy cards the same day). Yellow actions + soft page (Harish
+  2026-11-19, managers like the navy look): every button / pill / dropdown button is the portal yellow (`--vr-pms-y`),
+  delete stays red, switches green; dropdown fields pale yellow (`--vr-pms-y-50`), the chosen dropdown item yellow;
+  selected tabs stay navy (blue = where you are, yellow = what you can do); page background `--vr-page` (soft
+  blue-grey, not pure white), cards / tables / top bar stay white. Block "Yellow actions and a soft page" at the end of
+  the styles in `index.html`. Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"

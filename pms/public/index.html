@@ -1325,6 +1325,29 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 .opf-end{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
 @media (max-width:760px){.opf-bar{grid-template-columns:1fr 1fr}.opf-bar #toqa{grid-column:1/-1}.opf-ctl{min-width:0;width:100%}.opf-band{font-size:17px}.opf-sec h3{font-size:17px}}
 
+/* =====================================================================
+   Yellow actions and a soft page (Harish 2026-11-19, from the managers: keep the navy / light-blue look, which matches
+   the official portal, but every button, pill and dropdown is the portal's yellow, and the page is not pure white).
+   Blue = where you are (side panel, selected tab, table heads); yellow = what you can do; red stays for delete,
+   green for the on/off switches. Cards, tables and the top bar stay white so they stand out on the soft page.
+   ===================================================================== */
+:root{--vr-page:#f3f5fa;--vr-pms-y-50:#fff8e1;--vr-pms-y-line:#ffe08a}
+.dark{--vr-page:#0f1729;--vr-pms-y-50:#2c2618;--vr-pms-y-line:#5c4a14}
+body{background-color:var(--vr-page)}
+/* every button except delete: solid yellow, like View Question-Answer / Apply Filter on the portal */
+.btn:not(.dng),a.btn:not(.dng),.cfpill,.dd-btn:not(.h1-pick),.dd-btn.exp{border-color:var(--vr-pms-y);background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
+.btn:not(.dng):hover:not(:disabled),.cfpill:hover,.cfpill[aria-expanded="true"],.dd-btn:not(.h1-pick):hover,.dd-btn.exp:hover{border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
+.btn:not(.dng) svg,.cfpill svg,.dd-btn:not(.h1-pick) svg,.dd-btn:not(.h1-pick) .chev,.dd-btn.exp svg{color:var(--vr-pms-y-text)!important}
+#view a.btn:hover{text-decoration:none}
+/* a card filter that is on: the same yellow, bold, with a darker edge */
+.cfpill.on{border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
+/* dropdown fields: pale yellow with a yellow edge; the chosen item in a dropdown list is yellow */
+select,select.cell{border-color:var(--vr-pms-y-line);background-color:var(--vr-pms-y-50)}
+select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-50)}
+.pick-i:hover:not(:disabled),.pick-i:focus-visible,.dd-item:hover:not(:disabled),.dd-item:focus-visible{background:var(--vr-pms-y-50)}
+.pick-i.on,.dd-item.on{background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
+.pick-i.on svg,.dd-item.on>svg{color:var(--vr-pms-y-text)}
+
 @media print{
   .side,.topbar,.ibtn,.btn,.toast{display:none!important}
   #app{display:block;height:auto;overflow:visible}#main{overflow:visible;padding:0}
