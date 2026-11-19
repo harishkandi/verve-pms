@@ -1709,6 +1709,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, headers);
     return fs.createReadStream(file).pipe(res);
   }
+  // keep-awake check for an uptime pinger: no sign-in, no database, no reminders
+  if (url.pathname === '/api/health') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(req.method === 'HEAD' ? undefined : '{"ok":true}'); }
   let raw = '';
   req.on('data', c => raw += c);
   req.on('end', async () => {

@@ -227,6 +227,12 @@ then `curl -b j localhost:3000/api/me` (ids follow the list order; the test admi
 | Frontend mirror | Vercel project `verve-pms` → https://verve-pms.vercel.app | static `pms/public` only; `/api/*` rewritten to Render via `pms/vercel.json` (root = `pms`) or `pms/public/vercel.json` (root = `pms/public`). Must never run `server.js` itself, or it keeps a separate copy of the data |
 | Database | Neon org "Verve" `org-super-credit-06911774`, project `verve-pms` `winter-truth-42259263`, branch `production`, Singapore | use the pooled URL (`-pooler` host). Local copy in repo-root `.env.local` (git-ignored, written by `neon init`) |
 
+502s (2026-11-19): the free Render service sleeps after 15 idle minutes; the first call after that (every morning)
+waits for it to start, and Vercel's `/api` forwarder or Render answers 502/503/504 meanwhile. `apiCall` in `app.js`
+repeats such calls (non-JSON 502/503/504 = never reached PMS) every 4 s for up to 2 min. `GET|HEAD /api/health`
+(no sign-in, no DB) is for an uptime pinger every 10 min to keep Render awake (one always-on free service fits the
+750 free hours a month).
+
 `render.yaml` describes the planned org-repo Blueprint (`verve-pms-staging`, branch `feature/pms`); the live Render
 service was created by hand from the personal repo and does not use it.
 

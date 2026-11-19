@@ -16,14 +16,35 @@ async function api(path, opts = {}) {
   loadStart();
   try { return await apiCall(path, opts); } finally { loadEnd(); if (btn) btnIdle(btn); }
 }
+// The free server sleeps after 15 idle minutes. While it starts, Vercel's forwarder or Render answers
+// 502/503/504 with a page that is not ours (not JSON), or the connection drops. Such a call never reached
+// PMS, so it is sent again every few seconds for up to 2 minutes instead of showing "Server error (502)".
+// Our own server always answers JSON, so its errors (e.g. a 502 from Google Calendar) are never repeated.
+const WAKE_WAIT = 120000, WAKE_STEP = 4000;
 async function apiCall(path, opts) {
-  const res = await fetch('/api' + path, {
-    method: opts.method || 'GET', credentials: 'same-origin',
-    // tells the server who this tab was opened for, so a sign-in in another tab cannot act through this one
-    headers: { 'Content-Type': 'application/json', ...(S.me && { 'X-PMS-User': `${S.me.id}:${S.me.real.id}` }) },
-    body: opts.method && opts.method !== 'GET' ? JSON.stringify(opts.body || {}) : undefined,
-  });
-  const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
+  const get = !opts.method || opts.method === 'GET', until = Date.now() + WAKE_WAIT;
+  let res, data;
+  for (;;) {
+    let retry = false;
+    try {
+      res = await fetch('/api' + path, {
+        method: opts.method || 'GET', credentials: 'same-origin',
+        // tells the server who this tab was opened for, so a sign-in in another tab cannot act through this one
+        headers: { 'Content-Type': 'application/json', ...(S.me && { 'X-PMS-User': `${S.me.id}:${S.me.real.id}` }) },
+        body: get ? undefined : JSON.stringify(opts.body || {}),
+      });
+      data = await res.json().catch(() => null);
+      retry = !data && [502, 503, 504].includes(res.status);
+      if (!data) data = { error: `Server error (${res.status})` };
+    } catch (e) {
+      // no answer at all: repeat reads; a change might have reached the server, so it is not sent twice
+      if (!get || Date.now() > until) throw new Error('Could not reach PMS. Check your connection and try again.');
+      retry = true;
+    }
+    if (!retry || Date.now() > until) break;
+    loadMsg(WAKE_MSG);
+    await new Promise(r => setTimeout(r, WAKE_STEP));
+  }
   if (res.status === 401 && S.me) { S.me = null; S.month = null; boot(); }
   // signed in with a temporary password: the server allows nothing else until the person picks their own
   if (res.status === 403 && data.code === 'PASSWORD_CHANGE' && S.me) { start(); return new Promise(() => {}); }
