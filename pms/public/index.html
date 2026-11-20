@@ -1603,6 +1603,12 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 .spin{color:var(--vr-spin);animation:spin .8s steps(8) infinite}
 .btn .bspin svg,.cfpill .bspin svg,.pill .bspin svg{color:var(--vr-navy-800)!important}
 .btn.dng .bspin,.btn.dng .bspin svg{color:inherit!important}
+/* a little larger (Harish 2026-11-20: "make larger somewhat"); buttons only a touch, so they keep their height */
+.loading{gap:10px}.loading svg{width:24px;height:24px}
+.boot .loading{gap:14px;font-size:15px}.boot .loading svg{width:40px;height:40px}
+.tb-load .loading{gap:8px}.tb-load svg{width:18px;height:18px}
+.bspin svg{width:18px;height:18px}.btn.sm .bspin svg{width:16px;height:16px}
+.pal-none .spin svg,.cfp-empty .spin svg{width:18px;height:18px}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:1.6s}}
 </style>
 </head>
