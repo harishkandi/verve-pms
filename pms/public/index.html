@@ -1453,7 +1453,6 @@ select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-
 .ax-pillt{fill:var(--vr-anx-pill-ink);font:800 13px var(--font)}
 .anx [data-tip]{cursor:pointer;outline:none}
 .anx [data-tip]:focus-visible{outline:2px solid var(--vr-anx-yellow);outline-offset:2px}
-.anfade:hover .m{opacity:.3;transition:opacity .15s}.anfade .m:hover,.anfade .m:focus{opacity:1}
 .anrows{display:grid;gap:8px;margin-top:6px}
 .antabs{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 4px}
 .antab{padding:4px 10px;border:1px solid var(--vr-anx-line);border-radius:999px;background:var(--vr-anx-card);color:var(--vr-anx-ink2);font:inherit;font-size:12px;font-weight:600;line-height:16px;cursor:pointer;transition:background-color .15s,color .15s,border-color .15s}
@@ -1492,10 +1491,66 @@ select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-
 .anal p{margin:0;font-size:13px;line-height:18px;color:var(--vr-anx-ink2)}.anal p b{color:var(--vr-anx-ink)}
 .anlink{padding:0;border:0;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--vr-anx-yellow);text-decoration:none;cursor:pointer}
 .anlink:hover{text-decoration:underline}
-#antip{position:fixed;z-index:60;max-width:280px;padding:8px 11px;border-radius:10px;background:var(--vr-anx-tip);color:var(--vr-anx-tip-ink);font-size:12.5px;line-height:1.45;pointer-events:none;box-shadow:0 10px 30px var(--vr-anx-shadow)}
+/* tooltip, Bklit UI style (Harish 2026-11-20): a card like the charts' own, bold title, one row per series with its dot and
+   the number on the right, an optional footer line under a hairline */
+#antip{position:fixed;z-index:60;min-width:150px;max-width:280px;padding:10px 12px;border:1px solid var(--vr-anx-line);border-radius:12px;background:var(--vr-anx-card);color:var(--vr-anx-ink2);font-size:12.5px;line-height:1.45;pointer-events:none;box-shadow:0 14px 34px -10px var(--vr-anx-shadow);animation:an-tip .14s ease-out}
+#antip b{color:var(--vr-anx-ink)}
+#antip .tt{display:block;margin-bottom:6px;font-size:13px;font-weight:700}
+#antip .ts{display:block;margin:-4px 0 6px;font-size:12px;color:var(--vr-anx-muted)}
+#antip .tr{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:10px;align-items:center;margin-top:3px}
+#antip .tr i{width:8px;height:8px;border-radius:50%}
+#antip .tr b{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+#antip .tr+.tf{margin-top:7px;padding-top:7px;border-top:1px solid var(--vr-anx-line2)}
+#antip .tf{display:block;font-size:12px;color:var(--vr-anx-muted)}
+@keyframes an-tip{from{opacity:0;transform:translateY(3px)}}
+
+/* Bklit UI hover (Harish 2026-11-20, from his Bklit UI recording): marks and legend rows that share a data-hk key light up
+   together and the rest of the card dims (anTipWire sets .hot); month labels turn into a pill; pie slices pop out */
+.anx [data-hk]{transition:opacity .2s ease}
+.anc[data-hot] [data-hk]:not(.hot){opacity:.32}
+.ax-xp{fill:var(--vr-anx-pill);opacity:0;transition:opacity .15s}
+.hot>.ax-xp{opacity:1}.hot>.ax-xt{fill:var(--vr-anx-pill-ink);font-weight:700}
+.anfun .hot .ax-pill{fill:var(--vr-anx-yellow);stroke:none}.anfun .hot .ax-pillt{fill:var(--vr-anx-yink)}
+.pslice{transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .2s ease}
+.pslice.hot{transform:translate(var(--dx),var(--dy))}
+.anpie svg{overflow:visible}
+.anleg>div{margin:-4px -8px;padding:4px 8px;border-radius:8px;transition:background-color .15s,opacity .2s}
+.anleg>div.hot{background:var(--vr-anx-line2)}
+.anrows .anpb{display:block;grid-column:1/-1;height:4px;margin-top:-3px;overflow:hidden;border-radius:2px;background:var(--vr-anx-line2);text-decoration:none}
+.anpb s{display:block;height:100%;border-radius:2px;text-decoration:none;transform-origin:0 50%}
+/* sparkline (Parameter rating): thin line, yellow end dot, dashed crosshair + dot on hover */
+.sp-l{fill:none;stroke:var(--vr-anx-series);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100 100}
+.sp-end{fill:var(--vr-anx-yellow);stroke:var(--vr-anx-card);stroke-width:1.5}
+.sp-x{opacity:0;transition:opacity .12s}.hot>.sp-x{opacity:1}
+line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
+.sp-d{fill:var(--vr-anx-series);stroke:var(--vr-anx-card);stroke-width:2}
+/* Bklit UI entrance, only on a card that just came in or changed (.anin, set by anDraw); none when less motion is asked */
+@media (prefers-reduced-motion:no-preference){
+  .anin .grow{transform-box:fill-box;transform-origin:50% 100%;animation:an-grow .75s cubic-bezier(.34,1.56,.64,1) backwards;animation-delay:calc(var(--i,0) * 70ms)}
+  .anin .wipe{transform-box:fill-box;transform-origin:0 50%;animation:an-wipe .7s cubic-bezier(.22,1,.36,1) backwards;animation-delay:calc(var(--i,0) * 140ms)}
+  .anin .fin{animation:an-fade .45s ease-out backwards;animation-delay:calc(var(--i,0) * 140ms + 350ms)}
+  .anin .ringa{animation:an-ring 1.1s cubic-bezier(.22,1,.36,1) backwards;animation-delay:calc(var(--i,0) * 130ms)}
+  .anin .sweep{animation:an-sweep 1s cubic-bezier(.45,0,.2,1) backwards}
+  .anin .sp-l{animation:an-sweep 1.1s ease-out backwards}
+  .anin .sp-end{animation:an-fade .3s ease-out 1s backwards}
+  .anin .gn{animation:an-lit .35s ease-out backwards;animation-delay:calc(var(--i,0) * 28ms)}
+  .anin .pop,.anin .ansqs i,.anin .ancal .dd{transform-box:fill-box;transform-origin:50% 50%;animation:an-pop .45s cubic-bezier(.34,1.56,.64,1) backwards}
+  .anin .pop{animation-delay:calc(var(--i,0) * 14ms)}
+  .anin .ansqs i{animation-delay:calc(var(--i,0) * 35ms)}
+  .anin .ancal .dd{animation-delay:calc(var(--i,0) * 40ms)}
+  .anin .anpb s{animation:an-bar .9s cubic-bezier(.22,1,.36,1) .2s backwards}
+}
+@keyframes an-grow{from{transform:scaleY(0)}}
+@keyframes an-wipe{from{transform:scaleX(0);opacity:.3}}
+@keyframes an-fade{from{opacity:0;transform:translateY(4px)}}
+@keyframes an-ring{from{stroke-dasharray:0 100}}
+@keyframes an-sweep{from{stroke-dashoffset:100}}
+@keyframes an-lit{from{opacity:.15}}
+@keyframes an-pop{from{opacity:0;transform:scale(.4)}}
+@keyframes an-bar{from{transform:scaleX(0)}}
 @media (max-width:1100px){.anc.c3,.anc.c6{grid-column:span 6}.anc.c4,.anc.c5,.anc.c8,.anc.c12{grid-column:span 12}}
 @media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}}
-@media (prefers-reduced-motion:reduce){.anfade .m{transition:none}}
+@media (prefers-reduced-motion:reduce){.anx [data-hk],.pslice,.anleg>div,.sp-x{transition:none}#antip{animation:none}}
 
 /* =====================================================================
    Compact filter panel (Harish 2026-11-19: "small premium look like Apple design filter with short size"). One override

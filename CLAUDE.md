@@ -267,7 +267,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   artifact claude.ai/artifact/S7ZGYd2y1BTUxJaAwRu2kp): `.anx` with `--vr-anx-*` tokens: LIGHT by default (white cards on
   the page, like the rest of PMS), the dark command-centre panel only in the app's dark mode (`.dark` tokens; Harish
   2026-11-19: "light look, dark only when I switch globally"). 12 cards: Average rating (notched gauge, 75 mark), Strong performers (month bars), Parameter rating (notch bar /5),
-  Who is moving (dot per person up / steady / down), Review cycle funnel for this month (layered straight-edge bands, %
+  Who is moving (dot per person up / steady / down), Review cycle funnel for this month (layered bands, %
   pills; due → meeting booked → filled → ratings in → submitted; Remind button = `remindAll()`), KRA scores (rings),
   Reviews held on time (on time / late / missed per finished month, from `dueInfo`), Rating bands (tick donut),
   Parameters = ONE pie card (`anPar`): the parameter (Attendance, General conduct, ...) is picked with tabs ON THE CARD
@@ -279,7 +279,17 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `free: true` keeps a saved pick whose choices only load later); no other filters on the page. API rows per person:
   team, group, managerId / manager, `scores[month]` (submitted only: total, KRAs, self, mgr, params), `timing[month]`
   (on / late / missed, finished months), `cycle` (this month). Scores end at the latest finished month with data. Hover
-  numbers: `#antip` (`anTipWire`). FY + `sample` kept in `localStorage` `pms.analytics`. A "Sample data" switch (Harish 2026-11-19, `?sample=1`, `sampleAnalytics()` in
+  numbers: `#antip` (`anTipWire`). FY + `sample` kept in `localStorage` `pms.analytics`.
+  Bklit UI look and motion (Harish 2026-11-20, screen recording of bklit.com charts; Bklit is React/shadcn, so it is
+  rebuilt by hand in vanilla SVG/CSS, never installed): he wants Bar, Funnel, Pie, Ring, Sparkline, Heatmap and the
+  tooltip; NOT radar, scatter, sunburst, background patterns / grid, choropleth map. Entrance plays only on cards whose
+  HTML changed (`AN_LAST` vs `out` in `anDraw` adds `.anin`; CSS keyframes `an-*`, off under reduced motion; `num()` +
+  `anCount()` count numbers up). Bars spring up (`.grow`), funnel steps curve into each other and wipe in (`.wipe` /
+  `.fin`), pie and band donut sweep in clockwise (`sweepMask`), rings sweep (`.ringa`, pathLength 100), Parameter rating
+  is a sparkline (`.sp-l`, crosshair on hover), heatmap days pop in as a diagonal wave. Hover sync: marks and legend rows
+  sharing `data-hk` light up together, the rest of the card dims (`.hot`, `[data-hot]`); month labels turn into a pill
+  (`xlab`); pie slices pop out (`.pslice`); ring centre shows the hovered KRA (`.an-ctr`, `data-cv` / `data-cl`).
+  Tooltip = Bklit card (`tipH(title, [[colourVar, label, value]], footer)`). A "Sample data" switch (Harish 2026-11-19, `?sample=1`, `sampleAnalytics()` in
   `server.js`) shows made-up ratings for the same people pool with placeholder names ("Sample person 07"), real teams,
   managers and designation groups, fixed seed, never saved, with a warning banner and no Team Report links. Team Report: Export menu
   with CSV and PDF like Review Report (`exportMenu`, `yearlyPdf` / `printHtml`), Total row soft yellow.
