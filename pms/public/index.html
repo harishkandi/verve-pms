@@ -1609,6 +1609,11 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 .tb-load .loading{gap:8px}.tb-load svg{width:18px;height:18px}
 .bspin svg{width:18px;height:18px}.btn.sm .bspin svg{width:16px;height:16px}
 .pal-none .spin svg,.cfp-empty .spin svg{width:18px;height:18px}
+/* dropdown buttons yellow like every other button (Harish 2026-11-20). The portal-look grey rule
+   (.dd-btn:not(.h1-pick):not(.exp)) was more specific than the "Yellow actions" one, so they stayed grey; same selector
+   here, later in the file. The month picker in a page title (.h1-pick) stays plain text. */
+.dd-btn:not(.h1-pick):not(.exp){border-color:var(--vr-pms-y);background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
+.dd-btn:not(.h1-pick):not(.exp):hover,.dd-btn:not(.h1-pick):not(.exp)[aria-expanded=true]{border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:1.6s}}
 </style>
 </head>

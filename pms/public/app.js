@@ -3193,7 +3193,7 @@ pages.components = async v => {
       'Brief: white inputs, 8px corners, no green anywhere. PMS: grey portal fields, pale yellow dropdowns (Harish, 17 and 19 Nov), green on/off switches (Harish, 12 Nov).'),
     sec('Dropdown menu', `<button type="button" class="dd-btn">${ico('calendar')}<span class="dd-val">November 2026</span>${CHEV}</button>
       <div class="dd-menu uic-static" role="listbox"><button type="button" class="dd-item">October 2026</button><button type="button" class="dd-item on">November 2026</button><button type="button" class="dd-item">December 2026</button></div>`,
-      'PMS: the chosen item is yellow (Harish, 19 Nov).'),
+      'PMS: the dropdown button and the chosen item are yellow (Harish, 19 and 20 Nov).'),
     sec('Stat tiles', `<div class="tiles" style="margin:0"><div class="tile"><small>Scheduled</small><b>${(72).toLocaleString('en-IN')}</b><span>This month</span></div><div class="tile g"><small>Filled</small><b>61</b><span>85% of due</span></div><div class="tile a"><small>Pending</small><b>7</b><span>Overdue</span></div><div class="tile r"><small>Not filled</small><b>11</b><span>Remind them</span></div></div>`,
       'Brief: white tile with a coloured stripe on top. PMS: light-blue portal tiles, no stripe (Harish, 17 Nov).'),
     sec('Card and empty state', `<div class="card"><b>Card title</b><p class="small" style="margin:4px 0 0">Cards are white on the soft page, with a thin line and a soft shadow.</p></div><div class="card empty" style="margin:0">Nothing to show here yet.</div>`,
