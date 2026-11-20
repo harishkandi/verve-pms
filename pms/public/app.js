@@ -187,7 +187,8 @@ const ICON = {
   shirt: '<path d="M20.4 3.5 16 2a4 4 0 0 1-8 0L3.6 3.5a2 2 0 0 0-1.3 2.2l.6 3.5a1 1 0 0 0 1 .8H6v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V10h2.1a1 1 0 0 0 1-.8l.6-3.5a2 2 0 0 0-1.3-2.2z"/>',
   heart: '<path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7z"/><path d="M3.2 12H9l1-2 2 4 1.5-2h7.3"/>',
   star: '<path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.2 6-5.5-3-5.5 3 1.2-6-4.5-4.2 6.1-.8z"/>',
-  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+  // loading: a ring of 8 dots fading round the circle, one blue in steps of strength (Harish 2026-11-20); .spin turns it in 8 steps
+  loader: '<g fill="currentColor" stroke="none"><circle cx="12" cy="3.5" r="2.4" opacity=".14"/><circle cx="18.01" cy="5.99" r="2.4" opacity=".26"/><circle cx="20.5" cy="12" r="2.4" opacity=".38"/><circle cx="18.01" cy="18.01" r="2.4" opacity=".5"/><circle cx="12" cy="20.5" r="2.4" opacity=".62"/><circle cx="5.99" cy="18.01" r="2.4" opacity=".74"/><circle cx="3.5" cy="12" r="2.4" opacity=".87"/><circle cx="5.99" cy="5.99" r="2.4"/></g>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54z"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
@@ -603,7 +604,7 @@ async function palOpen() {
     list.innerHTML = (pg.length ? `<div class="pal-g">Pages</div>${pg.map(row).join('')}` : '')
       + (pp.length ? `<div class="pal-g">People</div>${pp.map((p, i) => row(p, pg.length + i)).join('')}` : '')
       + (!items.length ? `<div class="pal-none">Nothing found for "${esc(inp.value.trim())}"</div>` : '')
-      + (q && canPeople && !palPeople ? `<div class="pal-none">${ico('loader')}Loading people…</div>` : '')
+      + (q && canPeople && !palPeople ? `<div class="pal-none"><span class="spin" style="display:inline-flex">${ico('loader')}</span>Loading people…</div>` : '')
       + (!q && canPeople ? '<div class="pal-none">Type a name to find a person.</div>' : '');
     const on = list.querySelector('.pal-i.on'); if (on) on.scrollIntoView({ block: 'nearest' });
   };
@@ -1162,7 +1163,7 @@ function cfDraw() {
     el.classList.add('cfp-wide');
     el.innerHTML = `<div class="cfp-h"><button type="button" class="cfp-back" data-back aria-label="Back to the filters">${ico('left')}</button><div><b>${F.label}</b></div>${F.multi && v.length ? `<button type="button" class="cfp-clr" data-reset>${ico('trash')}Clear</button>` : ''}</div>
       ${all.length > 6 ? `<label class="cfp-s">${ico('search')}<input type="search" data-q placeholder="Search ${F.label.toLowerCase()}" value="${esc(q)}" aria-label="Search ${F.label.toLowerCase()}"></label>` : ''}
-      <div class="cfp-l" role="listbox" aria-multiselectable="${!!F.multi}">${need ? `<div class="cfp-empty">${ico('loader')}Loading…</div>` : list.map(([x, l, n, dis]) => `<button type="button" role="option" class="cfp-o ${on(x) ? 'on' : ''}" data-v="${esc(x)}" aria-selected="${on(x)}" ${dis ? 'disabled' : ''}>${F.multi ? `<i class="cfp-cb">${on(x) ? ico('tick') : ''}</i>` : ''}<span>${esc(l)}</span>${n != null ? `<em>${n}</em>` : ''}${!F.multi ? ico('tick') : ''}</button>`).join('') || '<div class="cfp-empty">Nothing matches.</div>'}</div>`;
+      <div class="cfp-l" role="listbox" aria-multiselectable="${!!F.multi}">${need ? `<div class="cfp-empty"><span class="spin" style="display:inline-flex">${ico('loader')}</span>Loading…</div>` : list.map(([x, l, n, dis]) => `<button type="button" role="option" class="cfp-o ${on(x) ? 'on' : ''}" data-v="${esc(x)}" aria-selected="${on(x)}" ${dis ? 'disabled' : ''}>${F.multi ? `<i class="cfp-cb">${on(x) ? ico('tick') : ''}</i>` : ''}<span>${esc(l)}</span>${n != null ? `<em>${n}</em>` : ''}${!F.multi ? ico('tick') : ''}</button>`).join('') || '<div class="cfp-empty">Nothing matches.</div>'}</div>`;
     if (need) apiCall(`/home/card?card=opts&month=${S.month}`, {}).then(r => { cfOptions = r.opts; if (cfPop && cfPop.field === k) cfDraw(); })
       .catch(e => { const x = cfPop && cfPop.el.querySelector('.cfp-empty'); if (x) x.textContent = e.message; });
   }

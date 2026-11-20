@@ -107,7 +107,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   print), `.alert-w` (orange) for warnings and `.warn` (red) only for errors, times in en-IN (`apWhen`, Audit Log too),
   and the brief's components page = `#/components` (admin, NOT in the menu: Harish removed the menu item 2026-11-20, open the address directly; `pages.components`: light and dark
   frames side by side with the app's own stylesheet, one note per item on where PMS differs and who asked). When a
-  shared component changes, add it there. Built
+  shared component changes, add it there. Loading (Harish 2026-11-20, from an image): a ring of 8 dots, one blue in
+  steps of strength, turning in 8 steps (`ICON.loader`, `.spin`, `--vr-spin`; navy dots on yellow buttons, white on red);
+  still no skeletons. Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"
