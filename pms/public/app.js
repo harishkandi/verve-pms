@@ -550,12 +550,12 @@ async function start() {
   loadNotes(); clearInterval(notePoll); notePoll = setInterval(loadNotes, 60000);
 }
 
-// Leaving the monthly form with an answer typed but not stored (its tick not clicked), or a change still saving, asks
+// Leaving the monthly form with an answer typed but not stored (not yet saved), or a change still saving, asks
 // first (Harish 2026-11-18). KRA edits are not asked about: they are kept as a draft in this browser (Vidya).
 function formUnsaved() {
   if (!FP || !FP.form) return [];
   const qs = [...editingQ].filter(id => String(FP.form.qa[id] ?? '') !== String(qOrig[id] ?? ''));
-  return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved (click the tick to save)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
+  return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved yet (click outside the answer box to save it)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
 }
 let navSkip = false;
 async function navGuard(e) {
@@ -1495,7 +1495,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     ${sec('people', 'People', 'Self updating of skills')}
     ${ratingBox(f)}
     <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
-    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer, then click the tick to save it">${esc(f.qa[q.id] || '')}</textarea><div class="opf-qbtns"><button type="button" class="ibtn opf-pen" data-qsave="${q.id}" title="Save the answer" aria-label="Save the answer">${ico('tick')}</button></div>`
+    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved when you click outside the box">${esc(f.qa[q.id] || '')}</textarea>`
       : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${(p.editSelf || p.editManager) && !f.locked ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id]) ? `<div class="flag">A single word is not enough. Please write a short answer in a few words.</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       // the Self Rating / Manager Rating / Remark heading only above the first rated question
@@ -1686,7 +1686,25 @@ function wireForm(v) {
     }
   };
   const redraw = () => { const y = SC().scrollTop; drawForm(v); SC().scrollTop = y; };
-  // question answers are NOT saved automatically (Vidya, 2026-11-18): the pencil opens a box, the tick stores the answer
+  // question answers: the pencil opens a box; clicking outside the box saves the answer and closes it (no Save button, Vidya 2026-11-20).
+  // Typing alone saves nothing, and a locked (submitted) form never gets here because it has no pencil.
+  const qSave = async id => {
+    const val = f.qa[id] || '';
+    if (val === (qOrig[id] ?? '')) return true; // unchanged: nothing to store
+    formDirty.add(`qt|${id}`);
+    try { await save(); qOrig[id] = val; toast('Answer saved', 'ok'); return true; }
+    catch (er) { toast(er.message, 'err'); return false; } // stays open so nothing typed is lost
+  };
+  // (Chrome has no onfocusout property, so a listener; the previous draw's one is removed first)
+  if (v._qfo) v.removeEventListener('focusout', v._qfo);
+  v.addEventListener('focusout', v._qfo = e => {
+    const id = e.target.dataset && e.target.dataset.qt; if (!id) return;
+    qSave(id).then(ok => ok && setTimeout(() => {
+      // wait a moment so a click elsewhere (another pencil, a button) still lands before the form is redrawn
+      if (!v.querySelector(`textarea[data-qt="${id}"]`) || document.activeElement?.dataset?.qt === id) return; // page changed, or back in the box
+      editingQ.delete(id); if (focusQ === id) focusQ = null; redraw();
+    }, 150));
+  });
   if (focusQ) { const ta = v.querySelector(`textarea[data-qt="${focusQ}"]`); if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   $('#expk').onclick = () => exportKpi();
   const showErrors = e => { submitErrs = e.data?.errors ? [e.message, ...e.data.errors] : [e.message]; drawForm(v); SC().scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -1715,7 +1733,7 @@ function wireForm(v) {
   };
   // pressing a button must not blur the field being typed in: that fires an autosave + redraw which replaced the button
   // before the click landed, so Save needed two clicks (the click handlers save what is typed themselves)
-  v.onmousedown = e => { if (e.target.closest('button')) e.preventDefault(); };
+  v.onmousedown = e => { if (e.target.closest('button') && !document.activeElement?.dataset?.qt) e.preventDefault(); };
   v.onclick = async e => {
     const t = e.target, post = (u, b) => api(u, { method: 'POST', body: { empId: f.empId, month: f.month, ...b } });
     try {
@@ -1727,13 +1745,7 @@ function wireForm(v) {
       if (lk) return toast(lk.dataset.locked === 'q' ? 'The employee has not added their self rating yet. It is needed before the manager rating or remark.' : 'The employee has not added their self rating and self remark yet. Both are needed before the manager rating or remark.', 'err');
       if (fb) { const k = fb.dataset.fold; folded.has(k) ? folded.delete(k) : folded.add(k); redraw(); }
       else if (kw) { const k = kw.dataset.kwedit; editingW.has(k) ? editingW.delete(k) : editingW.add(k); redraw(); const box = v.querySelector(`[data-kw="${k}"]`); if (box) { box.focus(); box.select(); } }
-      else if (qe) { const id = qe.dataset.qedit; qOrig[id] = f.qa[id] ?? ''; editingQ.add(id); focusQ = id; redraw(); }
-      else if (t.closest('[data-qsave]')) {
-        const id = t.closest('[data-qsave]').dataset.qsave;
-        formDirty.add(`qt|${id}`);
-        try { await save(); editingQ.delete(id); if (focusQ === id) focusQ = null; toast('Answer saved', 'ok'); redraw(); }
-        catch (er) { toast(er.message, 'err'); }
-      }
+      else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); qOrig[id] = f.qa[id] ?? ''; focusQ = id; redraw(); }
       else if (t.dataset.kreq) {
         FP = await post('/kra-request', {}); toast('Request sent to your manager'); drawForm(v);
       }
