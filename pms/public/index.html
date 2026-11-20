@@ -1223,16 +1223,6 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--vr-n-300);border
 .scal-open{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;font-size:13px}
 .scal-o{display:inline-flex;align-items:center;gap:8px;padding:4px 4px 4px 10px;border:1px solid var(--vr-pms-line);border-radius:6px;background:var(--vr-card)}
 @media (max-width:900px){.scal-d{min-height:72px;padding:4px}.scal-ev b{display:none}}
-/* Team report: rating trend beside each name (navy line, dashed 75% guide), change from the month before */
-.ytr{display:inline-flex;align-items:center;gap:8px;margin-left:16px;padding:2px 10px 2px 6px;border:1px solid var(--vr-pms-line);border-radius:6px;background:var(--vr-card)}
-.ytr svg{flex:none}
-.ytr path{fill:none;stroke:var(--vr-navy-800);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
-.ytr circle{fill:var(--vr-navy-800)}
-.ytr line{stroke:var(--vr-n-300);stroke-width:1;stroke-dasharray:3 3}
-.ytr small{font-size:12px;font-weight:600;white-space:nowrap;color:var(--vr-n-500)}
-.ytr small.up{color:var(--vr-success-600)}
-.ytr small.down{color:var(--vr-danger-600)}
-@media (max-width:900px){.ytr svg{display:none}}
 .hero{border-radius:10px}
 .info{border-color:var(--vr-pms-blue);background:var(--vr-pms-blue-50)}
 .chip.on,.seg a.on{background:var(--vr-navy-800);color:var(--vr-pms-on)}
@@ -1553,7 +1543,7 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 @media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}}
 @media (prefers-reduced-motion:reduce){.anx [data-hk],.pslice,.anleg>div,.sp-x{transition:none}#antip{animation:none}}
 
-/* UI Components page (Settings › UI Components, brief section 10): light and dark frames side by side */
+/* UI Components page (#/components, not in the menu; brief section 10): light and dark frames side by side */
 .uic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
 .uic-lab{margin:0 0 8px;font-size:11px;line-height:16px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
 .uic-f{display:block;width:100%;height:1200px;border:1px solid var(--vr-n-200);border-radius:12px;background:var(--vr-page)}

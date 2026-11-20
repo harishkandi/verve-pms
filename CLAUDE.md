@@ -105,7 +105,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   portal look; the brief stays the reference for structure and for anything not decided otherwise. Gaps fixed: PDF
   exports use the app's light tokens (`PRINT` / `printCss` in `app.js`, keep in step with the tokens; colours forced to
   print), `.alert-w` (orange) for warnings and `.warn` (red) only for errors, times in en-IN (`apWhen`, Audit Log too),
-  and the brief's components page = Settings › UI Components (`#/components`, admin, `pages.components`: light and dark
+  and the brief's components page = `#/components` (admin, NOT in the menu: Harish removed the menu item 2026-11-20, open the address directly; `pages.components`: light and dark
   frames side by side with the app's own stylesheet, one note per item on where PMS differs and who asked). When a
   shared component changes, add it there. Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
@@ -158,7 +158,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Side panel starts shrunk under 1100px (`sideNarrow`). Leaving the monthly form with an answer typed but not ticked
   asks first (`navGuard` / `formUnsaved`, also `beforeunload`). Every CSV goes through `csvSave` / `fileSave` (Export
   CSV on Employees and Team report too). Scheduling has a List / Calendar switch (`calView`, `pms.schView`). Team
-  report shows a rating trend per person (`trend` in `pages.yearly`: own-range line + change vs the month before).
+  report had a rating trend per person (small line + change vs the month before); Harish removed it 2026-11-20.
 - People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
   member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
 - Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,
