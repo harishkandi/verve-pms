@@ -477,6 +477,7 @@ td table tr:hover>td{background:transparent}
 .ochip:hover{border-color:var(--vr-navy-600);color:var(--vr-navy-800)}
 .dark .ochip:hover{color:var(--vr-brand-text)}
 .warn,.info,.ok,.alert-w{margin:12px 0;padding:10px 12px;border:1px solid;border-radius:12px;font-size:14px;line-height:20px}
+/* .warn = an error (red), .alert-w = a warning (orange), as in the brief's alert recipe */
 .warn{border-color:var(--vr-danger-200);background:var(--vr-danger-50);color:var(--vr-danger-700)}
 .mdl{margin:6px 0 6px 18px;padding:0}.mdl li{margin:4px 0}#mdbanner details{margin-top:8px}#mdbanner summary{cursor:pointer}.mdt{width:100%;margin-top:8px;border-collapse:collapse}.mdt th,.mdt td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--vr-danger-200)}
 .alert-w{border-color:var(--vr-warn-200);background:var(--vr-warn-50);color:var(--vr-warn-800)}
@@ -1297,7 +1298,7 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 .opf-rd i{font-style:normal;color:var(--vr-danger-600)}
 .opf-rd input{min-height:30px;padding:3px 8px;font-size:13px}
 .opf-ctl{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:240px}
-.opf-body>.warn,.opf-body>.info{margin:14px 0 0}
+.opf-body>.warn,.opf-body>.alert-w,.opf-body>.info{margin:14px 0 0}
 .opf-sec{display:flex;align-items:center;gap:10px;margin:22px 0 0;padding:9px 16px;border-bottom:1px solid var(--vr-pms-cream-line);background:var(--vr-pms-cream);scroll-margin-top:12px}
 .opf-sec h3{flex:1;margin:0;font-size:19px;line-height:26px;font-weight:500;color:var(--vr-n-900)}
 .opf-fold svg{width:18px;height:18px;transition:transform .15s}
@@ -1551,6 +1552,12 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 @media (max-width:1100px){.anc.c3,.anc.c6{grid-column:span 6}.anc.c4,.anc.c5,.anc.c8,.anc.c12{grid-column:span 12}}
 @media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}}
 @media (prefers-reduced-motion:reduce){.anx [data-hk],.pslice,.anleg>div,.sp-x{transition:none}#antip{animation:none}}
+
+/* UI Components page (Settings › UI Components, brief section 10): light and dark frames side by side */
+.uic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.uic-lab{margin:0 0 8px;font-size:11px;line-height:16px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
+.uic-f{display:block;width:100%;height:1200px;border:1px solid var(--vr-n-200);border-radius:12px;background:var(--vr-page)}
+@media (max-width:1100px){.uic-grid{grid-template-columns:1fr}}
 
 /* =====================================================================
    Compact filter panel (Harish 2026-11-19: "small premium look like Apple design filter with short size"). One override

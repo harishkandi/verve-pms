@@ -497,7 +497,7 @@ async function start() {
     ['Employees', '#/employees/active', 'idcard'],
     ['Scheduling', '#/scheduling', 'calendar'],
     { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review Report', '#/report'], ['Performance Analytics', '#/analytics'], ['Team Report', '#/yearly'], ['One Pager Document', `#/annual/${S.me.id}`]] },
-    { key: 'set', label: 'Settings', icon: 'sliders', kids: [['Teams', '#/teams'], ['Questionnaire', '#/questions'], ['Parameters Summary', '#/params']] },
+    { key: 'set', label: 'Settings', icon: 'sliders', kids: [['Teams', '#/teams'], ['Questionnaire', '#/questions'], ['Parameters Summary', '#/params'], ['UI Components', '#/components']] },
     '--Admin',
     ['Audit Log', '#/audit', 'clock'],
   ] : [
@@ -1574,7 +1574,7 @@ function exportKpi() {
 function kraBanner(p) {
   const r = FP.kraRequest; let h = '';
   if (r && r.status === 'pending') h = p.decideKra
-    ? `<div class="warn"><b>${esc(r.by)} asked to change their KRAs.</b><div class="row" style="margin:10px 0 0"><button class="btn pri sm" data-kdec="1">Approve</button><button class="btn sm" data-kdec="0">Reject</button></div></div>`
+    ? `<div class="alert-w"><b>${esc(r.by)} asked to change their KRAs.</b><div class="row" style="margin:10px 0 0"><button class="btn pri sm" data-kdec="1">Approve</button><button class="btn sm" data-kdec="0">Reject</button></div></div>`
     : `<div class="info">KRA change request sent to <b>${esc(FP.manager ? FP.manager.name : 'your manager')}</b>. You can edit the KRAs once it is approved.</div>`;
   else if (r && r.status === 'approved') h = p.editKras && S.me.id === FP.employee.id ? `<div class="info"><b>${esc(r.decidedBy)}</b> gave you access to change the KRAs. Edit the KRAs below and save. After you save, a new request is needed for further changes.</div>` : `<div class="info">KRA change approved by <b>${esc(r.decidedBy)}</b>. ${esc(FP.employee.name)} can now edit the KRAs.</div>`;
   else if (r && r.status === 'rejected') h = `<div class="warn">KRA change request was rejected by ${esc(r.decidedBy)}.${r.reply ? '<br>' + esc(r.reply) : ''}</div>`;
@@ -2254,11 +2254,9 @@ const exportMenu = () => `<div class="dd" data-dd="list"><button type="button" c
 function reportPdf(d, c) {
   const filt = [RF.view === 'org' ? 'Organisation-wise' : `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}`, RF.manager && (d.managers.find(m => String(m.id) === String(RF.manager)) || {}).name, RF.status && (REPORT_STATUSES.find(x => x[0] === RF.status) || [])[1]].filter(Boolean).join(' · ');
   const st = r => `${r.form} · ${r.status}`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>PMS review status ${esc(monthLabel(S.month))}</title><style>
-    body{font:12px/1.4 system-ui,sans-serif;color:#232b3b;margin:24px}h1{font-size:18px;margin:0 0 2px}p{margin:0 0 14px;color:#5a6475}
-    .k{display:flex;gap:8px;margin:0 0 16px}.k div{flex:1;border:1px solid #ebe7df;border-radius:8px;padding:8px 10px}.k small{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a8494}.k b{font-size:18px}
-    table{width:100%;border-collapse:collapse}th{background:#0c1f4a;color:#fff;text-align:left;font-size:10px;padding:6px}td{padding:6px;border-bottom:1px solid #ebe7df;vertical-align:top}tr{page-break-inside:avoid}
-    footer{margin-top:16px;font-size:10px;color:#7a8494}@page{size:A4 landscape;margin:12mm}</style></head><body>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>PMS review status ${esc(monthLabel(S.month))}</title><style>${printCss(12)}
+    .k{display:flex;gap:8px;margin:0 0 16px}.k div{flex:1;border-radius:8px;padding:8px 10px;background:${PRINT.tile}}.k small{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${PRINT.muted}}.k b{font-size:18px;font-variant-numeric:tabular-nums}
+    th{text-align:left}td{vertical-align:top}</style></head><body>
     <h1>Review Report · ${esc(monthLabel(S.month))}</h1><p>${esc(d.scope)} · ${esc(filt)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
     <div class="k">${[['Scheduled', c.scheduled], ['Filled', c.filled], ['Not Filled', c.notFilled], ['Review Completed', c.reviewCompleted], ['Review Pending', c.reviewPending]].map(([l, n]) => `<div><small>${l}</small><b>${n}</b></div>`).join('')}</div>
     <table><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
@@ -2266,6 +2264,15 @@ function reportPdf(d, c) {
     <footer>Verve Advisory · Performance Management System</footer></body></html>`;
   printHtml(html);
 }
+// PDF colours = the app's light-theme tokens in index.html (portal look). The print frame is its own document and
+// cannot read the page's CSS variables (and in dark mode they would be the dark values), so they are repeated here;
+// keep them in step with --vr-thead, --vr-n-*, --vr-tbl-line, --vr-pms-blue(-50) and --vr-pms-y-50.
+const PRINT = { navy: '#23408b', head: '#ffffff', ink: '#212121', ink2: '#565e64', muted: '#6c757d', line: '#e4e5e6', blue: '#cbdaff', tile: '#e8eeff', total: '#fff8e1' };
+const printCss = size => `body{font:${size}px/1.4 system-ui,sans-serif;color:${PRINT.ink};margin:24px}h1{font-size:18px;font-weight:500;margin:0 0 2px}p{margin:0 0 14px;color:${PRINT.ink2}}
+  table{width:100%;border-collapse:collapse;border:1px solid ${PRINT.line}}th{background:${PRINT.navy};color:${PRINT.head};font-size:10px;font-weight:700;padding:6px;border:1px solid ${PRINT.line}}
+  td{padding:6px;border:1px solid ${PRINT.line};font-variant-numeric:tabular-nums}tr{page-break-inside:avoid}
+  footer{margin-top:16px;font-size:10px;color:${PRINT.muted}}@page{size:A4 landscape;margin:12mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
 // prints a page in a hidden frame; the browser's print dialog saves it as PDF
 function printHtml(html) {
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
@@ -2276,12 +2283,11 @@ function printHtml(html) {
 // Team Report as PDF (Fiza, 2026-11-19: the same Export choices as Review Report): one table per person, KRA rows by month
 function yearlyPdf(title, sub, months, list) {
   const n2 = x => x == null ? '' : x.toFixed(2);
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
-    body{font:11px/1.4 system-ui,sans-serif;color:#232b3b;margin:24px}h1{font-size:18px;margin:0 0 2px}p{margin:0 0 14px;color:#5a6475}
-    h2{font-size:13px;margin:14px 0 4px}h2 small{font-weight:400;color:#5a6475}
-    table{width:100%;border-collapse:collapse;page-break-inside:avoid}th{background:#0c1f4a;color:#fff;font-size:9px;padding:5px;text-align:center}th:first-child{text-align:left}
-    td{padding:5px;border-bottom:1px solid #ebe7df;text-align:center}td:first-child{text-align:left;font-weight:600}tr.t td{background:#fff8e1;font-weight:700}
-    footer{margin-top:16px;font-size:10px;color:#7a8494}@page{size:A4 landscape;margin:12mm}</style></head><body>
+  // same look as the Team Report on screen: light-blue KRA head row with dark bold names, Total row soft yellow
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${printCss(11)}
+    h2{font-size:13px;margin:14px 0 4px}h2 small{font-weight:400;color:${PRINT.ink2}}
+    table{page-break-inside:avoid}th{background:${PRINT.blue};color:${PRINT.ink};font-size:9px;padding:5px;text-align:center}th:first-child{text-align:left}
+    td{padding:5px;text-align:center}td:first-child{text-align:left;font-weight:600}tr.t td{background:${PRINT.total};font-weight:700}</style></head><body>
     <h1>${esc(title)}</h1><p>${esc(sub)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
     ${list.map(p => `<h2>${esc(p.name)} <small>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · Reporting manager ${esc(p.manager)}` : ''}</small></h2>
     <table><tr><th>KRA</th>${months.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr>
@@ -2349,7 +2355,7 @@ pages.report = async v => {
     // under it were confusing); the employee list, with its two buttons, is the other view
     : `<div class="row sechd"><h2>${full ? 'Employee-wise (organisation)' : 'Employee-wise'}</h2><span class="sp"></span>
       <div class="vsw" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
-    ${noDetail ? '<div class="warn">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
+    ${noDetail ? '<div class="alert-w">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
     ${RF.full ? fullTable(d) : reportTable(d.rows)}
     ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}`}
     <p class="small">Directors see the whole organisation. Managers see their own team and everyone under them at every level. Employees do not see this report.</p>`;
@@ -2474,8 +2480,8 @@ pages.scheduling = async v => {
       ${inv ? `<div class="info">The Google Calendar invite moves too; ${esc(inv.guests.join(' and '))} ${inv.guests.length > 1 ? 'are' : 'is'} told by Google.</div>`
         : canInvite ? `<label class="chk"><input type="checkbox" id="si" checked ${mode === 'invite' ? 'disabled' : ''}> Send a Google Calendar invite to ${esc(r.name)}</label>`
         : !r.hasEmail ? `<div class="info">No calendar invite: ${esc(r.name)} has no @${esc(S.me.domain)} email in PMS yet.</div>`
-        : cal.google && cal.canConnect ? `<div class="warn calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Your Google Calendar is not connected, so this only saves the date in PMS. Connect it first, then schedule (or use Send invite on the row afterwards).</span><button type="button" class="btn pri sm" id="dcal">Connect Google Calendar</button></div>`
-        : cal.google ? `<div class="warn calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Invites come from your own Google Calendar: sign in with your @${esc(S.me.domain)} Google account to connect it.</span></div>` : ''}
+        : cal.google && cal.canConnect ? `<div class="alert-w calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Your Google Calendar is not connected, so this only saves the date in PMS. Connect it first, then schedule (or use Send invite on the row afterwards).</span><button type="button" class="btn pri sm" id="dcal">Connect Google Calendar</button></div>`
+        : cal.google ? `<div class="alert-w calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Invites come from your own Google Calendar: sign in with your @${esc(S.me.domain)} Google account to connect it.</span></div>` : ''}
       <div class="row"><button class="btn pri" id="ok">${mode === 'invite' ? 'Send invite' : mode === 'schedule' ? 'Schedule' : 'Save'}</button><button class="btn" id="no">Cancel</button></div>`);
     m.querySelector('#no').onclick = () => m.remove();
     if (m.querySelector('#dcal')) m.querySelector('#dcal').onclick = () => { m.remove(); calStart(); };
@@ -2678,7 +2684,7 @@ async function questionsBox(v) {
     if (a === 'edit') dialog('Edit question', qs.find(q => q.id === t.dataset.id));
     if (a === 'del') {
       const q = qs.find(x => x.id === t.dataset.id);
-      const m = modal(`<h2>Delete question?</h2><p>${esc(q.text)}</p><div class="warn">New forms from the chosen month will no longer show this question. Answers already submitted are kept and stay visible in past forms.</div><label class="f">Delete from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="row" style="margin-top:12px"><button class="btn dng solid" id="ok">Delete question</button><button class="btn" id="no">Cancel</button></div>`);
+      const m = modal(`<h2>Delete question?</h2><p>${esc(q.text)}</p><div class="alert-w">New forms from the chosen month will no longer show this question. Answers already submitted are kept and stay visible in past forms.</div><label class="f">Delete from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="row" style="margin-top:12px"><button class="btn dng solid" id="ok">Delete question</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
       m.querySelector('#ok').onclick = async () => { await api('/questions/delete', { method: 'POST', body: { id: q.id, from: m.querySelector('#eff').value } }); m.remove(); questionsBox(v); };
     }
@@ -2787,7 +2793,7 @@ pages.employees = async (v, arg, grp) => {
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
   <div class="row"><div class="seg" style="margin:0"><a class="chip ${tab === 'active' ? 'on' : ''}" href="#/employees/active">Active <span class="cnt">${d.active.length}</span></a><a class="chip ${tab === 'inactive' ? 'on' : ''}" href="#/employees/inactive">Inactive <span class="cnt">${d.inactive.length}</span></a></div></div>
   <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><button type="button" class="btn" id="empx" title="Download this list as it is filtered (CSV for Excel)">${ico('download')}Export CSV</button><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
-  ${md.diffs.length ? `<div class="warn" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
+  ${md.diffs.length ? `<div class="alert-w" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
@@ -3069,7 +3075,7 @@ pages.audit = async (v, again) => {
   const from = { today: new Date(new Date().setHours(0, 0, 0, 0)), '7d': new Date(Date.now() - 7 * 864e5), '30d': new Date(Date.now() - 30 * 864e5) }[F.aper];
   const rows = all.filter(r => anyOf(F.awho, r.who) && anyOf(F.aact, r.action) && (!from || new Date(r.at) >= from));
   v.innerHTML = head('Audit log', 'Every change made in PMS, newest first') + `<div class="row"><span class="small">${rows.length === all.length ? '' : `${rows.length} of `}${all.length} change${all.length === 1 ? '' : 's'}</span><span class="sp"></span>${cfPill('audit')}</div>
-    <div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(new Date(r.at).toLocaleString())}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')
+    <div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(apWhen(r.at))}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')
       || `<tr><td colspan="4">${all.length ? `Nothing matches these filters. ${clearLink('audit')}` : 'No changes yet.'}</td></tr>`}</table></div>`;
   v.onclick = e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
@@ -3085,7 +3091,8 @@ let AP = null, apStep = 1;
 const AP_STEPS = ['Information', 'Yearly Recap', 'KSA Setting', 'Self-KRA', 'Review & Submit'];
 const apFilled = f => [f.recap.some(r => (r.expectation + r.achievements + r.improvement).trim()), ...['strengths', 'improvements', 'operational', 'process', 'people'].map(k => f[k].trim())].filter(Boolean).length;
 const apPct = f => Math.round(apFilled(f) / 6 * 100);
-const apWhen = iso => new Date(iso).toLocaleString('en-GB');
+// a moment in Indian format, e.g. "20 Nov 2026, 4:52 pm" (brief: en-IN); Audit Log and "Submitted on"
+const apWhen = iso => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 async function drawAppraisal(v, emp, fy) {
   AP = await api('/appraisal?emp=' + emp + (fy ? '&fy=' + fy : '')); apStep = 1;
@@ -3161,3 +3168,64 @@ function apExcel() {
   <h3>Key Strengths</h3><p>${c(f.strengths)}</p><h3>Area of Improvement</h3><p>${c(f.improvements)}</p><h3>Operational KRA</h3><p>${c(f.operational)}</p><h3>Process KRA</h3><p>${c(f.process)}</p><h3>People KRA</h3><p>${c(f.people)}</p></body></html>`;
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' })); a.download = `Appraisal-${AP.fy}-${e.name.replace(/\s+/g, '-')}.xls`; a.click();
 }
+
+// ---------- UI Components (VerviRecruit UI brief, section 10: "a components page that renders every item in section 6
+// in both themes so it can be compared with VerviRecruit side by side"). Admin only, Settings › UI Components.
+// Each theme is drawn in its own frame with the app's real stylesheet, so light and dark show side by side whatever
+// theme the admin uses. The short notes say where PMS follows the old PMS portal look instead of the brief, and who
+// asked for it (Harish 2026-11-20: keep the portal look; the brief stays the reference for structure).
+pages.components = async v => {
+  if (S.me.role !== 'admin') return pages.home(v);
+  const note = t => `<p class="uic-note">${t}</p>`;
+  const sec = (title, body, n) => `<section class="card uic-sec"><h3>${title}</h3>${body}${n ? note(n) : ''}</section>`;
+  const r = h => `<div class="uic-row">${h}</div>`;
+  const body = [
+    sec('Typography', `<h1>Page title</h1><div class="crumb">Page subtitle directly under the title</div><h2>Section heading</h2><p>Body text is 14px. <span class="small">Secondary text is 12px.</span> <a class="lk" href="#/components">Link-style action</a></p><p class="small">Numbers use Indian grouping and tabular figures: <b class="rt">${(1234567).toLocaleString('en-IN')}</b></p>`,
+      "Brief: 30px bold title. PMS: 24px regular, the old portal's headings (Harish, 17 Nov). Menu names in Title Case (Fiza, 19 Nov)."),
+    sec('Buttons', r(`<button class="btn pri">${ico('plus')}Primary action</button><button class="btn pri sm">Small primary</button><button class="btn">Secondary</button><button class="btn sm">Small secondary</button><button class="btn" disabled>Disabled</button>`)
+      + r(`<button class="pill">${ico('download')}Pill button</button><button type="button" class="cfpill">${ico('filter')}Filter</button><button type="button" class="cfpill on">${ico('filter')}Filter · 2</button><button class="ibtn" title="Icon button">${ico('pencil')}</button>`)
+      + r(`<button class="btn dng">${ico('trash')}Delete</button><button class="btn dng solid">Delete for good</button><button class="xdel" title="Remove">${ico('trash')}</button>`),
+      'Brief: navy primary buttons. PMS: every button, pill and dropdown button in the portal yellow, delete stays red (managers via Harish, 19 Nov).'),
+    sec('Fields', `<div class="uic-2"><div><label class="f">Text input</label><input value="Typed text"></div><div><label class="f">With an error <i>*</i></label><input class="err" value="Wrong value"></div>
+      <div><label class="f">Select</label><select><option>First option</option><option>Second option</option></select></div><div><label class="f">Disabled</label><input value="Read only" disabled></div></div>
+      <label class="f">Text area</label><textarea>Longer text goes here.</textarea>
+      ${r(`${searchBox('uicq', 'Search by name', '', 220)}<label class="chk" style="margin:0"><input type="checkbox" checked>Checkbox</label><button type="button" class="sw" role="switch" aria-checked="false" aria-label="Switch off"><i></i></button><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Switch on"><i></i></button>`)}`,
+      'Brief: white inputs, 8px corners, no green anywhere. PMS: grey portal fields, pale yellow dropdowns (Harish, 17 and 19 Nov), green on/off switches (Harish, 12 Nov).'),
+    sec('Dropdown menu', `<button type="button" class="dd-btn">${ico('calendar')}<span class="dd-val">November 2026</span>${CHEV}</button>
+      <div class="dd-menu uic-static" role="listbox"><button type="button" class="dd-item">October 2026</button><button type="button" class="dd-item on">November 2026</button><button type="button" class="dd-item">December 2026</button></div>`,
+      'PMS: the chosen item is yellow (Harish, 19 Nov).'),
+    sec('Stat tiles', `<div class="tiles" style="margin:0"><div class="tile"><small>Scheduled</small><b>${(72).toLocaleString('en-IN')}</b><span>This month</span></div><div class="tile g"><small>Filled</small><b>61</b><span>85% of due</span></div><div class="tile a"><small>Pending</small><b>7</b><span>Overdue</span></div><div class="tile r"><small>Not filled</small><b>11</b><span>Remind them</span></div></div>`,
+      'Brief: white tile with a coloured stripe on top. PMS: light-blue portal tiles, no stripe (Harish, 17 Nov).'),
+    sec('Card and empty state', `<div class="card"><b>Card title</b><p class="small" style="margin:4px 0 0">Cards are white on the soft page, with a thin line and a soft shadow.</p></div><div class="card empty" style="margin:0">Nothing to show here yet.</div>`,
+      'Brief: 16px corners on a warm off-white page. PMS: 8px corners on a soft blue-grey page (Harish, 17 and 19 Nov).'),
+    sec('Table', `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Status</th><th class="nr">Rating</th></tr>
+      <tr><td><a href="#/components">Sample person 01</a></td><td>Team Accounts</td><td><span class="badge b-green">Review Done</span></td><td class="nr">78.4%</td></tr>
+      <tr><td><a href="#/components">Sample person 02</a></td><td>Team HR</td><td><span class="badge b-amber">Review Pending</span></td><td class="nr">${NIL}</td></tr>
+      <tr><td><a href="#/components">Sample person 03</a></td><td>Team Sales</td><td><span class="badge b-red">Not Filled</span></td><td class="nr">${NIL}</td></tr></table></div>`,
+      "Brief: navy head, row lines only. PMS: the portal's tables, soft lines between all cells, light-blue hover (Harish, 19 and 20 Nov)."),
+    sec('Badges, chips and avatar', r(`<span class="badge">Neutral</span><span class="badge b-green">Success</span><span class="badge b-amber">Warning</span><span class="badge b-red">Danger</span><span class="badge b-blue">Info</span><span class="badge b-purple">Special</span><span class="cnt">3</span><span class="ochip">Outlined chip</span><span class="avatar s">SP</span>`),
+      'Success is azure, as in the brief.'),
+    sec('Alerts', '<div class="warn">Error: the review date is required before you submit.</div><div class="alert-w">Warning: no calendar invite will go out for this booking.</div><div class="ok">Success: the review was submitted.</div><div class="info" style="margin-bottom:0">Info: your manager will rate this month next.</div>'),
+    sec('Tabs', '<div class="seg" style="margin:0"><a class="on">Active <span class="cnt">72</span></a><a>Inactive <span class="cnt">5</span></a><a>All</a></div>',
+      'Selected tab navy: blue = where you are, yellow = what you can do (Harish, 19 Nov).'),
+    sec('Modal', '<div class="modal uic-static"><div class="box"><h2 style="margin-top:0">Delete question?</h2><p>New forms will no longer show this question. Answers already submitted are kept.</p><div class="row" style="justify-content:flex-end;margin:16px 0 0"><button class="btn">Cancel</button><button class="btn dng solid">Delete</button></div></div></div>'),
+    sec('Loading and messages', `${spinner('Loading…')}${r('<div class="toast t-ok uic-static"><span class="ti"><b>✓</b></span><span>Answer saved</span></div><div class="toast t-err uic-static"><span class="ti"><b>!</b></span><span>Could not save. Try again.</span></div>')}`,
+      'Brief: a spinning loader, never a skeleton (followed). PMS: the success message is green (Harish, 16 Nov).'),
+  ].join('');
+  const styles = [...document.querySelectorAll('style')].map(s => s.outerHTML).join('');
+  // frame-only layout helpers; everything else is the app's own stylesheet
+  const local = `<style>body{margin:0;padding:16px}.uic-sec h3{margin:0 0 12px;font-size:14px;font-weight:600;color:var(--vr-n-900)}
+    .uic-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}.uic-2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+    .uic-note{margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--vr-n-200);font-size:12px;line-height:16px;color:var(--vr-n-500)}
+    .uic-static.modal{position:relative;inset:auto;z-index:0;border-radius:12px}.uic-static.dd-menu{position:static;display:block;width:220px;margin-top:6px}
+    .uic-static.toast{position:static;transform:none}</style>`;
+  const doc = theme => `<!doctype html><html class="${theme}"><head><meta charset="utf-8">${styles}${local}</head><body>${body}</body></html>`;
+  v.innerHTML = head('UI Components', "Every shared piece of PMS in light and dark, drawn with the app's own styles, to compare with VerviRecruit (UI brief, section 10). The notes say where PMS follows the old portal look instead of the brief.") +
+    `<div class="uic-grid"><div><div class="uic-lab">Light</div><iframe class="uic-f" title="Components, light theme" srcdoc="${esc(doc(''))}"></iframe></div>
+     <div><div class="uic-lab">Dark</div><iframe class="uic-f" title="Components, dark theme" srcdoc="${esc(doc('dark'))}"></iframe></div></div>`;
+  // each frame as tall as its content; links and buttons inside do nothing
+  v.querySelectorAll('.uic-f').forEach(f => f.addEventListener('load', () => {
+    const d = f.contentDocument; f.style.height = d.documentElement.scrollHeight + 'px';
+    d.addEventListener('click', e => { if (e.target.closest('a,button')) e.preventDefault(); });
+  }));
+};

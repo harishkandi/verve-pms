@@ -98,7 +98,16 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   table on screen (reads only the chosen Final Status, not the whole list); counts and Export stay for the month. Final
   Status dropdown = each status once, no "(automatic)" option: picking the status the form gives on its own clears the
   hand-set one (server compares with `finalStatusAuto`). Performance Analytics redesign: three options (A Scorecard,
-  B Heatmap, C Insights) shown to Harish 2026-11-19 as a private artifact, waiting for his pick. Built
+  B Heatmap, C Insights) shown to Harish 2026-11-19 as a private artifact, waiting for his pick.
+  UI brief audit (Harish 2026-11-20; brief = `Downloads/VerviRecruit-UI-Brief.docx`, "our reference document"): PMS was
+  built on it (base CSS in `index.html` up to the "Old PMS portal look" block), then deliberately overridden by the portal
+  look, yellow actions, portal tables, green switches/toast/ratings and the Bklit analytics motion. Decision: KEEP the
+  portal look; the brief stays the reference for structure and for anything not decided otherwise. Gaps fixed: PDF
+  exports use the app's light tokens (`PRINT` / `printCss` in `app.js`, keep in step with the tokens; colours forced to
+  print), `.alert-w` (orange) for warnings and `.warn` (red) only for errors, times in en-IN (`apWhen`, Audit Log too),
+  and the brief's components page = Settings › UI Components (`#/components`, admin, `pages.components`: light and dark
+  frames side by side with the app's own stylesheet, one note per item on where PMS differs and who asked). When a
+  shared component changes, add it there. Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"
