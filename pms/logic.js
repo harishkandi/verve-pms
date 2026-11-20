@@ -1,5 +1,5 @@
 const D = require('./data');
-const { config, employees, forms, questions, paramsVersions } = D;
+const { config, employees, forms, questions, paramsVersions, RULES } = D;
 
 const emp = id => employees.find(e => e.id === id);
 const KRAS = [['operational', 'Operational'], ['process', 'Process'], ['people', 'People']];
@@ -95,7 +95,7 @@ function monthlyRating(f) {
     let s = 0, w = 0;
     for (const r of rows) {
       if (!has(r.self) || !has(r.mgr)) return null;
-      s += r.weight * (config.selfShare * r.self + config.mgrShare * r.mgr); w += r.weight;
+      s += r.weight * (RULES.selfShare * r.self + RULES.mgrShare * r.mgr); w += r.weight;
     }
     total += weight * (s / w); wsum += weight;
   }
@@ -107,7 +107,7 @@ function kraSummary(f) {
   const wavg = (rows, key) => { const w = rows.filter(r => has(r[key])), tw = w.reduce((a, r) => a + (+r.weight || 0), 0); return tw ? w.reduce((a, r) => a + r.weight * r[key], 0) / tw : null; };
   const kras = KRAS.map(([k, label]) => {
     const { rows, weight } = f.kras[k], s = wavg(rows, 'self'), m = wavg(rows, 'mgr');
-    const score = s != null && m != null && rows.every(r => has(r.self) && has(r.mgr)) ? config.selfShare * s + config.mgrShare * m : null;
+    const score = s != null && m != null && rows.every(r => has(r.self) && has(r.mgr)) ? RULES.selfShare * s + RULES.mgrShare * m : null;
     return { key: k, label, weight: +weight, subKras: rows.length, self: r1(s), mgr: r1(m), score: r1(score), scoreRaw: score, points: score == null ? null : r1(weight * score / 100) };
   });
   const qr = activeQuestions(f.month, f).filter(q => q.type === 'rating').map(q => f.qa[q.id] || {});
@@ -149,14 +149,14 @@ function validate(f) {
       if (rows.length && sum !== +weight) add('flag', label, 'SUBKRA_SUM', `The total weightage of Sub-KRAs under ${label} must be ${weight}%. The current total is ${sum}%.`);
       // the rating gap is flagged per sub-KRA, so the flag says which one
       rows.forEach(r => {
-        if (has(r.self) && has(r.mgr) && Math.abs(r.self - r.mgr) >= config.ratingGapFlag)
+        if (has(r.self) && has(r.mgr) && Math.abs(r.self - r.mgr) >= RULES.ratingGapFlag)
           add('flag', label, 'RATING_GAP', `${label} / ${r.kpi}: self ${r.self}% vs manager ${r.mgr}% (gap ${Math.abs(r.self - r.mgr)} points)`, `Rating gap ${Math.abs(r.self - r.mgr)} points (${label}: ${r.kpi})`);
       });
     }
     const op = f.kras.operational;
-    if (op.weight < config.operationalRange[0] || op.weight > config.operationalRange[1])
-      add('flag', 'Operational', 'OP_WEIGHT', `Operational weightage is ${op.weight}, outside the accepted range ${config.operationalRange.join('-')}.`, `Operational weightage ${op.weight} outside ${config.operationalRange.join('-')}`);
-    if (op.rows.length < config.opMinSubKras) add('flag', 'Operational', 'OP_MIN', `Operational KRA needs a minimum of ${config.opMinSubKras} sub-KRAs.`, `Operational has fewer than ${config.opMinSubKras} sub-KRAs`);
+    if (op.weight < RULES.operationalRange[0] || op.weight > RULES.operationalRange[1])
+      add('flag', 'Operational', 'OP_WEIGHT', `Operational weightage is ${op.weight}, outside the accepted range ${RULES.operationalRange.join('-')}.`, `Operational weightage ${op.weight} outside ${RULES.operationalRange.join('-')}`);
+    if (op.rows.length < RULES.opMinSubKras) add('flag', 'Operational', 'OP_MIN', `Operational KRA needs a minimum of ${RULES.opMinSubKras} sub-KRAs.`, `Operational has fewer than ${RULES.opMinSubKras} sub-KRAs`);
 
     const pr = f.kras.process;
     if (pr.weight !== config.weights.process) add('flag', 'Process', 'PR_WEIGHT', `Process weightage is ${pr.weight}; standard is ${config.weights.process}.`);
@@ -169,19 +169,19 @@ function validate(f) {
     // the SOP and learning document links are mandatory before the review is submitted (2026-11-13)
     sop.forEach(r => { if (!hasLink(r.selfRemark)) add('block', 'Process', 'SOP_LINK', `SOP link is mandatory: add the SOP document link in the self remark (${r.kpi}).`, `SOP link not added (${r.kpi})`); });
     pr.rows.filter(r => /clickup/i.test(r.kpi)).forEach(r => {
-      if (has(r.mgr) && r.mgr < config.clickupMin) add('flag', 'Process', 'CLICKUP', `ClickUp rating ${r.mgr}%: not managing ClickUp properly.`, `ClickUp below ${config.clickupMin}% (${r.kpi})`);
+      if (has(r.mgr) && r.mgr < RULES.clickupMin) add('flag', 'Process', 'CLICKUP', `ClickUp rating ${r.mgr}%: not managing ClickUp properly.`, `ClickUp below ${RULES.clickupMin}% (${r.kpi})`);
     });
 
     const pe = f.kras.people;
     const prevF = peek(f.empId, prevMonth(f.month));
-    if (pe.rows.length && (pe.weight < config.peopleMin || (pe.weight > config.peopleMax && prevF && prevF.kras.people.weight > config.peopleMax)))
+    if (pe.rows.length && (pe.weight < RULES.peopleMin || (pe.weight > RULES.peopleMax && prevF && prevF.kras.people.weight > RULES.peopleMax)))
       add('flag', 'People', 'PE_WEIGHT', `People weightage ${pe.weight} deviates from standard ${config.weights.people}.`);
     if (!pe.rows.length) {
       const n = lookback(f.empId, f.month, g => g.kras.people.rows.length === 0);
       add('flag', 'People', 'LEARNING_MISSING', `Learning KRA not set (${n} consecutive month${n > 1 ? 's' : ''}).`, `Learning KRA not set (${n} month${n > 1 ? 's' : ''})`);
     } else {
       learnRows(f).forEach(r => { if (!hasLink(r.selfRemark)) add('block', 'People', 'LEARN_LINK', `Learning document link is mandatory: add it in the self remark (${r.kpi}).`, `Learning link not added (${r.kpi})`); });
-      pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < config.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${config.learningMin}% (${r.kpi}: ${r.mgr}%).`, `Manager rating below ${config.learningMin}% (${r.kpi})`); });
+      pe.rows.forEach(r => { if (has(r.mgr) && r.mgr < RULES.learningMin) add('flag', 'People', 'LEARN_LOW', `Manager rating below ${RULES.learningMin}% (${r.kpi}: ${r.mgr}%).`, `Manager rating below ${RULES.learningMin}% (${r.kpi})`); });
       const lr = learnRows(f);
       if (lr.length && lr.every(r => has(r.mgr) && r.mgr >= 90 && hasLink(r.selfRemark))) add('info', 'People', 'LEARN_GOOD', 'Effective learning with document link.', 'Recognition: effective learning');
     }
@@ -282,8 +282,17 @@ function reviewStatus(f) {
   return f.submitted || ratingsComplete(f) ? 'Review Completed' : 'Review Pending';
 }
 const statusOf = f => ({ status: reviewStatus(f), form: formStatus(f) });
-// the actual review date is the Review Date entered on the monthly form
-const actualDate = f => f.reviewDate || null;
+// the actual review date is the day the manager's ratings were all in (Fiza, 2026-11-19: neither the scheduled date nor
+// the day the form was saved); older forms, and new joiners without KRAs, fall back to the Review Date on the form
+const actualDate = f => f.mgrRatedOn || f.reviewDate || null;
+const allMgrRated = f => !isNewJoiner(f) && KRAS.some(([k]) => f.kras[k].rows.length) && KRAS.every(([k]) => f.kras[k].rows.every(r => has(r.mgr)));
+// called after every form save: the first save with every KRA manager-rated sets the review day (and the form's
+// Review Date to match); taking a rating out again clears it, so the day the last rating goes in counts
+function trackReviewDay(f, today) {
+  if (f.locked) return;
+  if (allMgrRated(f)) { if (!f.mgrRatedOn) { f.mgrRatedOn = today; f.reviewDate = today; } }
+  else delete f.mgrRatedOn;
+}
 function dueInfo(f) {
   const e = emp(f.empId), w = D.windowOf(e, f.month);
   const actual = actualDate(f), due = actual ? (actual <= w.end ? 'Within due date' : 'After due date') : 'Pending';
@@ -308,7 +317,14 @@ function directorOf(e) {
   for (let m = emp(e.managerId); m && !seen.has(m.id); m = emp(m.managerId)) { seen.add(m.id); top = m; }
   return top;
 }
+// the choices an admin or the person's manager can pick in the Review Report (Fiza, 2026-11-19); "Review not done" is
+// the same as Review Pending. A pick is kept for that month (f.finalStatusSet) until someone puts it back to automatic.
+const FINAL_STATUSES = ['Review Pending', 'Review Done', 'Questionnaire Pending', 'Questionnaire Done', 'PMS form incomplete/errors/queries', 'Employee on leave', 'Serving Notice', 'N/A'];
 function finalStatus(f, e) {
+  if (f.finalStatusSet && FINAL_STATUSES.includes(f.finalStatusSet.value)) return f.finalStatusSet.value;
+  return autoFinalStatus(f, e);
+}
+function autoFinalStatus(f, e) {
   if (f.month > config.currentMonth) return 'N/A';
   const nj = isNewJoiner(f);
   if (f.submitted) return nj ? 'Questionnaire Done' : 'Review Done';
@@ -380,18 +396,19 @@ function pmsDetail(f, e) {
   const nj = isNewJoiner(f), op = f.kras.operational, sop = sopRows(f), learn = learnRows(f);
   const dir = directorOf(e), mgr = emp(e.managerId);
   const opSum = op.rows.reduce((a, r) => a + (+r.weight || 0), 0);
-  const opOk = +op.weight === config.weights.operational && op.rows.length >= config.opMinSubKras && opSum === +op.weight && op.rows.every(r => !blank(r.target));
+  const opOk = +op.weight === config.weights.operational && op.rows.length >= RULES.opMinSubKras && opSum === +op.weight && op.rows.every(r => !blank(r.target));
   const learnRated = learn.length && learn.every(r => has(r.mgr));
   const texts = activeQuestions(f.month, f).filter(q => q.type === 'text');
   return {
     code: e.src === 'list' && !e.codeSet ? '' : e.code || '', name: e.name, doj: e.src === 'list' && !e.joinedSet ? '' : e.joined || '',
-    designation: e.designation || '', department: e.team || '', manager: mgr ? mgr.name : '', director: dir ? dir.name : '',
+    designation: e.designation || '', department: e.department || '', manager: mgr ? mgr.name : '', director: dir ? dir.name : '',
     scheduled: firstScheduled(f), reschedules: rescheduleCount(f), actual: actualDate(f), finalStatus: finalStatus(f, e),
+    finalStatusAuto: autoFinalStatus(f, e), finalStatusBy: f.finalStatusSet ? f.finalStatusSet.by : null,
     opSet: nj ? 'N/A' : yn(opOk),
     sop: nj ? 'N/A' : yn(sop.length), sopKra: sop.map(r => noLinks(r.selfRemark) || r.kpi).filter(Boolean).join('; '),
     sopLink: !sop.length ? 'N/A' : yn(sop.every(r => hasLink(r.selfRemark))),
     learning: nj ? 'N/A' : yn(learn.length),
-    learningDone: !learn.length ? 'N/A' : !learnRated ? 'Not rated yet' : yn(learn.every(r => +r.mgr >= config.learningDoneMin)),
+    learningDone: !learn.length ? 'N/A' : !learnRated ? 'Not rated yet' : yn(learn.every(r => +r.mgr >= RULES.learningMin)),
     learningLink: !learn.length ? 'N/A' : yn(learn.every(r => hasLink(r.selfRemark))),
     questionnaire: !texts.length ? 'N/A' : yn(texts.every(q => textAnswer(f.qa[q.id]) && !shortAnswer(f.qa[q.id], q.id))),
     percentage: monthlyRating(f),
@@ -455,7 +472,7 @@ function buildEmail(managerId, month) {
     }
     for (const o of seen.values()) sec[o.s].push({ text: `${o.short}${o.count > 1 ? ` (${o.count})` : ''}: ${n}`, ...(o.s === 'form' && { hot: o.hot }) });
     const gapE = ['operational', 'process', 'people'].map(k => { const a = kraAvg(r.f.kras[k].rows, 'self'), b = kraAvg(r.f.kras[k].rows, 'mgr'); return a !== null && b !== null ? Math.abs(a - b) : 0; });
-    if (Math.max(...gapE) >= config.emailGapFlag && !r.v.some(x => x.code === 'RATING_GAP')) sec.rating.push({ text: `Rating gap of ${config.emailGapFlag} points or more: ${n}`, hot: true });
+    if (Math.max(...gapE) >= RULES.emailGapFlag && !r.v.some(x => x.code === 'RATING_GAP')) sec.rating.push({ text: `Rating gap of ${RULES.emailGapFlag} points or more: ${n}`, hot: true });
     const w = r.f.kras;
     if (!isNewJoiner(r.f) && (w.operational.weight !== 60 || w.process.weight !== 20 || w.people.weight !== 20)) sec.rating.push({ text: `Weightage ${w.operational.weight} / ${w.process.weight} / ${w.people.weight}: ${n}`, hot: false });
   }
@@ -463,4 +480,4 @@ function buildEmail(managerId, month) {
   return { to: m.name, subject: `PMS review summary, ${m.team}, ${D.monthLabel(month)}`, team: m.team, managerId, month, counts: counts(rows.map(r => ({ status: r.st }))), sections: sec, attachment: `PMS_${m.team}_${D.monthLabel(month).replace(' ', '')}.csv` };
 }
 
-module.exports = { statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
+module.exports = { FINAL_STATUSES, trackReviewDay, statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };

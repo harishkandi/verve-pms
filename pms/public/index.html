@@ -265,7 +265,7 @@ input::placeholder,textarea::placeholder{color:var(--vr-n-400)}
 input:disabled,select:disabled,textarea:disabled{background-color:var(--vr-n-50);color:var(--vr-n-600);opacity:1;cursor:default}
 input[type=checkbox],input[type=radio]{width:16px;height:16px;margin:0;padding:0;accent-color:var(--vr-navy-800)}
 textarea{width:100%;min-height:60px;resize:vertical}
-select{-webkit-appearance:none;appearance:none;padding-right:30px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a8494' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:14px}
+select{-webkit-appearance:none;appearance:none;padding-right:30px;cursor:pointer;background-image:var(--vr-caret);background-repeat:no-repeat;background-position:right 10px center;background-size:14px}
 select:disabled{background-image:none;padding-right:11px}
 select option{background:var(--vr-card);color:var(--vr-n-800)}
 input.num,select.num{width:72px}
@@ -417,8 +417,7 @@ button.tile.on{border-color:var(--vr-navy-600);box-shadow:0 0 0 1px var(--vr-nav
 .bstat:hover .wm{opacity:.2;transform:rotate(-8deg) scale(1.05)}
 .bstat .bl{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:9px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.62)}
 .bstat .bl::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--c)}
-.bstat .bn{margin:4px 0 2px;font-size:36px;line-height:40px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 30%,var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
-.bstat.all .bn{background-image:linear-gradient(180deg,#fff 40%,var(--vr-success-200))}
+.bstat .bn{margin:4px 0 2px;font-size:36px;line-height:40px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:#fff}
 .bstat .bs:empty{display:none}.bstat .bs{position:relative;font-size:11px;line-height:15px;color:rgba(255,255,255,.5)}
 @media (max-width:900px){.hero.allstats{flex-wrap:wrap;row-gap:8px}.bstat{border-left:0;flex:1 1 120px}}
 @media (prefers-reduced-motion:reduce){.bstat .wm{transition:none}.bstat:hover .wm{transform:none}}
@@ -478,6 +477,7 @@ td table tr:hover>td{background:transparent}
 .ochip:hover{border-color:var(--vr-navy-600);color:var(--vr-navy-800)}
 .dark .ochip:hover{color:var(--vr-brand-text)}
 .warn,.info,.ok,.alert-w{margin:12px 0;padding:10px 12px;border:1px solid;border-radius:12px;font-size:14px;line-height:20px}
+/* .warn = an error (red), .alert-w = a warning (orange), as in the brief's alert recipe */
 .warn{border-color:var(--vr-danger-200);background:var(--vr-danger-50);color:var(--vr-danger-700)}
 .mdl{margin:6px 0 6px 18px;padding:0}.mdl li{margin:4px 0}#mdbanner details{margin-top:8px}#mdbanner summary{cursor:pointer}.mdt{width:100%;margin-top:8px;border-collapse:collapse}.mdt th,.mdt td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--vr-danger-200)}
 .alert-w{border-color:var(--vr-warn-200);background:var(--vr-warn-50);color:var(--vr-warn-800)}
@@ -490,7 +490,29 @@ td table tr:hover>td{background:transparent}
 .flags div{margin-top:3px}
 .flags[open] summary .more{display:none}
 /* review status report, Full details: long remarks open in place */
-.pmsfull th{min-width:84px;white-space:normal;vertical-align:bottom}
+.pmsfull th{min-width:84px;white-space:normal;vertical-align:middle}
+/* column names in the middle of their cell, compact: no empty band above short names, tight line spacing; wide enough
+   that no name takes more than two lines (Harish 2026-11-19) */
+.pmsfull.rtab th,.pmsfull.rtab th:nth-child(n+2):nth-child(-n+8){padding:8px 12px;line-height:16px;text-align:center;vertical-align:middle}
+.pmsfull th:not(.stk){min-width:148px}
+/* even spacing (Fiza, 2026-11-19: cramped on the left, spread out on the right): every column gets the same room,
+   short values (dates, counts, Yes/No, status) sit in the middle of it; names and remarks stay left-aligned */
+.pmsfull th,.pmsfull td{padding:10px 16px;min-width:112px;text-align:center}
+.pmsfull th:nth-child(n+2):nth-child(-n+8),.pmsfull td:nth-child(n+2):nth-child(-n+8),.pmsfull td .rmk,.pmsfull td details,.pmsfull td.resc{text-align:left}
+.pmsfull td.resc{min-width:220px}
+/* S.No, Employee Code and Name stay put while the table scrolls sideways */
+.pmsfull .stk{position:sticky;z-index:1;background:var(--vr-card)}
+.pmsfull th.stk{z-index:2;background:var(--vr-thead)}
+.pmsfull tr:nth-child(even)>td.stk{background:color-mix(in srgb,var(--vr-n-50) 55%,var(--vr-card))}
+.pmsfull .stk1{left:0;min-width:56px;width:56px;max-width:56px;text-align:center}
+.pmsfull .stk2{left:56px;min-width:104px;width:104px;max-width:104px}
+.pmsfull .stk3{left:160px;min-width:190px;box-shadow:inset -1px 0 0 var(--vr-n-200)}
+/* Final Status picker: looks like the status badge, opens the plain list */
+.fssel{font:inherit;font-size:12px;font-weight:600;border:0;border-radius:999px;padding:4px 26px 4px 10px;cursor:pointer;max-width:230px}
+.fssel option{background:var(--vr-card);color:var(--vr-n-800);font-weight:400}
+/* its arrow: the status colour classes use the "background" shorthand, which removed the arrow; put it back, in navy
+   so it is easy to see (Harish 2026-11-19) */
+select.fssel{background-image:var(--vr-caret);background-repeat:no-repeat;background-position:right 9px center;background-size:14px}
 /* report tables (Summary + Full details): calm, one line per row; colour only for status, "No" and escalations */
 .rtab td{padding:11px 14px;white-space:nowrap;color:var(--vr-n-800)}
 .rtab th{padding:10px 14px}
@@ -655,7 +677,7 @@ td table tr:hover>td{background:transparent}
 .ytab th:first-child{text-align:left}.ytab th.off{color:var(--vr-n-400)}
 .ytab td{min-width:76px;padding:9px 12px}.ytab td:first-child{min-width:150px;font-weight:600;color:var(--vr-n-800)}
 .ytab td.c,.ytab td.nr{text-align:center}
-.ytab tr.ytot>td{background:var(--vr-navy-50);font-weight:600}
+.ytab tr.ytot>td{background:var(--vr-pms-y-50);font-weight:600} /* Total row in the soft portal yellow (Fiza, 2026-11-19) */
 .ytab tr.yavg>td{background:var(--vr-warm)}
 .ytab tr.yavg small{margin-right:6px;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--vr-n-500)}
 .ask{display:flex;align-items:flex-start;gap:12px}
@@ -1152,6 +1174,55 @@ tr.sub>td{background:var(--vr-pms-blue-50)}
 #app.mini .nsub-h{display:block;padding:6px 10px 8px;font-size:10px;line-height:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5)}
 #app.mini .links .nsub a{justify-content:flex-start;padding:8px 10px}
 #app.mini .links .nsub a>span{display:inline}
+/* search (Ctrl+K): a grey field-like button in the top bar, and a centred box with pages and people */
+.tb-search{display:inline-flex;align-items:center;gap:8px;min-width:220px;height:36px;padding:0 8px 0 10px;border:1px solid var(--vr-input);border-radius:6px;background:var(--vr-input);font:inherit;font-size:13px;color:var(--vr-n-500);cursor:pointer;transition:border-color .15s}
+.tb-search:hover{border-color:var(--vr-n-300)}
+.tb-search svg{width:15px;height:15px}
+.tb-search span{flex:1;text-align:left}
+kbd{display:inline-block;padding:1px 5px;border:1px solid var(--vr-n-300);border-radius:4px;background:var(--vr-card);font:inherit;font-size:11px;line-height:16px;color:var(--vr-n-500)}
+.pal{position:fixed;inset:0;z-index:90;display:flex;justify-content:center;align-items:flex-start;padding:12vh 16px 16px;background:var(--vr-overlay)}
+.pal-b{width:min(600px,100%);overflow:hidden;border-radius:10px;background:var(--vr-card);box-shadow:var(--vr-shadow-lg)}
+.pal-q{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--vr-pms-line);color:var(--vr-n-500)}
+.pal-q svg{width:18px;height:18px;flex:none}
+.pal-q input{flex:1;min-width:0;padding:4px 0;border:0;background:none;font-size:16px;color:var(--vr-n-900);outline:none}
+.pal-q input:focus{background:none}
+.pal-l{max-height:min(420px,55vh);overflow-y:auto;padding:6px}
+.pal-g{padding:8px 10px 4px;font-size:10px;line-height:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
+.pal-i{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--vr-n-800);text-decoration:none;cursor:pointer}
+#view .pal-i,.pal-i:hover{text-decoration:none}
+.pal-i>svg{width:15px;height:15px;color:var(--vr-n-400)}
+.pal-i>span:not(.avatar){display:flex;flex:1;flex-direction:column;min-width:0}
+.pal-i b{font-weight:500;font-size:14px}
+.pal-i small{font-size:12px;color:var(--vr-n-500)}
+.pal-i.on,.pal-i:hover{background:var(--vr-pms-blue-50)}
+.pal-none{display:flex;align-items:center;gap:8px;padding:12px 10px;font-size:13px;color:var(--vr-n-500)}
+.pal-none svg{width:15px;height:15px}
+.pal-f{display:flex;gap:16px;padding:8px 14px;border-top:1px solid var(--vr-pms-line);font-size:12px;color:var(--vr-n-500)}
+.pal-f kbd{margin-right:2px}
+@media (max-width:900px){.tb-search{min-width:0}.tb-search span,.tb-search kbd{display:none}}
+/* Scheduling › Calendar: Monday-to-Sunday grid of booked reviews; window days light blue, today outlined in navy */
+.vsw{display:inline-flex;gap:4px}
+.scal{overflow:hidden;border:1px solid var(--vr-pms-line);border-radius:8px;background:var(--vr-card)}
+.scal-h,.scal-g{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.scal-h span{padding:8px 10px;background:var(--vr-thead);font-size:13px;font-weight:700;color:var(--vr-thead-text)}
+.scal-d{display:flex;flex-direction:column;gap:3px;min-height:96px;padding:6px;border-right:1px solid var(--vr-pms-line);border-bottom:1px solid var(--vr-pms-line)}
+.scal-d:nth-child(7n){border-right:0}
+.scal-d.s-we{background:var(--vr-n-50)}
+.scal-d.s-win{background:var(--vr-pms-blue-50)}
+.scal-d.s-today{box-shadow:inset 0 0 0 2px var(--vr-navy-800)}
+.scal-n{font-size:12px;font-weight:600;color:var(--vr-n-500)}
+.scal-d.s-today .scal-n{color:var(--vr-navy-800)}
+.scal-ev{display:block;width:100%;overflow:hidden;padding:3px 6px;border:0;border-left:3px solid var(--vr-navy-800);border-radius:4px;background:var(--vr-card);font:inherit;font-size:12px;line-height:16px;text-align:left;white-space:nowrap;text-overflow:ellipsis;color:var(--vr-n-800);text-decoration:none;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+#view a.scal-ev:hover{text-decoration:none}
+.scal-ev:hover{background:var(--vr-pms-blue)}
+.scal-ev b{margin-right:4px;font-weight:700;color:var(--vr-navy-800)}
+.scal-k{display:flex;flex-wrap:wrap;gap:16px;padding:8px 12px;border-top:1px solid var(--vr-pms-line);font-size:12px;color:var(--vr-n-500)}
+.scal-k span{display:inline-flex;align-items:center;gap:6px}
+.scal-k i{width:14px;height:14px;border-radius:3px;border:1px solid var(--vr-pms-line)}
+.scal-k i.s-win{background:var(--vr-pms-blue-50)}.scal-k i.s-today{border:2px solid var(--vr-navy-800)}
+.scal-open{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;font-size:13px}
+.scal-o{display:inline-flex;align-items:center;gap:8px;padding:4px 4px 4px 10px;border:1px solid var(--vr-pms-line);border-radius:6px;background:var(--vr-card)}
+@media (max-width:900px){.scal-d{min-height:72px;padding:4px}.scal-ev b{display:none}}
 .hero{border-radius:10px}
 .info{border-color:var(--vr-pms-blue);background:var(--vr-pms-blue-50)}
 .chip.on,.seg a.on{background:var(--vr-navy-800);color:var(--vr-pms-on)}
@@ -1185,13 +1256,17 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 
 /* Monthly form (.opf): the old PMS portal's form, same layout and look (Harish, 2026-11-17: "keep layout look and exact
    like this"), more compact than the portal. Its colours are --vr-pms-* tokens (yellow buttons, grey KRA band, cream
-   section bars, navy table heads). KRA ratings are tinted by value: 75+ green, 50-74 yellow, 25-49 orange, 24 and below red. */
+   section bars, navy table heads). KRA ratings get one of three dark fills with white numbers (Harish 2026-11-19: no light colours): 75+ dark
+   green, 50-74 dark amber, below 50 dark red. */
+/* dropdown arrow: navy (dark mode: portal yellow), thicker, so it is easy to see (Harish 2026-11-19) */
+:root{--vr-caret:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2323408b' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")}
+.dark{--vr-caret:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffc107' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")}
 :root{--vr-rate-y-50:#fdf8dc;--vr-rate-y-200:#efe08a;--vr-rate-y-800:#6b5a06;
-  --vr-rate-g:#1e8449;--vr-rate-y:#f1c40f;--vr-rate-o:#e67e22;--vr-rate-r:#c0392b;--vr-rate-on:#ffffff;--vr-rate-y-on:#1f1a00;
+  --vr-rate-g:#14632f;--vr-rate-y:#a35a00;--vr-rate-r:#9b1c1c;--vr-rate-on:#ffffff;
   --vr-pms-y:#ffc107;--vr-pms-y-hover:#f0b400;--vr-pms-y-soft:#ffd966;--vr-pms-y-text:#212529;--vr-pms-band:#6c757d;--vr-pms-band-text:#212529;
   --vr-pms-cream:#fff2dc;--vr-pms-cream-line:#f0e0c0;--vr-pms-navy:#23408b;--vr-pms-head-text:#ffffff;--vr-pms-grid:#dee2e6;--vr-pms-field:#ececec;--vr-pms-link:#0d6efd}
 .dark{--vr-rate-y-50:#2e2a12;--vr-rate-y-200:#5c5220;--vr-rate-y-800:#ede08f;
-  --vr-rate-g:#1a7a43;--vr-rate-y:#d4a90c;--vr-rate-o:#d4701c;--vr-rate-r:#b03427;--vr-rate-on:#ffffff;--vr-rate-y-on:#1f1a00;
+  --vr-rate-g:#17713a;--vr-rate-y:#a35a00;--vr-rate-r:#a52222;--vr-rate-on:#ffffff;
   --vr-pms-y:#f2b705;--vr-pms-y-hover:#ffc61a;--vr-pms-y-soft:#c99a1c;--vr-pms-y-text:#1a1404;--vr-pms-band:#3d4554;--vr-pms-band-text:#e3e7ef;
   --vr-pms-cream:#2c2618;--vr-pms-cream-line:#433824;--vr-pms-navy:#24438f;--vr-pms-head-text:#ffffff;--vr-pms-grid:#2f3a55;--vr-pms-field:#222c44;--vr-pms-link:#7fb0ff}
 .opf{font-size:14px;line-height:21px;color:var(--vr-n-900)}
@@ -1213,7 +1288,7 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 .opf-rd i{font-style:normal;color:var(--vr-danger-600)}
 .opf-rd input{min-height:30px;padding:3px 8px;font-size:13px}
 .opf-ctl{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:240px}
-.opf-body>.warn,.opf-body>.info{margin:14px 0 0}
+.opf-body>.warn,.opf-body>.alert-w,.opf-body>.info{margin:14px 0 0}
 .opf-sec{display:flex;align-items:center;gap:10px;margin:22px 0 0;padding:9px 16px;border-bottom:1px solid var(--vr-pms-cream-line);background:var(--vr-pms-cream);scroll-margin-top:12px}
 .opf-sec h3{flex:1;margin:0;font-size:19px;line-height:26px;font-weight:500;color:var(--vr-n-900)}
 .opf-fold svg{width:18px;height:18px;transition:transform .15s}
@@ -1234,18 +1309,28 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 .opf-t th{padding:8px 10px;border:1px solid var(--vr-pms-grid);background:var(--vr-pms-navy);vertical-align:bottom;white-space:normal;font-size:14px;line-height:20px;font-weight:700;color:var(--vr-pms-head-text)}
 .opf-t td{padding:8px 10px;border:1px solid var(--vr-pms-grid);vertical-align:top}
 .opf-t tr.sub>td{background:var(--vr-pms-cream);font-size:14px;color:var(--vr-n-900);white-space:nowrap}
-.opf-t.kt{min-width:960px}
+.opf-t.kt{min-width:900px}
 .opf-t textarea{min-height:36px;padding:6px 8px;font-size:13px;line-height:18px}
 .opf-t input.num,.opf-t select.num{width:100%;max-width:84px;padding-top:5px;padding-bottom:5px;font-size:13px}
-.opf-no{display:inline-flex;align-items:center;gap:2px}
+/* Performance Analytics "Sample data" switch and banner (Harish 2026-11-19) */
+.asw{display:inline-flex;align-items:center;gap:8px;margin-left:auto;font-size:13px;font-weight:600;color:var(--vr-n-700)}
+.asample{margin:0 0 14px;padding:10px 14px;border:1px solid var(--vr-warn-600);border-left-width:5px;border-radius:8px;background:var(--vr-warn-50);color:var(--vr-warn-800);font-size:13px}
+.opf-t td.opf-no{text-align:center;font-weight:600}
+/* delete a sub-KRA: its own Action column at the row's end, a clear red-outlined trash button (Harish 2026-11-19) */
+.opf-t .opf-act{text-align:center;vertical-align:middle}
+.opf-t th.opf-act{padding:8px 2px;vertical-align:bottom}
+.opf-del{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:1px solid var(--vr-danger-600);border-radius:6px;background:var(--vr-card);color:var(--vr-danger-600);cursor:pointer;transition:background-color .15s,color .15s}
+.opf-del:hover,.opf-del:focus-visible{background:var(--vr-danger-600);color:var(--vr-card)}
+.opf-del svg{width:16px;height:16px}
+/* the form's status (e.g. Review Pending) larger and clearer (Harish 2026-11-19) */
+.opf-top{align-items:center}
+.opf-top .badge{padding:6px 14px;font-size:14px;line-height:18px;font-weight:700;border:1px solid currentColor}
 /* Solid, full-strength fills (Harish 2026-11-18: "darker, not this light colour"); ratings are typed boxes (Vidya) */
-.opf-t .num.r-g,.opf-t .num.r-y,.opf-t .num.r-o,.opf-t .num.r-r{opacity:1;font-weight:700;color:var(--vr-rate-on)}
+.opf-t .num.r-g,.opf-t .num.r-y,.opf-t .num.r-r{opacity:1;font-weight:700;color:var(--vr-rate-on)}
 .opf-t .num.r-g{border-color:var(--vr-rate-g);background-color:var(--vr-rate-g)}
-.opf-t .num.r-y{border-color:var(--vr-rate-y);background-color:var(--vr-rate-y);color:var(--vr-rate-y-on)}
-.opf-t .num.r-o{border-color:var(--vr-rate-o);background-color:var(--vr-rate-o)}
+.opf-t .num.r-y{border-color:var(--vr-rate-y);background-color:var(--vr-rate-y)}
 .opf-t .num.r-r{border-color:var(--vr-rate-r);background-color:var(--vr-rate-r)}
-.opf-t .num.r-g:disabled,.opf-t .num.r-o:disabled,.opf-t .num.r-r:disabled{color:var(--vr-rate-on)}
-.opf-t .num.r-y:disabled{color:var(--vr-rate-y-on)}
+.opf-t .num.r-g:disabled,.opf-t .num.r-y:disabled,.opf-t .num.r-r:disabled{color:var(--vr-rate-on);-webkit-text-fill-color:var(--vr-rate-on)}
 .opf-qr{border-collapse:collapse;table-layout:fixed;border:1px solid var(--vr-n-700);border-radius:0}
 .opf-qr th{padding:5px 8px;border:0;letter-spacing:normal;text-transform:none;background:var(--vr-pms-navy);font-size:14px;line-height:20px;font-weight:700;color:var(--vr-pms-head-text);white-space:normal}
 .opf-qr td{padding:8px;border:1px solid var(--vr-n-700);vertical-align:middle}
@@ -1266,6 +1351,244 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 .opf-rate td:not(:first-child){text-align:center}
 .opf-end{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
 @media (max-width:760px){.opf-bar{grid-template-columns:1fr 1fr}.opf-bar #toqa{grid-column:1/-1}.opf-ctl{min-width:0;width:100%}.opf-band{font-size:17px}.opf-sec h3{font-size:17px}}
+
+/* =====================================================================
+   Yellow actions and a soft page (Harish 2026-11-19, from the managers: keep the navy / light-blue look, which matches
+   the official portal, but every button, pill and dropdown is the portal's yellow, and the page is not pure white).
+   Blue = where you are (side panel, selected tab, table heads); yellow = what you can do; red stays for delete,
+   green for the on/off switches. Cards, tables and the top bar stay white so they stand out on the soft page.
+   ===================================================================== */
+:root{--vr-page:#f3f5fa;--vr-pms-y-50:#fff8e1;--vr-pms-y-line:#ffe08a}
+.dark{--vr-page:#0f1729;--vr-pms-y-50:#2c2618;--vr-pms-y-line:#5c4a14}
+body{background-color:var(--vr-page)}
+/* every button except delete: solid yellow, like View Question-Answer / Apply Filter on the portal */
+.btn:not(.dng),a.btn:not(.dng),.cfpill,.dd-btn:not(.h1-pick),.dd-btn.exp{border-color:var(--vr-pms-y);background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
+.btn:not(.dng):hover:not(:disabled),.cfpill:hover,.cfpill[aria-expanded="true"],.dd-btn:not(.h1-pick):hover,.dd-btn.exp:hover{border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
+.btn:not(.dng) svg,.cfpill svg,.dd-btn:not(.h1-pick) svg,.dd-btn:not(.h1-pick) .chev,.dd-btn.exp svg{color:var(--vr-pms-y-text)!important}
+#view a.btn:hover{text-decoration:none}
+/* a card filter that is on: the same yellow, bold, with a darker edge */
+.cfpill.on{border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
+/* dropdown fields: pale yellow with a yellow edge; the chosen item in a dropdown list is yellow */
+select,select.cell{border-color:var(--vr-pms-y-line);background-color:var(--vr-pms-y-50)}
+select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-50)}
+.pick-i:hover:not(:disabled),.pick-i:focus-visible,.dd-item:hover:not(:disabled),.dd-item:focus-visible{background:var(--vr-pms-y-50)}
+.pick-i.on,.dd-item.on{background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
+.pick-i.on svg,.dd-item.on>svg{color:var(--vr-pms-y-text)}
+
+/* =====================================================================
+   Portal tables (Harish 2026-11-19, with screenshots of the portal's Monthly Reporting and Yearly Reporting): only
+   white, yellow and blue. Navy head with white bold names, white rows with dark text (no grey text, no grey stripes),
+   thin grid lines between all cells, light blue for the second head row and the average rows, light blue on hover.
+   Yellow stays for buttons and the Team Report Total row (Fiza). Applies to every table, so they all look the same.
+   ===================================================================== */
+.tablewrap table:not(.opf-t) th{border-right:1px solid rgba(255,255,255,.22)}
+.tablewrap table:not(.opf-t) th:last-child{border-right:0}
+.tablewrap table:not(.opf-t) td{border-right:1px solid var(--vr-pms-line);border-bottom:1px solid var(--vr-pms-line);color:var(--vr-n-900)}
+.tablewrap table:not(.opf-t) td:last-child{border-right:0}
+.rtab tr:nth-child(even)>td,.pmsfull tr:nth-child(even)>td.stk{background:var(--vr-card)}
+.tablewrap table:not(.opf-t) tr:hover>td{background:var(--vr-pms-blue-50)}
+.tablewrap table:not(.opf-t) .mut{color:var(--vr-n-900)}
+.pmsfull .stk3{box-shadow:none}
+/* Team Report (= the portal's Yearly Reporting): KRA head row light blue with dark bold names, averages light blue */
+.tablewrap table.ytab th{background:var(--vr-pms-blue);border-right:1px solid var(--vr-pms-line);border-bottom:1px solid var(--vr-pms-line);color:var(--vr-n-900);font-weight:700}
+.tablewrap table.ytab th.off{color:var(--vr-n-500)}
+.ytab tr.yavg>td,.ytab tr.yavg:hover>td{background:var(--vr-pms-blue);font-weight:700}
+.ytab tr.ytot>td,.ytab tr.ytot:hover>td{background:var(--vr-pms-y-50);font-weight:700}
+.ytab tr.yavg small{color:var(--vr-n-800)}
+
+/* =====================================================================
+   Performance Analytics = "C2" command centre (Harish 2026-11-19): light cards on the page by default, the dark command
+   centre panel only in the app's dark mode (Harish: "light look, dark only when I switch globally"), chart-library style pieces, yellow for the leader / the lit value, status colours only for good / late
+   / bad. The dark KRA trio and status colours were checked for colour-blind separation against this panel.
+   ===================================================================== */
+:root{--vr-anx-bg:transparent;--vr-anx-card:#ffffff;--vr-anx-ink:#0f1a33;--vr-anx-ink2:#46536b;--vr-anx-muted:#6b7689;--vr-anx-line:#dfe4ee;--vr-anx-line2:#eef1f6;
+  --vr-anx-series:#2d4fb0;--vr-anx-yellow:#ffc107;--vr-anx-yink:#1f1700;--vr-anx-good:#12704a;--vr-anx-good50:#e5f4ec;--vr-anx-warn:#b4530a;--vr-anx-warn50:#fdeedf;--vr-anx-bad:#b42323;--vr-anx-bad50:#fbe7e7;
+  --vr-anx-k1:#2f55c4;--vr-anx-k2:#00908c;--vr-anx-k3:#c98200;--vr-anx-pill:#0f1a33;--vr-anx-pill-line:rgba(255,255,255,.18);--vr-anx-pill-ink:#ffffff;--vr-anx-glow:transparent;--vr-anx-glow2:transparent;--vr-anx-lit-glow:rgba(255,193,7,.35);
+  --vr-anx-s0:#eef3ff;--vr-anx-s1:#d6e1fd;--vr-anx-s2:#adc2f6;--vr-anx-s3:#7d9be6;--vr-anx-s4:#4d70d0;--vr-anx-s5:#2b4aa8;--vr-anx-s6:#172c63;
+  --vr-anx-si0:#0f1a33;--vr-anx-si1:#0f1a33;--vr-anx-si2:#0f1a33;--vr-anx-si3:#ffffff;--vr-anx-si4:#ffffff;--vr-anx-si5:#ffffff;--vr-anx-si6:#ffffff;
+  --vr-anx-o1:#93adf0;--vr-anx-o2:#5f80dc;--vr-anx-o3:#1a2f66;--vr-anx-tab-on:#23408b;--vr-anx-tab-on-ink:#ffffff;--vr-anx-tip:#0f1a33;--vr-anx-tip-ink:#ffffff;--vr-anx-shadow:rgba(15,26,51,.25);--vr-anx-card-shadow:0 1px 2px rgba(15,26,51,.04),0 6px 20px -10px rgba(15,26,51,.12);--vr-anx-pad:0}
+.dark{--vr-anx-bg:#0a1230;--vr-anx-card:#111b3f;--vr-anx-ink:#eef2fb;--vr-anx-ink2:#a9b8dc;--vr-anx-muted:#7f8fb8;--vr-anx-line:#1f2c58;--vr-anx-line2:#18234a;
+  --vr-anx-series:#7f9df0;--vr-anx-yellow:#ffc107;--vr-anx-yink:#1f1700;--vr-anx-good:#3ccf8e;--vr-anx-good50:#10301f;--vr-anx-warn:#f59e4b;--vr-anx-warn50:#352310;--vr-anx-bad:#ff6b6b;--vr-anx-bad50:#3b1620;
+  --vr-anx-k1:#6a8be6;--vr-anx-k2:#16a19a;--vr-anx-k3:#c4850e;--vr-anx-pill:#050a1c;--vr-anx-pill-line:rgba(255,255,255,.14);--vr-anx-pill-ink:#eef2fb;--vr-anx-glow:rgba(255,193,7,.10);--vr-anx-glow2:rgba(127,157,240,.10);--vr-anx-lit-glow:rgba(255,193,7,.45);
+  --vr-anx-s0:#17224a;--vr-anx-s1:#1f3068;--vr-anx-s2:#2b4590;--vr-anx-s3:#3b5fbf;--vr-anx-s4:#5b82e0;--vr-anx-s5:#88a8f2;--vr-anx-s6:#c3d4fc;
+  --vr-anx-si0:#eef2fb;--vr-anx-si1:#eef2fb;--vr-anx-si2:#ffffff;--vr-anx-si3:#ffffff;--vr-anx-si4:#0a1230;--vr-anx-si5:#0a1230;--vr-anx-si6:#0a1230;
+  --vr-anx-o1:#3a5fb8;--vr-anx-o2:#5f84dc;--vr-anx-o3:#c3d5fc;--vr-anx-tab-on:#7f9df0;--vr-anx-tab-on-ink:#0a1230;--vr-anx-tip:#050a1c;--vr-anx-tip-ink:#eef2fb;--vr-anx-shadow:rgba(0,0,0,.35);--vr-anx-card-shadow:none;--vr-anx-pad:18px}
+.anbar{align-items:center;gap:10px}
+.anx{margin:4px 0 14px;padding:var(--vr-anx-pad);border-radius:18px;color:var(--vr-anx-ink);
+  background:radial-gradient(1200px 400px at 85% -10%,var(--vr-anx-glow),transparent 60%),radial-gradient(900px 500px at -10% 0%,var(--vr-anx-glow2),transparent 60%),var(--vr-anx-bg)}
+.anx-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+.anc{display:flex;flex-direction:column;min-width:0;padding:16px 18px;border:1px solid var(--vr-anx-line);border-radius:16px;background:var(--vr-anx-card);box-shadow:var(--vr-anx-card-shadow)}
+.anc.c3{grid-column:span 3}.anc.c4{grid-column:span 4}.anc.c5{grid-column:span 5}.anc.c6{grid-column:span 6}.anc.c8{grid-column:span 8}.anc.c12{grid-column:span 12}
+.anink{color:var(--vr-anx-ink)}
+.anc>header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px}
+.anc h3{margin:0;font-size:14px;line-height:20px;font-weight:700;color:var(--vr-anx-ink)}
+.anc header p{margin:2px 0 0;font-size:12px;line-height:16px;color:var(--vr-anx-muted)}
+.anc-t{display:flex;flex:none;align-items:center;gap:6px}
+.anc-t .btn.sm{white-space:nowrap}
+.anc-b{display:flex;flex:1;flex-direction:column;gap:8px;min-width:0}
+.anc-b>svg{display:block;width:100%;height:auto;margin-top:auto;overflow:visible}
+.anc svg.anring{max-width:180px;margin:0 auto}
+.anbig{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.02em;color:var(--vr-anx-ink)}
+.anbig small{font-size:13px;font-weight:600;letter-spacing:0;color:var(--vr-anx-muted)}
+.ancap{font-size:12px;color:var(--vr-anx-muted)}
+.anchip{flex:none;display:inline-flex;align-items:center;gap:3px;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:1px}
+.anchip.up{background:var(--vr-anx-good50);color:var(--vr-anx-good)}.anchip.dn{background:var(--vr-anx-bad50);color:var(--vr-anx-bad)}.anchip.nt{background:var(--vr-anx-line2);color:var(--vr-anx-ink2)}
+.anx-none{margin:auto 0;padding:18px 0;font-size:13px;color:var(--vr-anx-muted)}.anx-none b{color:var(--vr-anx-ink)}
+.ankeys{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;font-size:12px;color:var(--vr-anx-ink2)}
+.ankeys i{display:inline-block;width:10px;height:10px;margin-right:-6px;border-radius:3px}
+.ax-gl{stroke:var(--vr-anx-line2);stroke-width:1}
+.ax-tk{fill:var(--vr-anx-muted);font-size:11px;font-family:var(--font);font-variant-numeric:tabular-nums}
+.ax-lb{fill:var(--vr-anx-ink);font-size:12px;font-weight:600;font-family:var(--font)}
+.ax-lb2{fill:var(--vr-anx-ink2);font-size:11px;font-family:var(--font)}
+.ax-pill{fill:var(--vr-anx-pill);stroke:var(--vr-anx-pill-line)}
+.ax-pillt{fill:var(--vr-anx-pill-ink);font:800 13px var(--font)}
+.anx [data-tip]{cursor:pointer;outline:none}
+.anx [data-tip]:focus-visible{outline:2px solid var(--vr-anx-yellow);outline-offset:2px}
+.anrows{display:grid;gap:8px;margin-top:6px}
+.antabs{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 4px}
+.antab{padding:4px 10px;border:1px solid var(--vr-anx-line);border-radius:999px;background:var(--vr-anx-card);color:var(--vr-anx-ink2);font:inherit;font-size:12px;font-weight:600;line-height:16px;cursor:pointer;transition:background-color .15s,color .15s,border-color .15s}
+.antab:hover{border-color:var(--vr-anx-series);color:var(--vr-anx-ink)}
+.antab.on{border-color:var(--vr-anx-tab-on);background:var(--vr-anx-tab-on);color:var(--vr-anx-tab-on-ink)}
+.antab:focus-visible{outline:2px solid var(--vr-anx-yellow);outline-offset:2px}
+.anpie{display:grid;grid-template-columns:minmax(110px,150px) minmax(0,1fr);gap:14px;align-items:center;margin-top:auto}
+.anpie .anrows{gap:8px;margin:0}
+.anrows div{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;gap:8px;align-items:center;font-size:13px}
+.anrows i{width:10px;height:10px;border-radius:50%}
+.anrows span{color:var(--vr-anx-ink2)}.anrows b{font-variant-numeric:tabular-nums;color:var(--vr-anx-ink)}
+.anrows em{min-width:38px;font-style:normal;text-align:right;color:var(--vr-anx-muted);font-variant-numeric:tabular-nums}
+.ansq{display:grid;gap:9px}
+.ansqr{display:grid;grid-template-columns:22px minmax(60px,110px) minmax(0,1fr) 34px;gap:8px;align-items:center;font-size:13px}
+.ansqr b{overflow:hidden;font-weight:600;white-space:nowrap;text-overflow:ellipsis;color:var(--vr-anx-ink)}
+.ansqr em{font-style:normal;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.ansqs{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px;max-width:180px}
+.ansqs i{aspect-ratio:1;border-radius:3px;background:var(--vr-anx-line2)}
+.ansqs i.on{background:var(--vr-anx-series)}.ansqs i.y{background:var(--vr-anx-yellow);box-shadow:0 0 6px var(--vr-anx-lit-glow)}
+.anrk{display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--vr-anx-line2);color:var(--vr-anx-ink2);font-size:12px;font-weight:800}
+.anrk.g{background:var(--vr-anx-yellow);color:var(--vr-anx-yink)}
+.ancal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.ancal .wd{font-size:11px;text-align:center;color:var(--vr-anx-muted)}
+.ancal .dd{display:grid;place-items:center;aspect-ratio:1;border-radius:8px;font-size:11px;font-weight:600;color:var(--vr-anx-ink2);background:var(--vr-anx-line2)}
+.ancal .dd.f{border:1px dashed var(--vr-anx-line);background:none;color:var(--vr-anx-ink2)}
+.ancal .dd.t{box-shadow:0 0 0 2px var(--vr-anx-yellow)}
+.anx .h0{background:var(--vr-anx-s0);color:var(--vr-anx-si0)}.anx .h1{background:var(--vr-anx-s1);color:var(--vr-anx-si1)}.anx .h2{background:var(--vr-anx-s2);color:var(--vr-anx-si2)}.anx .h3{background:var(--vr-anx-s3);color:var(--vr-anx-si3)}
+.anx .h4{background:var(--vr-anx-s4);color:var(--vr-anx-si4)}.anx .h5{background:var(--vr-anx-s5);color:var(--vr-anx-si5)}.anx .h6{background:var(--vr-anx-s6);color:var(--vr-anx-si6)}
+.ancal .dd.f.h1,.ancal .dd.f.h2,.ancal .dd.f.h3,.ancal .dd.f.h4,.ancal .dd.f.h5,.ancal .dd.f.h6{border-style:dashed;border-color:var(--vr-anx-series)}
+.anscale{display:flex;align-items:center;gap:3px;margin-top:8px;font-size:11.5px;color:var(--vr-anx-muted)}
+.anscale i{width:24px;height:8px;border-radius:3px}.anscale span{margin:0 6px}
+.analerts{display:grid;gap:10px}
+.anal{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--vr-anx-line);border-radius:12px;background:var(--vr-anx-line2)}
+.anal .ic{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-weight:800}
+.anal.r .ic{background:var(--vr-anx-bad50);color:var(--vr-anx-bad)}.anal.w .ic{background:var(--vr-anx-warn50);color:var(--vr-anx-warn)}.anal.g .ic{background:var(--vr-anx-good50);color:var(--vr-anx-good)}
+.anal p{margin:0;font-size:13px;line-height:18px;color:var(--vr-anx-ink2)}.anal p b{color:var(--vr-anx-ink)}
+.anlink{padding:0;border:0;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--vr-anx-yellow);text-decoration:none;cursor:pointer}
+.anlink:hover{text-decoration:underline}
+/* tooltip, Bklit UI style (Harish 2026-11-20): a card like the charts' own, bold title, one row per series with its dot and
+   the number on the right, an optional footer line under a hairline */
+#antip{position:fixed;z-index:60;min-width:150px;max-width:280px;padding:10px 12px;border:1px solid var(--vr-anx-line);border-radius:12px;background:var(--vr-anx-card);color:var(--vr-anx-ink2);font-size:12.5px;line-height:1.45;pointer-events:none;box-shadow:0 14px 34px -10px var(--vr-anx-shadow);animation:an-tip .14s ease-out}
+#antip b{color:var(--vr-anx-ink)}
+#antip .tt{display:block;margin-bottom:6px;font-size:13px;font-weight:700}
+#antip .ts{display:block;margin:-4px 0 6px;font-size:12px;color:var(--vr-anx-muted)}
+#antip .tr{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:10px;align-items:center;margin-top:3px}
+#antip .tr i{width:8px;height:8px;border-radius:50%}
+#antip .tr b{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+#antip .tr+.tf{margin-top:7px;padding-top:7px;border-top:1px solid var(--vr-anx-line2)}
+#antip .tf{display:block;font-size:12px;color:var(--vr-anx-muted)}
+@keyframes an-tip{from{opacity:0;transform:translateY(3px)}}
+
+/* Bklit UI hover (Harish 2026-11-20, from his Bklit UI recording): marks and legend rows that share a data-hk key light up
+   together and the rest of the card dims (anTipWire sets .hot); month labels turn into a pill; pie slices pop out */
+.anx [data-hk]{transition:opacity .2s ease}
+.anc[data-hot] [data-hk]:not(.hot){opacity:.32}
+.ax-xp{fill:var(--vr-anx-pill);opacity:0;transition:opacity .15s}
+.hot>.ax-xp{opacity:1}.hot>.ax-xt{fill:var(--vr-anx-pill-ink);font-weight:700}
+.anfun .hot .ax-pill{fill:var(--vr-anx-yellow);stroke:none}.anfun .hot .ax-pillt{fill:var(--vr-anx-yink)}
+.pslice{transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .2s ease}
+.pslice.hot{transform:translate(var(--dx),var(--dy))}
+.anpie svg{overflow:visible}
+.anleg>div{margin:-4px -8px;padding:4px 8px;border-radius:8px;transition:background-color .15s,opacity .2s}
+.anleg>div.hot{background:var(--vr-anx-line2)}
+.anrows .anpb{display:block;grid-column:1/-1;height:4px;margin-top:-3px;overflow:hidden;border-radius:2px;background:var(--vr-anx-line2);text-decoration:none}
+.anpb s{display:block;height:100%;border-radius:2px;text-decoration:none;transform-origin:0 50%}
+/* sparkline (Parameter rating): thin line, yellow end dot, dashed crosshair + dot on hover */
+.sp-l{fill:none;stroke:var(--vr-anx-series);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100 100}
+.sp-end{fill:var(--vr-anx-yellow);stroke:var(--vr-anx-card);stroke-width:1.5}
+.sp-x{opacity:0;transition:opacity .12s}.hot>.sp-x{opacity:1}
+line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
+.sp-d{fill:var(--vr-anx-series);stroke:var(--vr-anx-card);stroke-width:2}
+/* Bklit UI entrance, only on a card that just came in or changed (.anin, set by anDraw); none when less motion is asked */
+@media (prefers-reduced-motion:no-preference){
+  .anin .grow{transform-box:fill-box;transform-origin:50% 100%;animation:an-grow .75s cubic-bezier(.34,1.56,.64,1) backwards;animation-delay:calc(var(--i,0) * 70ms)}
+  .anin .wipe{transform-box:fill-box;transform-origin:0 50%;animation:an-wipe .7s cubic-bezier(.22,1,.36,1) backwards;animation-delay:calc(var(--i,0) * 140ms)}
+  .anin .fin{animation:an-fade .45s ease-out backwards;animation-delay:calc(var(--i,0) * 140ms + 350ms)}
+  .anin .ringa{animation:an-ring 1.1s cubic-bezier(.22,1,.36,1) backwards;animation-delay:calc(var(--i,0) * 130ms)}
+  .anin .sweep{animation:an-sweep 1s cubic-bezier(.45,0,.2,1) backwards}
+  .anin .sp-l{animation:an-sweep 1.1s ease-out backwards}
+  .anin .sp-end{animation:an-fade .3s ease-out 1s backwards}
+  .anin .gn{animation:an-lit .35s ease-out backwards;animation-delay:calc(var(--i,0) * 28ms)}
+  .anin .pop,.anin .ansqs i,.anin .ancal .dd{transform-box:fill-box;transform-origin:50% 50%;animation:an-pop .45s cubic-bezier(.34,1.56,.64,1) backwards}
+  .anin .pop{animation-delay:calc(var(--i,0) * 14ms)}
+  .anin .ansqs i{animation-delay:calc(var(--i,0) * 35ms)}
+  .anin .ancal .dd{animation-delay:calc(var(--i,0) * 40ms)}
+  .anin .anpb s{animation:an-bar .9s cubic-bezier(.22,1,.36,1) .2s backwards}
+}
+@keyframes an-grow{from{transform:scaleY(0)}}
+@keyframes an-wipe{from{transform:scaleX(0);opacity:.3}}
+@keyframes an-fade{from{opacity:0;transform:translateY(4px)}}
+@keyframes an-ring{from{stroke-dasharray:0 100}}
+@keyframes an-sweep{from{stroke-dashoffset:100}}
+@keyframes an-lit{from{opacity:.15}}
+@keyframes an-pop{from{opacity:0;transform:scale(.4)}}
+@keyframes an-bar{from{transform:scaleX(0)}}
+@media (max-width:1100px){.anc.c3,.anc.c6{grid-column:span 6}.anc.c4,.anc.c5,.anc.c8,.anc.c12{grid-column:span 12}}
+@media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}}
+@media (prefers-reduced-motion:reduce){.anx [data-hk],.pslice,.anleg>div,.sp-x{transition:none}#antip{animation:none}}
+
+/* UI Components page (#/components, not in the menu; brief section 10): light and dark frames side by side */
+.uic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.uic-lab{margin:0 0 8px;font-size:11px;line-height:16px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
+.uic-f{display:block;width:100%;height:1200px;border:1px solid var(--vr-n-200);border-radius:12px;background:var(--vr-page)}
+@media (max-width:1100px){.uic-grid{grid-template-columns:1fr}}
+
+/* =====================================================================
+   Compact filter panel (Harish 2026-11-19: "small premium look like Apple design filter with short size"). One override
+   for the shared Filter panel on every page (dashboard cards, Employees, Review Report, Team Report, Scheduling, Audit
+   log, Performance Analytics): a small frosted popover, one-line header, short rows with the current value on the right,
+   plain small icons, a tick for the chosen option. Markup and behaviour are unchanged (cfDraw in app.js).
+   ===================================================================== */
+.cfp{width:184px;padding:5px;border:1px solid color-mix(in srgb,var(--vr-n-300) 70%,transparent);border-radius:12px;
+  background:color-mix(in srgb,var(--vr-card) 88%,transparent);-webkit-backdrop-filter:blur(18px) saturate(1.6);backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:var(--vr-shadow-lg);transform-origin:top right;animation:cfpIn .12s ease-out}
+@keyframes cfpIn{from{opacity:0;transform:scale(.96) translateY(-2px)}to{opacity:1;transform:none}}
+.cfp-h{gap:6px;margin:0 0 3px;padding:4px 6px 6px;border-bottom:1px solid color-mix(in srgb,var(--vr-n-300) 55%,transparent)}
+.cfp-h>div{flex-direction:row;align-items:baseline;gap:5px;overflow:hidden;white-space:nowrap}
+.cfp-h b{font-size:12px;font-weight:600}
+.cfp-h small{overflow:hidden;font-size:11px;text-overflow:ellipsis}
+.cfp-h small::before{content:"· ";color:var(--vr-n-400)}
+.cfp.cfp-wide{width:212px}
+.cfp-h0{justify-content:flex-end;padding:2px 6px 4px}
+.cfp-back{width:20px;height:20px;border-radius:5px}.cfp-back svg{width:13px;height:13px}
+.cfp-clr{padding:0;background:none;font-size:11px;font-weight:600;color:var(--vr-accent-navy)}
+.cfp-clr:hover{background:none;text-decoration:underline}.cfp-clr svg{display:none}
+.cfp-l{gap:0;max-height:252px}
+.cfp-r,.cfp-o{gap:8px;padding:5px 7px;border-radius:6px;font-size:12.5px;line-height:17px}
+.cfp-r:hover,.cfp-o:hover:not(:disabled),.cfp-r:focus-visible,.cfp-o:focus-visible{background:color-mix(in srgb,var(--vr-accent-navy) 9%,transparent)}
+.cfp-r>span{flex-direction:row;align-items:center}
+.cfp-r b{flex:none;font-weight:500}
+.cfp-r small{display:none} /* rows show the option name and icon only (Harish 2026-11-19); the dot marks a filter that is on */
+.cfp-r>svg{width:12px;height:12px}
+.cfp-ic,.cfp-ic.t-n,.cfp-ic.t-p,.cfp-ic.t-s,.cfp-ic.t-a,.cfp-ic.t-g{width:16px;height:16px;border-radius:0;background:none;color:var(--vr-n-500)}
+.cfp-ic svg{width:14px;height:14px}
+.cfp-dot{width:6px;height:6px}
+.cfp-o.on{background:none;font-weight:600;color:var(--vr-n-900)}
+.cfp-o>svg{width:13px;height:13px}
+.cfp-cb{width:14px;height:14px;border-width:1.5px;border-radius:4px}
+.cfp-cb svg{width:10px;height:10px}
+.cfp-s{margin:0 0 4px;padding:0 7px;border-radius:7px}
+.cfp-s input{padding:4px 0;font-size:12px}
+.cfp-s svg{width:12px;height:12px}
+.cfp-empty{padding:8px 7px;font-size:12px}
+.cfp-note{margin:4px 7px 2px}
+@media (prefers-reduced-motion:reduce){.cfp{animation:none}}
 
 @media print{
   .side,.topbar,.ibtn,.btn,.toast{display:none!important}

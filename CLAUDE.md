@@ -26,7 +26,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `auth.js`, repeated in `pwWire`). Stored as scrypt hashes in `D.passwords` (own container in `KEYS`, never spread
   into employee objects or sent to the page); the session cookie carries `pv` (password version), so a change or
   reset signs out that person's other password sessions (Google sessions are not affected). 5 wrong tries lock that
-  email for 15 minutes (in memory). No email sending yet, so "Forgot password?" says to ask the PMS admin.
+  email for 15 minutes (in memory). No email sending yet, so "Forgot password?" (type the
+  email first) calls `POST /api/auth/forgot` (open route, same answer for unknown emails, once per email per 10 min): the
+  admins get a "Needs action" notification `pwreset|<id>` linking to `#/employees/pw/<id>`, which opens that person's
+  Password dialog; `/api/password/set` resolves it (Harish 2026-11-18).
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
   Google emails the guests (employee + their manager when someone else schedules).
@@ -58,7 +61,12 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   existing email when the sheet has none. Admins use "View as". Admin dashboard starts with the "All stats" counts in the navy bar (Harish, 2026-11-13: the old review-progress bar with ring, window, dates, emails is gone for admins and managers; the five status cards below cover it)
   (`orgStats()` in `server.js`, `allStats()` in `app.js`).
   Dashboard card filters: Harish picked option A of the mock-ups (2026-11-17; he asked for "A + C", A first, C = a
-  page-wide "Filters" drawer with removable chips is still to be decided). A "Filter · N" pill on Review status (small
+  page-wide "Filters" drawer with removable chips is still to be decided). The panel's look (2026-11-19, Harish: "small
+  premium Apple-like filter") = block "Compact filter panel" at the end of the styles: ~180px frosted popover with NO
+  header (no "Filter · card" line; a small "Clear all" row only when a filter is on), rows = small icon + option name
+  only (no current value text; the dot marks a filter that is on); the choice list (`.cfp-wide`, ~210px) has a back
+  arrow + the option name, search, checkboxes / tick.
+  A "Filter · N" pill on Review status (small
   header above the five status cards), Review quality and Team-wise progress opens a two-step panel (`cfOpen` / `cfDraw`
   in `app.js`, CSS `.cfpill` / `.cfp*`): Period (this month, last month, quarter so far, last 3 months, FY so far,
   counted back from the dashboard month), Team, Reporting manager, plus Compare (quality: the period before, shown as
@@ -76,7 +84,30 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   flat deep navy `--vr-navy-900` (Harish 2026-11-18: darker than the logo blue `#234788`, no glow orbs, no see-through
   white highlight; open page = logo blue `--vr-navy-800`). A panel-icon button at its top right (next to the logo; Harish picked it over an arrow) shrinks it to icons
   (`sideSet` / `navFly` in `app.js`, `#app.mini`, stored as `pms.sideMini`): names on hover, menu groups open as a pop-out.
-  The count cards stay light-tinted (he rejected solid navy cards the same day). Built
+  The count cards stay light-tinted (he rejected solid navy cards the same day). Yellow actions + soft page (Harish
+  2026-11-19, managers like the navy look): every button / pill / dropdown button is the portal yellow (`--vr-pms-y`),
+  delete stays red, switches green; dropdown fields pale yellow (`--vr-pms-y-50`), the chosen dropdown item yellow;
+  selected tabs stay navy (blue = where you are, yellow = what you can do); page background `--vr-page` (soft
+  blue-grey, not pure white), cards / tables / top bar stay white. Block "Yellow actions and a soft page" at the end of
+  the styles in `index.html`. Tables = the portal's (Harish 2026-11-19, block "Portal tables", after it): only white,
+  yellow and blue; navy head, white rows, dark text (no grey text or stripes), grid lines between all cells, light-blue
+  hover; Team Report head row and average rows light blue `--vr-pms-blue`, Total soft yellow. The monthly form's
+  tables (`.opf-t`) are left out. Review Report Team-wise = only the team table; "View people" on a row opens
+  Organisation-wise (managers: "Employee-wise") filtered to that manager + team; Summary / Full details belong to the
+  employee list only. Review Report search box right of the toolbar (`#rsearch`, `RF.q`): hides non-matching rows of the
+  table on screen (reads only the chosen Final Status, not the whole list); counts and Export stay for the month. Final
+  Status dropdown = each status once, no "(automatic)" option: picking the status the form gives on its own clears the
+  hand-set one (server compares with `finalStatusAuto`). Performance Analytics redesign: three options (A Scorecard,
+  B Heatmap, C Insights) shown to Harish 2026-11-19 as a private artifact, waiting for his pick.
+  UI brief audit (Harish 2026-11-20; brief = `Downloads/VerviRecruit-UI-Brief.docx`, "our reference document"): PMS was
+  built on it (base CSS in `index.html` up to the "Old PMS portal look" block), then deliberately overridden by the portal
+  look, yellow actions, portal tables, green switches/toast/ratings and the Bklit analytics motion. Decision: KEEP the
+  portal look; the brief stays the reference for structure and for anything not decided otherwise. Gaps fixed: PDF
+  exports use the app's light tokens (`PRINT` / `printCss` in `app.js`, keep in step with the tokens; colours forced to
+  print), `.alert-w` (orange) for warnings and `.warn` (red) only for errors, times in en-IN (`apWhen`, Audit Log too),
+  and the brief's components page = `#/components` (admin, NOT in the menu: Harish removed the menu item 2026-11-20, open the address directly; `pages.components`: light and dark
+  frames side by side with the app's own stylesheet, one note per item on where PMS differs and who asked). When a
+  shared component changes, add it there. Built
   on the VerviRecruit UI brief: all colours are `--vr-*` tokens in `public/index.html` (light on `:root`, dark on
   `html.dark`, stored as `pms.theme`); no raw hex; success = azure, green (`--vr-green-*`) only for on/off switches
   and the chart "submitted" colour (Harish asked for green switches, 2026-11-12), plus the success toast ("Answer saved"
@@ -85,11 +116,14 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   version was rejected), only more compact: `--vr-pms-*` tokens (yellow buttons, grey KRA band, cream section bars, navy
   table heads). Title "Monthly Reporting : <name link>", month / year / View Question-Answer, a card with a navy "KRA · FY | month" band and the employee details
   (review date, Copy KPI / Export KPI), then Operational / Process / People (heading + description, "Weightage of KRA"
-  pill with pencil, fold arrow `folded`, table with Totals row, Add sub-KRA / Save; save asks "Are you sure? You want to
+  pill with pencil, fold arrow `folded`, table with Totals row (first column "S.No"; delete a sub-KRA = red trash in its
+  own "Action" column at the row's end, only while KRAs are editable; the form's status badge is large, `.opf-top .badge`;
+  Harish 2026-11-19), Add sub-KRA / Save; save asks "Are you sure? You want to
   add all these KPI?", then "Added! Your KPI has been added."), the Rating table (`ratingBox`: reviewers/admins see it once
   every rating is in, the employee only after submit), Question-Answers (Self/Manager/Remark heading only above the first
   rated question), Back to top, "Save Final Reporting" (= Submit review). KRA ratings (self and manager) get a solid fill by
-  value (`rateCol`, `--vr-rate-g/y/o/r` tokens; Harish 2026-11-18 wanted full dark colours, not light tints): 75+ green, 50-74 yellow (`--vr-rate-y-*`), 25-49 orange (warn), 24 and below red (danger). The
+  value (`rateCol`, `--vr-rate-g/y/r` tokens, white numbers): THREE dark colours only (Harish 2026-11-19: the bright
+  orange / yellow looked light, never use light fills here): 75+ dark green, 50-74 dark amber, below 50 dark red. The
   employee's "Request KRA change" button is titled "Allow to add new KPI" (managers: only the title changes). Theme button and the user menu
   live in the top bar: clicking the name/avatar opens a small menu (same look as the other dropdowns) with Profile
   information and Sign out. Profile information is a page, not a popup (`#/profile`, `pages.profile`, `GET /api/profile`):
@@ -97,17 +131,34 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Reporting line card (director down to the person), read-only, the admin keeps the details. Code and joining date from the list are placeholders (shown "Not set yet") until the
   admin sets them in Employees › Edit (`codeSet` / `joinedSet` flags). The page scrolls inside `#main`, not the window (`SC()`). No page footer (Harish
   removed it, 2026-11-12). Admins get a grouped menu (Reporting / Questions
-  open as sub-menus). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
+  open as sub-menus). Settings › Questionnaire is its own page (`#/questions`, `pages.questions` → `questionsBox`);
+  Parameters summary (`#/params`) shows only the parameters (Harish 2026-11-19; old `#/params/questions` redirects).
+  The Questionnaire page manages only the text-answer questions: the rating questions (6-12) stay on the review form
+  but are not listed, added, edited, deleted or reordered there (`editable` in `server.js`, Harish 2026-11-19). The "Reporting manager" group (5 lists by designation) was removed on 2026-11-13 (Harish: it
   duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
   reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
   click to drill down; opened from the Employees page button and names, highlights Employees › Active in the menu (Employees is a menu group with Active / Inactive, 2026-11-16);
   old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate).
   Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
   captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
-  There is no Settings page: the thresholds ("Review rules") and review windows are on the Scheduling page (admin);
-  admins can also edit a window from the dashboard. Status names shown to users: "Review Not Completed" = "Form
-  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments plus
-  "Directors" (was "Leadership"); `migrate()` in `data.js` updates older saved state on boot.
+  There is no Settings page: review windows are on the Scheduling page (admin); admins can also edit a window from the
+  dashboard. The review rules (thresholds) are NOT settings since 2026-11-19 (Harish): fixed in `RULES` in `data.js`
+  (Operational 40-80, People 10-20, ClickUp 60, learning 60 = one value for the flag and "properly done", gap flag 20,
+  email gap 15, 30% self / 70% manager, 15 words, 3 Operational sub-KRAs); no Review rules form, no `PUT /api/config`,
+  `migrate()` drops older saved copies. Status names shown to users: "Review Not Completed" = "Form
+  incomplete", "Pending" = "Overdue" (server keeps the old names). Teams = the list's departments. Top-level directors
+  carry the team name "Directors" (was "Leadership") internally, but it is NOT a team (Harish 2026-11-19): left out of
+  `teamNames()`, `/api/me` teams, the dashboard team tabs, Teams page and Employees chips (team shows "–"); the name
+  cannot be used for a new team. The dashboard's "Review quality" card is now called "Review insights" and the All stats
+  numbers are all plain white (role colour only in the dot), 2026-11-19. `migrate()` in `data.js` updates older saved state on boot.
+- Small add-ons (Harish 2026-11-18): the dashboard's Filter pill + panel is also on Review status report (`report`),
+  Team report (`yearly`), Scheduling team members (`sched`) and Audit log (`audit`): all `local` cards in `CF_CARDS`,
+  page choices in `PF`, the page's own state (RF / YF) stays the truth; `cfClear` / `clearLink` for empty lists.
+  Search = top bar button / Ctrl+K (`palOpen`: side menu links + `/api/report` rows; Enter opens the person's form).
+  Side panel starts shrunk under 1100px (`sideNarrow`). Leaving the monthly form with an answer typed but not ticked
+  asks first (`navGuard` / `formUnsaved`, also `beforeunload`). Every CSV goes through `csvSave` / `fileSave` (Export
+  CSV on Employees and Team report too). Scheduling has a List / Calendar switch (`calView`, `pms.schView`). Team
+  report had a rating trend per person (small line + change vs the month before); Harish removed it 2026-11-20.
 - People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
   member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
 - Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,
@@ -120,9 +171,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   request marked `movedFrom`). Roles are derived, never picked (`L.deriveRole` / `refreshRoles`, same rule as the import;
   only Admin is a choice in Edit); anyone active can be picked as a manager. People involved get notifications (see below). Submitted forms keep `f.reviewedBy` (manager at the time):
   the form header and Team report ("by <name>") use it. The employee sheet stays master: an import replaces app-made
-  reporting changes (`managerSetInApp`) and lists them. Admins never schedule reviews (`manageForm` refuses when the
-  real user is admin, also in View as); their Scheduling page is windows + rules + read-only status; in View as of a manager that
-  manager's Schedule / Reschedule buttons show greyed out with a note (`managerOnly`, 2026-11-17), so View as matches what they see.
+  reporting changes (`managerSetInApp`) and lists them. Admins CAN schedule any review again (Fiza, 2026-11-19: a manager
+  on leave or short of time shares the dates on WhatsApp / the sheet and the admin books them, invite from the admin's own
+  calendar): `manageForm` only checks `canManage`, the admin's Scheduling page lists everyone (only directors get
+  `directOnly`), `managerOnly` is always false (the 2026-11-17 "admins never schedule" rule is gone).
 - Team follows the reporting manager (Harish, 2026-11-12): a new manager (Employees table/Edit, moving a manager to
   inactive, or a planned "keep" move when it takes effect) puts the person in that manager's team, and the people under
   them who were in their old team come along (`teamOfManager` / `moveTeam` in `server.js`). Exceptions: reporting to a
@@ -131,7 +183,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Teams (2026-11-13): a team = the `team` name on each person + its window in `config.windows`. Admins add / rename /
   delete (only when nobody active is in it) teams on the Teams page in the admin menu (`#/teams`, `pages.teams` in `app.js`;
   `GET|POST|PUT /api/teams`, `POST /api/teams/delete` in `server.js`; the Window button reuses `windowDialog`). Vidya and
-  Harish each built a Teams screen; they were merged into this one page (no Teams button on Employees). "Directors" is fixed. Because the sheet
+  Harish each built a Teams screen; they were merged into this one page (no Teams button on Employees). Shown names
+  (Fiza 2026-11-19): "Team <short name>" everywhere (`teamLabel` in `server.js` -> `S.me.teamLabels` / `tl()`, Teams page
+  via `label` from `/api/teams`): Team Accounts, Team HR, a person-named team uses the first name ("Team <first name>");
+  stored names do not change. Because the sheet
   is master, a rename is stored in `config.teamRenames` (sheet name -> app name) and `importList` maps through it; teams
   added in the app (`config.teamsAdded`) are not dropped while empty. A team changed by hand (`moveTeam` sets
   `e.teamSetInApp`) is put back by the next import and listed with the replaced reporting changes.
@@ -142,18 +197,43 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   for tests): window open, closes in 2 days, overdue, meeting tomorrow, admin "no work email". State container
   `notifications` (empId -> list, last 100 / 60 days), in `KEYS`. Routes call `N.push` after their `audit(...)`:
   KRA request/decision/changes, send to manager / send back / submit, schedule / reschedule / invite cancelled,
-  reporting changes, window / rules / questionnaire / parameters changes, list import (admins). In View as the admin
+  reporting changes, window / rules / questionnaire / parameters changes, list import (admins). "Remind not
+  filled" on the dashboard's Review status header (`remindAll()`, `POST /api/remind`, dry run counts first; managers,
+  directors, admins; not in View as): action item `remind|<emp>|<month>` to every Not Filled person in scope (leave /
+  notice skipped), once per 12 h per sender (in memory), resolved by self-submit (Harish 2026-11-18). In View as the admin
   sees the person's list but never marks it read. No email yet (no sender; Google Calendar already emails invites).
 - Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
 - PMS report format (management's "PMS Reports Format" sheet, 2026-11-13) = the Review status report's "Full details"
   switch (`/api/report?detail=1`, `fullTable()` in `app.js`) and its CSV export (same columns, sheet order: `PMS_COLUMNS` in
   `server.js`), built by `pmsDetail()` in `logic.js`. No AI: the Operational/Process/People remark columns join each
   sub-KRA's self and manager remark. Scheduled Date = first date picked (`f.firstScheduledDate`, older forms: first
-  reschedule's `from`). Final Status: Review Done / Questionnaire Done / Pending, "PMS form incomplete/errors/queries" (all
+  reschedule's `from`). Actual Date (Fiza, 2026-11-19) = the day every KRA got its manager rating (`f.mgrRatedOn`, set by
+  `L.trackReviewDay` after each `PUT /api/form`, also fills the form's Review Date; taking a rating out clears it), not the
+  scheduled date or the save day; older forms / new joiners fall back to `f.reviewDate`. Final Status: automatic =
+  Review Done / Questionnaire Done / Pending, "PMS form incomplete/errors/queries" (all
   ratings in but a blocker), "Employee on leave" / "Serving Notice" (admin sets `e.workStatus = {type, from}` in Employees ›
-  Edit, from that review month on). Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
-  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules in
-  Review rules: `learningDoneMin` 60, `qMinWords` 15, `opMinSubKras` 3 (defaults filled by `migrate()`).
+  Edit, from that review month on). Admins and the person's managers can pick it by hand in Full details (Fiza
+  2026-11-19, dropdown `fsSelect`, `POST /api/report/final-status`, kept per month in `f.finalStatusSet`, "(automatic)"
+  clears it): `L.FINAL_STATUSES` = Review Pending, Review Done, Questionnaire Pending, Questionnaire Done, PMS form
+  incomplete/errors/queries, Employee on leave, Serving Notice, N/A ("Review not done" = Review Pending). Full details: first
+  column "S.No" (also in the CSV), S.No / Employee Code / Name stick while scrolling sideways, even column spacing.
+  Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
+  `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
+  PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
+  `private/state.before-codes-2026-11-19.json`) and to STAGING the same evening (already had them; backup
+  `private/staging-backup-2026-11-19.json`). Full details headings are centred, compact, at most
+  two lines; every dropdown arrow uses `--vr-caret` (navy, yellow in dark mode).
+  Departments (Harish 2026-11-19, "use department names properly"): the REAL department (Finance & Accounts, HR & Admin,
+  Sales Team, Cloud Data, Social Media) from the Department column of "Task_List_HRMS_Tool - Employee_List" is its own
+  field `e.department` (private/departments.tsv, `node private/apply-departments.js [--apply]`, same name matching as
+  the codes; kept by list imports). Everything labelled "Department" shows it (Review Report Full details + CSV,
+  Annual review, Profile › Work details); the TEAM (`e.team`, team sheet) is unchanged and still drives reporting lines,
+  windows, team tabs and filters. Applied to LOCAL data 2026-11-19 (backup `private/state.before-departments-2026-11-19.json`),
+  and STAGING (2026-11-19, 76 people incl. 5 inactive; Render redeployed with an empty commit right after so its
+  in-memory copy did not save over it). No department in the PDF: the 4 directors and one consultant. DOJ and April-October
+  history: Fiza / Vidya still to share. Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
+  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules
+  (fixed, `RULES` in `data.js`): `learningMin` 60, `qMinWords` 15, `opMinSubKras` 3.
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).
 - Reports ported from the old portal (pms.verveadvisory.com): Team report / My report (`#/yearly`, `/api/yearly`,
@@ -188,6 +268,40 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   of this is possible after "Submit to manager" (`selfSubmitted`). The One Pager Document is hidden from
   employees; monthly rating = per sub-KRA 30% self + 70% manager, weighted by
   sub-KRA then KRA weight; demo "today" is `config.today` in `data.js`.
+- Meeting with Fiza, 2026-11-19 (recording): menu names in Title Case: Review Report (was "Review status report": it
+  shows more than status), Performance Analytics (new, between Review Report and Team Report), Team Report, My Report,
+  One Pager Document, Parameters Summary, My Review, My Team, Audit Log. Performance Analytics (`#/analytics`,
+  `pages.analytics` / `anDraw`, `GET /api/analytics`; admins = everyone, directors / managers = the people under them)
+  is charts only. Layout = "C2 command centre" (Harish picked it 2026-11-19 from three rounds of mock-ups, private
+  artifact claude.ai/artifact/S7ZGYd2y1BTUxJaAwRu2kp): `.anx` with `--vr-anx-*` tokens: LIGHT by default (white cards on
+  the page, like the rest of PMS), the dark command-centre panel only in the app's dark mode (`.dark` tokens; Harish
+  2026-11-19: "light look, dark only when I switch globally"). 12 cards: Average rating (notched gauge, 75 mark), Strong performers (month bars), Parameter rating (notch bar /5),
+  Who is moving (dot per person up / steady / down), Review cycle funnel for this month (layered bands, %
+  pills; due → meeting booked → filled → ratings in → submitted; Remind button = `remindAll()`), KRA scores (rings),
+  Reviews held on time (on time / late / missed per finished month, from `dueInfo`), Rating bands (tick donut),
+  Parameters = ONE pie card (`anPar`): the parameter (Attendance, General conduct, ...) is picked with tabs ON THE CARD
+  (`.antab`, short names, navy = selected; Harish 2026-11-19: hidden in the Filter nobody finds it; he also rejected a
+  radar and one card per parameter). The pick is kept in `CF.anPar.xpar`, hidden from the panel (`PF.hide.anPar`); pie of the
+  manager's 1-2 / 3 / 4 / 5 ratings, full marks yellow, average in the middle. Team race (squares), Review meetings
+  calendar (this month, held up to `config.today`, booked after), Needs attention. EVERY card has its own Filter pill =
+  the shared card filter panel (`CF_CARDS` an*, local, keys `xper` period 3 / 6 / FY, `xteam`, `xdesig`, `xmgr`, `xpar`;
+  `free: true` keeps a saved pick whose choices only load later); no other filters on the page. API rows per person:
+  team, group, managerId / manager, `scores[month]` (submitted only: total, KRAs, self, mgr, params), `timing[month]`
+  (on / late / missed, finished months), `cycle` (this month). Scores end at the latest finished month with data. Hover
+  numbers: `#antip` (`anTipWire`). FY + `sample` kept in `localStorage` `pms.analytics`.
+  Bklit UI look and motion (Harish 2026-11-20, screen recording of bklit.com charts; Bklit is React/shadcn, so it is
+  rebuilt by hand in vanilla SVG/CSS, never installed): he wants Bar, Funnel, Pie, Ring, Sparkline, Heatmap and the
+  tooltip; NOT radar, scatter, sunburst, background patterns / grid, choropleth map. Entrance plays only on cards whose
+  HTML changed (`AN_LAST` vs `out` in `anDraw` adds `.anin`; CSS keyframes `an-*`, off under reduced motion; `num()` +
+  `anCount()` count numbers up). Bars spring up (`.grow`), funnel steps curve into each other and wipe in (`.wipe` /
+  `.fin`), pie and band donut sweep in clockwise (`sweepMask`), rings sweep (`.ringa`, pathLength 100), Parameter rating
+  is a sparkline (`.sp-l`, crosshair on hover), heatmap days pop in as a diagonal wave. Hover sync: marks and legend rows
+  sharing `data-hk` light up together, the rest of the card dims (`.hot`, `[data-hot]`); month labels turn into a pill
+  (`xlab`); pie slices pop out (`.pslice`); ring centre shows the hovered KRA (`.an-ctr`, `data-cv` / `data-cl`).
+  Tooltip = Bklit card (`tipH(title, [[colourVar, label, value]], footer)`). A "Sample data" switch (Harish 2026-11-19, `?sample=1`, `sampleAnalytics()` in
+  `server.js`) shows made-up ratings for the same people pool with placeholder names ("Sample person 07"), real teams,
+  managers and designation groups, fixed seed, never saved, with a warning banner and no Team Report links. Team Report: Export menu
+  with CSV and PDF like Review Report (`exportMenu`, `yearlyPdf` / `printHtml`), Total row soft yellow.
 - Admin-only (menu, pages and API, Harish 2026-11-12): Manager emails, MIS report, KPI report. Managers' "Reports" group =
   Team report (`#/yearly`: only the people under them, with the month's status cards on top; the old "My team report"
   page is merged into it and `#/teamreport` redirects there) + My report (`#/yearly/me`: their own table), so nobody is
@@ -213,10 +327,16 @@ then `curl -b j localhost:3000/api/me` (ids follow the list order; the test admi
 | Frontend mirror | Vercel project `verve-pms` → https://verve-pms.vercel.app | static `pms/public` only; `/api/*` rewritten to Render via `pms/vercel.json` (root = `pms`) or `pms/public/vercel.json` (root = `pms/public`). Must never run `server.js` itself, or it keeps a separate copy of the data |
 | Database | Neon org "Verve" `org-super-credit-06911774`, project `verve-pms` `winter-truth-42259263`, branch `production`, Singapore | use the pooled URL (`-pooler` host). Local copy in repo-root `.env.local` (git-ignored, written by `neon init`) |
 
+502s (2026-11-19): the free Render service sleeps after 15 idle minutes; the first call after that (every morning)
+waits for it to start, and Vercel's `/api` forwarder or Render answers 502/503/504 meanwhile. `apiCall` in `app.js`
+repeats such calls (non-JSON 502/503/504 = never reached PMS) every 4 s for up to 2 min. `GET|HEAD /api/health`
+(no sign-in, no DB) is for an uptime pinger every 10 min to keep Render awake (one always-on free service fits the
+750 free hours a month).
+
 `render.yaml` describes the planned org-repo Blueprint (`verve-pms-staging`, branch `feature/pms`); the live Render
 service was created by hand from the personal repo and does not use it.
 
-Check Vercel really forwards to Render: change a value on Render (`PUT /api/config {"clickupMin":4}` signed in as admin),
+Check Vercel really forwards to Render: change something on Render (e.g. a team's review window, signed in as admin),
 read it back through Vercel, then restore it. Different values = Vercel is running its own copy.
 
 ## Git workflow

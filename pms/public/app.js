@@ -16,14 +16,35 @@ async function api(path, opts = {}) {
   loadStart();
   try { return await apiCall(path, opts); } finally { loadEnd(); if (btn) btnIdle(btn); }
 }
+// The free server sleeps after 15 idle minutes. While it starts, Vercel's forwarder or Render answers
+// 502/503/504 with a page that is not ours (not JSON), or the connection drops. Such a call never reached
+// PMS, so it is sent again every few seconds for up to 2 minutes instead of showing "Server error (502)".
+// Our own server always answers JSON, so its errors (e.g. a 502 from Google Calendar) are never repeated.
+const WAKE_WAIT = 120000, WAKE_STEP = 4000;
 async function apiCall(path, opts) {
-  const res = await fetch('/api' + path, {
-    method: opts.method || 'GET', credentials: 'same-origin',
-    // tells the server who this tab was opened for, so a sign-in in another tab cannot act through this one
-    headers: { 'Content-Type': 'application/json', ...(S.me && { 'X-PMS-User': `${S.me.id}:${S.me.real.id}` }) },
-    body: opts.method && opts.method !== 'GET' ? JSON.stringify(opts.body || {}) : undefined,
-  });
-  const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
+  const get = !opts.method || opts.method === 'GET', until = Date.now() + WAKE_WAIT;
+  let res, data;
+  for (;;) {
+    let retry = false;
+    try {
+      res = await fetch('/api' + path, {
+        method: opts.method || 'GET', credentials: 'same-origin',
+        // tells the server who this tab was opened for, so a sign-in in another tab cannot act through this one
+        headers: { 'Content-Type': 'application/json', ...(S.me && { 'X-PMS-User': `${S.me.id}:${S.me.real.id}` }) },
+        body: get ? undefined : JSON.stringify(opts.body || {}),
+      });
+      data = await res.json().catch(() => null);
+      retry = !data && [502, 503, 504].includes(res.status);
+      if (!data) data = { error: `Server error (${res.status})` };
+    } catch (e) {
+      // no answer at all: repeat reads; a change might have reached the server, so it is not sent twice
+      if (!get || Date.now() > until) throw new Error('Could not reach PMS. Check your connection and try again.');
+      retry = true;
+    }
+    if (!retry || Date.now() > until) break;
+    loadMsg(WAKE_MSG);
+    await new Promise(r => setTimeout(r, WAKE_STEP));
+  }
   if (res.status === 401 && S.me) { S.me = null; S.month = null; boot(); }
   // signed in with a temporary password: the server allows nothing else until the person picks their own
   if (res.status === 403 && data.code === 'PASSWORD_CHANGE' && S.me) { start(); return new Promise(() => {}); }
@@ -356,7 +377,16 @@ function loginPage(st, err) {
     try { await api('/auth/password', { method: 'POST', body: { email: email.value.trim(), password: pass.value, remember: $('#lrem').checked } }); await start(); }
     catch (er) { err$.innerHTML = alert(er.message); submit.disabled = false; submit.textContent = 'Sign in'; pass.select(); }
   };
-  $('#lforgot').onclick = e => { e.preventDefault(); err$.innerHTML = alert(`${st.demo && st.password ? `Test accounts all use the password ${st.password}. ` : ''}Forgot your PMS password? Ask the PMS admin for a new temporary password. With Sign in with Google you use your Google password, which IT manages.`, 'info'); };
+  // Forgot password: tells the PMS admins (a "Needs action" notification); they give a temporary password in person or on chat
+  $('#lforgot').onclick = async e => {
+    e.preventDefault();
+    const test = st.demo && st.password ? `Test accounts all use the password ${st.password}. ` : '';
+    if (!email.value.trim()) { err$.innerHTML = alert(`${test}Type your work email in the Email box above, then click Forgot password? again. The PMS admin is told and gives you a new temporary password.`, 'info'); return email.focus(); }
+    try {
+      await api('/auth/forgot', { method: 'POST', body: { email: email.value.trim() } });
+      err$.innerHTML = alert(`${test}Done. If ${email.value.trim()} is a PMS account, the PMS admin has been told and will give you a temporary password in person or on chat. With Sign in with Google you use your Google password, which IT manages.`, 'info');
+    } catch (er) { err$.innerHTML = alert(er.message); }
+  };
   $('#gsign').onclick = () => { if (st.google) location.href = `/api/auth/google/start?origin=${encodeURIComponent(location.origin)}`; };
   // a test account fills in its email and password and signs straight in
   document.querySelectorAll('.adm-row').forEach(b => b.onclick = () => {
@@ -413,6 +443,7 @@ function passwordFirstPage() {
 }
 // admin, Employees › Set / Reset password: the server makes a temporary password, shown here once to hand over;
 // the person picks their own at the first sign-in with it
+let pwFor = null; // person whose Password dialog opens when the Employees page has drawn
 function passwordDialog(p, done) {
   const first = esc(p.name.split(' ')[0]);
   if (!p.email) return toast(`${p.name} has no work email, which is their login name. Add it to the employee list first.`, 'err');
@@ -465,20 +496,21 @@ async function start() {
     // Employees is one page with Active / Inactive tabs
     ['Employees', '#/employees/active', 'idcard'],
     ['Scheduling', '#/scheduling', 'calendar'],
-    { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review status report', '#/report'], ['Team report', '#/yearly'], ['One pager document', `#/annual/${S.me.id}`]] },
-    { key: 'set', label: 'Settings', icon: 'sliders', kids: [['Teams', '#/teams'], ['Questionnaire', '#/params/questions'], ['Parameters summary', '#/params']] },
+    { key: 'rep', label: 'Reporting', icon: 'chart', kids: [['Review Report', '#/report'], ['Performance Analytics', '#/analytics'], ['Team Report', '#/yearly'], ['One Pager Document', `#/annual/${S.me.id}`]] },
+    { key: 'set', label: 'Settings', icon: 'sliders', kids: [['Teams', '#/teams'], ['Questionnaire', '#/questions'], ['Parameters Summary', '#/params']] },
     '--Admin',
-    ['Audit log', '#/audit', 'clock'],
+    ['Audit Log', '#/audit', 'clock'],
   ] : [
     ['Dashboard', '#/home', 'home'],
-    ['My review', `#/form/${S.me.id}/${S.month}`, 'review'], // directors get their form too (they are not reviewed, so it is optional)
+    ['My Review', `#/form/${S.me.id}/${S.month}`, 'review'], // directors get their form too (they are not reviewed, so it is optional)
     // top-level directors are not reviewed, so they have no "My report"
-    mgr ? (S.me.managerId ? { key: 'myrep', label: 'Reports', icon: 'chart', kids: [['Team report', '#/yearly'], ['My report', '#/yearly/me']] } : ['Team report', '#/yearly', 'chart']) : ['My report', '#/yearly', 'chart'],
-    mgr && ['My team', '#/team', 'team'],
+    mgr ? (S.me.managerId ? { key: 'myrep', label: 'Reports', icon: 'chart', kids: [['Team Report', '#/yearly'], ['My Report', '#/yearly/me']] } : ['Team Report', '#/yearly', 'chart']) : ['My Report', '#/yearly', 'chart'],
+    mgr && ['My Team', '#/team', 'team'],
     mgr && ['Scheduling', '#/scheduling', 'calendar'],
-    mgr && ['Review status report', '#/report', 'chart'],
-    r !== 'employee' && ['One pager document', `#/annual/${S.me.id}`, 'file'],
-    ['Parameters summary', '#/params', 'list'],
+    mgr && ['Review Report', '#/report', 'chart'],
+    mgr && ['Performance Analytics', '#/analytics', 'trend'],
+    r !== 'employee' && ['One Pager Document', `#/annual/${S.me.id}`, 'file'],
+    ['Parameters Summary', '#/params', 'list'],
   ].filter(Boolean);
   // nav links grouped under uppercase eyebrows
   const groups = [{ label: 'Workspace', links: [] }];
@@ -489,7 +521,7 @@ async function start() {
   $('#root').innerHTML = `<div id="app"${sideMini ? ' class="mini"' : ''}><nav class="side">${ORBS}<div class="side-in">${WORDMARK}
     ${groups.map(g => `<div class="eyebrow">${esc(g.label)}</div><div class="links">${g.links.map(navItem).join('')}</div>`).join('')}
     <div class="side-sp"></div></div><button type="button" class="side-tog" id="sidetog"></button></nav>
-    <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span>
+    <div class="col"><header class="topbar"><span class="tbc"><button type="button" class="tb-date" id="tbdate" aria-haspopup="dialog" aria-expanded="false" title="Open the calendar">${ico('calendar')}${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${CHEV}</button><div class="tbcal" id="tbcal" role="dialog" aria-label="Calendar" hidden></div></span><span class="tb-load" role="status">${spinner()}</span><span class="sp"></span><button type="button" class="tb-search" id="tbsearch" aria-haspopup="dialog" title="Search people and pages (Ctrl+K)">${ico('search')}<span>Search</span><kbd>Ctrl K</kbd></button>
       ${S.me.real.role === 'admin' && !S.me.viewingAs ? `<button class="btn sm" id="asbtn" title="See PMS exactly as another person sees it">${ico('eye')}View as…</button>` : ''}<span class="tbn"><button type="button" class="ibtn tb-bell" id="tbbell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${ico('bell')}<b class="tb-cnt" id="tbcnt" hidden></b></button><div class="tb-notes" id="tbnotes" role="dialog" aria-label="Notifications" hidden></div></span>${themeBtn()}
       <span class="tb-div"></span>
       <span class="tbm"><button type="button" class="tb-user" id="tbuser" aria-haspopup="menu" aria-expanded="false" title="Profile and sign out"><span class="tb-who"><b>${esc(S.me.name)}</b><small>${(S.me.designation || '').toLowerCase() === ROLE_LABEL[S.me.role].toLowerCase() || !S.me.designation ? esc(ROLE_LABEL[S.me.role]) : dotJoin(S.me.designation, ROLE_LABEL[S.me.role])}</small></span><span class="avatar" id="tbav">${initials(S.me.name)}</span>${CHEV}</button>
@@ -498,24 +530,43 @@ async function start() {
         ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
     <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
-  sideSet(sideMini);
+  sideSet(sidePref || sideNarrow.matches); palPeople = null; // a new sign-in or View as: search fetches its people again
   $('.side-in').onscroll = navFlyClose;
   $('#root').onclick = e => {
-    if (e.target.closest('#sidetog')) sideSet(!sideMini);
+    if (e.target.closest('#sidetog')) sideSet(!sideMini, !sideNarrow.matches);
     const g = e.target.closest('.ngrp-btn');
     if (g && sideMini) navFly(g.parentNode); else if (g) navOpen(g.parentNode, !g.parentNode.classList.contains('open'));
     if (!e.target.closest('.ngrp') || e.target.closest('.nsub a')) navFlyClose();
     if (e.target.closest('[data-um="out"]')) { userMenu(false); signOut(); }
     if (e.target.closest('[data-um="pw"]')) { userMenu(false); changePassword(); }
     if (e.target.closest('[data-um="profile"]')) { userMenu(false); if (location.hash === '#/profile') route(); else location.hash = '#/profile'; }
+    if (e.target.closest('#tbsearch')) palOpen();
     if (e.target.closest('#asbtn')) pickViewAs().catch(er => toast(er.message, 'err'));
     if (e.target.closest('#asback')) viewAs(null).catch(er => toast(er.message, 'err'));
   };
-  window.onhashchange = route;
+  window.onhashchange = navGuard;
   route();
   loadNotes(); clearInterval(notePoll); notePoll = setInterval(loadNotes, 60000);
 }
 
+// Leaving the monthly form with an answer typed but not stored (not yet saved), or a change still saving, asks
+// first (Harish 2026-11-18). KRA edits are not asked about: they are kept as a draft in this browser (Vidya).
+function formUnsaved() {
+  if (!FP || !FP.form) return [];
+  const qs = [...editingQ].filter(id => String(FP.form.qa[id] ?? '') !== String(qOrig[id] ?? ''));
+  return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved yet (click outside the answer box to save it)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
+}
+let navSkip = false;
+async function navGuard(e) {
+  if (navSkip) { navSkip = false; return; }
+  const from = e && e.oldURL ? new URL(e.oldURL).hash : '';
+  const left = from.startsWith('#/form/') ? formUnsaved() : []; // another month of the same person is another form too
+  if (left.length && !await confirmBox('Leave without saving?', `This form has ${left.join(' and ')}. If you leave now, ${left.length > 1 || formDirty.size ? 'these are' : 'it is'} lost.`, { ok: 'Leave anyway', danger: true })) {
+    navSkip = true; location.hash = from; return;
+  }
+  route();
+}
+addEventListener('beforeunload', e => { if (location.hash.startsWith('#/form/') && formUnsaved().length) { e.preventDefault(); e.returnValue = ''; } });
 async function route() {
   const [, page, ...args] = (location.hash || '#/home').split('/');
   markNav();
@@ -526,13 +577,67 @@ async function route() {
   v.classList.remove('routing'); SC().scrollTop = 0;
 }
 const head = (t, c) => `<div class="phd"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>`;
+// ---------- search (Ctrl+K) ----------
+// One box for pages (the side menu's links) and people in your access (the review status report's rows: managers see
+// their people, admins and directors everyone reviewed). Enter opens the page, or the person's form for this month;
+// "Report" opens their Team Report. Arrow keys move, Esc closes. Employees only get the pages.
+let palPeople = null, palEl = null;
+function palClose() { if (palEl) { palEl.remove(); palEl = null; } }
+async function palOpen() {
+  if (palEl) return palEl.querySelector('input').focus();
+  palEl = document.createElement('div'); palEl.className = 'pal'; palEl.setAttribute('role', 'dialog'); palEl.setAttribute('aria-label', 'Search');
+  palEl.innerHTML = `<div class="pal-b"><label class="pal-q">${ico('search')}<input type="search" placeholder="Search people or pages" aria-label="Search people or pages" autocomplete="off"><kbd>Esc</kbd></label><div class="pal-l" role="listbox"></div><div class="pal-f"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span></div></div>`;
+  document.body.appendChild(palEl);
+  const inp = palEl.querySelector('input'), list = palEl.querySelector('.pal-l');
+  const pages = [...document.querySelectorAll('.side .links a[data-h]')].map(a => ({ kind: 'page', label: a.textContent.trim(), sub: a.closest('.ngrp') ? a.closest('.ngrp').querySelector('.ngrp-btn span').textContent : 'Page', href: a.dataset.h }));
+  const canPeople = S.me.role !== 'employee';
+  let sel = 0, items = [];
+  const draw = () => {
+    const q = inp.value.trim().toLowerCase(), has = s => s.toLowerCase().includes(q);
+    const pg = pages.filter(p => !q || has(p.label) || has(p.sub)).slice(0, q ? 5 : 8);
+    const pp = !q || !palPeople ? [] : palPeople.filter(p => has(p.name) || has(p.designation || '') || has(tl(p.team) || '')).slice(0, 8);
+    items = [...pg, ...pp]; sel = Math.min(sel, Math.max(0, items.length - 1));
+    const row = (it, i) => it.kind === 'page'
+      ? `<a class="pal-i ${i === sel ? 'on' : ''}" role="option" aria-selected="${i === sel}" href="${it.href}" data-i="${i}">${ico('right')}<span><b>${esc(it.label)}</b><small>${esc(it.sub)}</small></span></a>`
+      : `<div class="pal-i ${i === sel ? 'on' : ''}" role="option" aria-selected="${i === sel}" data-i="${i}"><span class="avatar s">${initials(it.name)}</span><span><b>${esc(it.name)}</b><small>${dotJoin(it.designation, tl(it.team))}</small></span><a class="btn sm" href="#/form/${it.empId}/${S.month}" title="Open ${esc(it.name)}'s form for this month">Form</a><a class="btn sm" href="#/yearly/${it.empId}" title="Open ${esc(it.name)}'s Team Report">Report</a></div>`;
+    list.innerHTML = (pg.length ? `<div class="pal-g">Pages</div>${pg.map(row).join('')}` : '')
+      + (pp.length ? `<div class="pal-g">People</div>${pp.map((p, i) => row(p, pg.length + i)).join('')}` : '')
+      + (!items.length ? `<div class="pal-none">Nothing found for "${esc(inp.value.trim())}"</div>` : '')
+      + (q && canPeople && !palPeople ? `<div class="pal-none">${ico('loader')}Loading people…</div>` : '')
+      + (!q && canPeople ? '<div class="pal-none">Type a name to find a person.</div>' : '');
+    const on = list.querySelector('.pal-i.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+  };
+  const go = it => { if (!it) return; palClose(); location.hash = it.kind === 'page' ? it.href : `#/form/${it.empId}/${S.month}`; };
+  inp.oninput = () => { sel = 0; draw(); };
+  inp.onkeydown = e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, items.length - 1); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); go(items[sel]); }
+  };
+  palEl.onmousedown = e => { if (e.target === palEl) palClose(); };
+  palEl.onclick = e => { if (e.target.closest('a')) return palClose(); const r = e.target.closest('[data-i]'); if (r) go(items[+r.dataset.i]); };
+  draw(); inp.focus();
+  if (canPeople && !palPeople) {
+    try { palPeople = (await apiCall('/report?month=' + S.me.currentMonth, {})).rows; } catch { palPeople = []; }
+    if (palEl) draw();
+  }
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && document.querySelector('#app')) { e.preventDefault(); palOpen(); }
+  else if (e.key === 'Escape' && palEl) palClose();
+});
+addEventListener('hashchange', palClose);
 // side panel shrinks to icons only (Harish 2026-11-18): the round button on its right edge, remembered in this browser.
 // Shrunk, each icon shows its name on hover and a menu group opens as a small menu beside the panel (navFly).
-let sideMini = false; try { sideMini = localStorage.getItem('pms.sideMini') === '1'; } catch {}
-function sideSet(mini) {
+// Narrow windows (under 1100px: a laptop at 125% zoom, a tablet) start shrunk without changing the saved choice.
+let sidePref = false; try { sidePref = localStorage.getItem('pms.sideMini') === '1'; } catch {}
+const sideNarrow = matchMedia('(max-width: 1100px)');
+let sideMini = sidePref || sideNarrow.matches;
+sideNarrow.addEventListener('change', e => { if ($('#app')) sideSet(e.matches || sidePref); });
+function sideSet(mini, save) {
   sideMini = mini; navFlyClose();
   $('#app').classList.toggle('mini', mini);
-  try { localStorage.setItem('pms.sideMini', mini ? '1' : '0'); } catch {}
+  if (save) { sidePref = mini; try { localStorage.setItem('pms.sideMini', mini ? '1' : '0'); } catch {} }
   const t = $('#sidetog'), label = mini ? 'Show the full menu' : 'Shrink the menu to icons';
   t.innerHTML = ico(mini ? 'panelOpen' : 'panelClose'); t.title = label; t.setAttribute('aria-label', label); t.setAttribute('aria-expanded', String(!mini));
   document.querySelectorAll('.side .links a, .side .ngrp-btn').forEach(a => {
@@ -902,6 +1007,18 @@ const statusLegend = () => `<div class="legend inline">${STATUS_SEGS.map(([, col
 const TILE_HINT = { filled: STATUS_HINT['Filled'], notFilled: STATUS_HINT['Not Filled'], reviewCompleted: STATUS_HINT['Review Completed'], reviewPending: STATUS_HINT['Review Pending'] };
 // stat tiles for the five review counts (label on top, big number, tone stripe)
 const countTiles = c => `<div class="tiles">${[['', 'scheduled', 'Scheduled', 'calendar'], ['g', 'filled', 'Filled', 'check'], ['r', 'notFilled', 'Not Filled', 'alert'], ['g', 'reviewCompleted', 'Review Completed', 'award'], ['', 'reviewPending', 'Review Pending', 'hourglass']].map(([cls, k, l, icon]) => `<div class="tile ${cls}"${TILE_HINT[k] ? ` title="${esc(TILE_HINT[k])}"` : ''}><small>${l}</small><b>${c[k]}</b><span>${k !== 'scheduled' && c.scheduled ? `${pctOf(c[k], c.scheduled)}% of scheduled` : k === 'scheduled' ? 'Reviews this month' : 'None scheduled'}</span><i class="wm">${ico(icon)}</i></div>`).join('')}</div>`;
+// "Remind not filled" (managers, directors, admins): counts first, asks, then sends a bell reminder to each person
+async function remindAll() {
+  try {
+    const team = S.hteam || '', r = await api('/remind', { method: 'POST', body: { dry: true, team } });
+    if (!r.count) return toast('Everyone has filled in their form. Nobody to remind.');
+    if (r.waitHours) return toast(`You sent reminders less than 12 hours ago. You can send again in about ${r.waitHours} hour${r.waitHours === 1 ? '' : 's'}.`, 'err');
+    const who = r.names.join(', ') + (r.count > r.names.length ? ` and ${r.count - r.names.length} more` : '');
+    if (!await confirmBox(`Remind ${r.count} ${r.count === 1 ? 'person' : 'people'}?`, `${who} will get a reminder under the bell to fill in their ${monthLabel(S.me.currentMonth)} form. It goes away by itself once they send their form to their manager. People on leave or serving notice are left out.`, { ok: 'Send reminder' })) return;
+    const s = await api('/remind', { method: 'POST', body: { team } });
+    toast(`Reminder sent to ${s.sent} ${s.sent === 1 ? 'person' : 'people'}`);
+  } catch (er) { toast(er.message, 'err'); }
+}
 // open the status report filtered to one status (and the team chosen on Home)
 function openReport(status) { RF.status = status || ''; RF.team = S.hteam || ''; RF.manager = ''; location.hash = '#/report'; }
 const pctOf = (n, tot) => tot ? Math.round(n / tot * 100) : 0;
@@ -915,7 +1032,7 @@ const widget = (icon, title, extra, body, cls = '') => `<div class="m ${cls}"><d
 let lastHome = {};
 // decorative half circle at the right end of the navy banner
 const HALO = '<i class="halo" aria-hidden="true"><i></i></i>';
-// Review quality widget: facts the status cards do not show
+// Review insights widget (was "Review quality", renamed 2026-11-19): facts the status cards do not show
 // p = the period before (card filter "Compare"): its value shows small next to each number, e.g. "Oct 7"
 function qualityBody(h, c, p) {
   const was = v => p ? `<em class="was" title="${esc(p.label)}">${esc(p.short)} ${v}</em>` : '';
@@ -932,10 +1049,30 @@ function qualityBody(h, c, p) {
 // progress opens a two-step panel (the card's filters with coloured tiles, then the choices of the one clicked, Verveflow
 // style). Each card filters on its own; the choices are remembered in this browser. A card with no filter on shows the
 // /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
-const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any' };
-const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review quality', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
+const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any',
+  rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sinv: 'any', sst: [], aper: 'all', awho: [], aact: [],
+  xper: '6', xteam: [], xdesig: [], xmgr: [], xpar: '' };
+const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review insights', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
   // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
-  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true } };
+  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true },
+  // the same pill on the report pages, Scheduling and the Audit log (Harish 2026-11-18: one filter look everywhere)
+  report: { title: 'Review Report', keys: ['rteam', 'rmgr', 'rst'], local: true },
+  yearly: { title: 'Team Report', keys: ['yfy', 'yq', 'yteam', 'yper'], local: true },
+  sched: { title: 'Team members', keys: ['steam', 'sslot', 'sinv', 'sst'], local: true },
+  audit: { title: 'Audit log', keys: ['aper', 'awho', 'aact'], local: true },
+  // Performance Analytics (Harish 2026-11-19: a filter on every card); all filter in the browser on one /api/analytics answer
+  anAvg: { title: 'Average rating', keys: ['xper', 'xteam', 'xdesig'], local: true }, anStrong: { title: 'Strong performers', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  anParam: { title: 'Parameter rating', keys: ['xper', 'xteam', 'xdesig'], local: true }, anMove: { title: 'Who is moving', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  anFunnel: { title: 'Review cycle', keys: ['xteam', 'xdesig', 'xmgr'], local: true }, anKra: { title: 'KRA scores', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  anTime: { title: 'Reviews held on time', keys: ['xper', 'xteam', 'xmgr'], local: true }, anBands: { title: 'Rating bands', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  anRace: { title: 'Team race', keys: ['xper', 'xdesig'], local: true },
+  // one Parameters card: Attendance, Conduct, ... are picked under its Filter (Harish 2026-11-19: not one card each)
+  anPar: { title: 'Parameters', keys: ['xpar', 'xper', 'xteam', 'xdesig'], local: true }, // xpar = the tab on the card, hidden in the panel
+  anMeet: { title: 'Review meetings', keys: ['xteam', 'xmgr'], local: true }, anAlert: { title: 'Needs attention', keys: ['xteam', 'xdesig'], local: true } };
+// choices of the page filters that depend on the data (each page sets its own as it draws); PF.hide[card] = fields not
+// shown on that page right now (e.g. Team on a manager's Team Report)
+const PF = { hide: {} };
+const optCount = (rows, key, label = x => x) => { const n = {}; rows.forEach(r => { const k = key(r); if (k == null || k === '') return; n[k] = (n[k] || 0) + 1; }); return Object.keys(n).map(k => [k, label(k), n[k]]).sort((x, y) => x[1].localeCompare(y[1])); };
 let empFO = { desig: [], role: [], mgr: [] }; // the Employees page's choices with counts, set each time it draws
 const cfLocalRedraw = {}; // card -> redraw of a page that filters in the browser
 let cfOptions = null; // teams and managers to pick from (sent with every card answer, or fetched when the panel needs them)
@@ -951,10 +1088,30 @@ const CF_F = {
   emgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', multi: true, opts: () => empFO.mgr },
   email: { label: 'Work email', icon: 'mail', tone: 'n', opts: () => [['any', 'Any'], ['set', 'Has a work email'], ['missing', 'No work email yet']] },
   ews: { label: 'Work status', icon: 'clock', tone: 'g', opts: () => [['any', 'Any'], ['working', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']] },
+  rteam: { label: 'Team', icon: 'team', tone: 'p', opts: () => PF.rteam || [] },
+  rmgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', opts: () => PF.rmgr || [] },
+  rst: { label: 'Status', icon: 'check', tone: 'g', opts: () => PF.rst || [] },
+  yfy: { label: 'Financial year', icon: 'calendar', tone: 'n', opts: () => PF.yfy || [] },
+  yq: { label: 'Quarter', icon: 'clock', tone: 'a', opts: () => [['', 'Whole year'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']] },
+  yteam: { label: 'Team', icon: 'team', tone: 'p', opts: () => PF.yteam || [] },
+  yper: { label: 'Person', icon: 'idcard', tone: 's', opts: () => PF.yper || [] },
+  steam: { label: 'Team', icon: 'team', tone: 'p', multi: true, opts: () => PF.steam || [] },
+  sslot: { label: 'Review slot', icon: 'calendar', tone: 'n', opts: () => [['any', 'Any'], ['booked', 'Booked'], ['open', 'Not booked yet']] },
+  sinv: { label: 'Calendar invite', icon: 'mail', tone: 'a', opts: () => [['any', 'Any'], ['sent', 'Invite sent'], ['none', 'No invite']] },
+  sst: { label: 'Status', icon: 'check', tone: 'g', multi: true, opts: () => PF.sst || [] },
+  aper: { label: 'When', icon: 'calendar', tone: 'n', opts: () => [['all', 'Any time'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']] },
+  awho: { label: 'Who', icon: 'idcard', tone: 's', multi: true, opts: () => PF.awho || [] },
+  aact: { label: 'Action', icon: 'list', tone: 'p', multi: true, opts: () => PF.aact || [] },
+  xper: { label: 'Period', icon: 'calendar', tone: 'n', opts: () => [['3', 'Last 3 months'], ['6', 'Last 6 months'], ['fy', 'Financial year']] },
+  xteam: { label: 'Team', icon: 'team', tone: 'p', multi: true, opts: () => PF.xteam || [] },
+  xdesig: { label: 'Designation', icon: 'award', tone: 'a', multi: true, opts: () => PF.xdesig || [] },
+  xmgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', multi: true, opts: () => PF.xmgr || [] },
+  // free: the choices come from the questionnaire after the page loads, so a saved pick is kept as it is
+  xpar: { label: 'Parameter', icon: 'list', tone: 'g', free: true, opts: () => PF.xpar || [['', 'First parameter']] },
 };
 const CF = (() => {
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('pms.cardFilters') || '{}') || {}; } catch {}
-  const fix = (k, v) => Array.isArray(CF_DEF[k]) ? (Array.isArray(v) ? v.map(String) : []) : CF_F[k].opts('').some(o => o[0] === v) ? v : CF_DEF[k];
+  const fix = (k, v) => Array.isArray(CF_DEF[k]) ? (Array.isArray(v) ? v.map(String) : []) : (CF_F[k].free && typeof v === 'string') || CF_F[k].opts('').some(o => o[0] === v) ? v : CF_DEF[k];
   return Object.fromEntries(Object.entries(CF_CARDS).map(([c, d]) => [c, Object.fromEntries(d.keys.map(k => [k, fix(k, saved[c] && saved[c][k])]))]));
 })();
 const cfSave = () => { try { localStorage.setItem('pms.cardFilters', JSON.stringify(CF)); } catch {} };
@@ -962,7 +1119,7 @@ const HC = {}; // filtered card answers from the server; none = the card shows t
 const empPreset = grp => { Object.keys(CF.emp).forEach(k => { CF.emp[k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); if (grp) CF.emp.edesig = [grp]; cfSave(); };
 let homeRedraw = null; // redraws the dashboard cards from the last /api/home answer and HC
 // the admin's team tabs above the cards already pick one team: the cards' Team filter steps aside while one is picked
-const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam));
+const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam) && !(PF.hide[c] || []).includes(k));
 const cfOn = (c, k) => Array.isArray(CF_DEF[k]) ? CF[c][k].length > 0 : CF[c][k] !== CF_DEF[k];
 const cfCount = c => cfKeys(c).filter(k => cfOn(c, k)).length;
 const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}Filter${n ? ` · ${n}` : ''}</button>`; };
@@ -995,13 +1152,15 @@ function cfDraw() {
   const { card: c, field: k, q, el } = cfPop;
   if (!k) {
     const n = cfCount(c);
-    el.innerHTML = `<div class="cfp-h"><div><b>Filter</b><small>${CF_CARDS[c].title}</small></div>${n ? `<button type="button" class="cfp-clr" data-clr>${ico('trash')}Clear</button>` : ''}</div>
+    el.classList.remove('cfp-wide');
+    el.innerHTML = `${n ? `<div class="cfp-h cfp-h0"><button type="button" class="cfp-clr" data-clr>${ico('trash')}Clear all</button></div>` : ''}
       <div class="cfp-l">${cfKeys(c).map(f => `<button type="button" class="cfp-r" data-f="${f}"><i class="cfp-ic t-${CF_F[f].tone}">${ico(CF_F[f].icon)}</i><span><b>${CF_F[f].label}</b><small>${esc(cfText(c, f))}</small></span>${cfOn(c, f) ? '<i class="cfp-dot" title="On"></i>' : ''}${ico('right')}</button>`).join('')}</div>
       ${S.hteam && CF_CARDS[c].keys.includes('team') ? `<p class="cfp-note">Team: ${esc(tl(S.hteam))}, picked in the team tabs above.</p>` : ''}`;
   } else {
     const F = CF_F[k], v = CF[c][k], on = x => F.multi ? v.includes(x) : v === x;
     const need = (k === 'team' || k === 'mgr') && !cfOptions, all = need ? [] : F.opts(c), list = all.filter(o => !q || o[1].toLowerCase().includes(q.toLowerCase()));
-    el.innerHTML = `<div class="cfp-h"><button type="button" class="cfp-back" data-back aria-label="Back to the filters">${ico('left')}</button><div><b>${F.label}</b><small>${F.multi ? 'Pick one or more' : 'Pick one'}</small></div>${F.multi && v.length ? `<button type="button" class="cfp-clr" data-reset>${ico('trash')}Clear</button>` : ''}</div>
+    el.classList.add('cfp-wide');
+    el.innerHTML = `<div class="cfp-h"><button type="button" class="cfp-back" data-back aria-label="Back to the filters">${ico('left')}</button><div><b>${F.label}</b></div>${F.multi && v.length ? `<button type="button" class="cfp-clr" data-reset>${ico('trash')}Clear</button>` : ''}</div>
       ${all.length > 6 ? `<label class="cfp-s">${ico('search')}<input type="search" data-q placeholder="Search ${F.label.toLowerCase()}" value="${esc(q)}" aria-label="Search ${F.label.toLowerCase()}"></label>` : ''}
       <div class="cfp-l" role="listbox" aria-multiselectable="${!!F.multi}">${need ? `<div class="cfp-empty">${ico('loader')}Loading…</div>` : list.map(([x, l, n, dis]) => `<button type="button" role="option" class="cfp-o ${on(x) ? 'on' : ''}" data-v="${esc(x)}" aria-selected="${on(x)}" ${dis ? 'disabled' : ''}>${F.multi ? `<i class="cfp-cb">${on(x) ? ico('tick') : ''}</i>` : ''}<span>${esc(l)}</span>${n != null ? `<em>${n}</em>` : ''}${!F.multi ? ico('tick') : ''}</button>`).join('') || '<div class="cfp-empty">Nothing matches.</div>'}</div>`;
     if (need) apiCall(`/home/card?card=opts&month=${S.month}`, {}).then(r => { cfOptions = r.opts; if (cfPop && cfPop.field === k) cfDraw(); })
@@ -1017,6 +1176,12 @@ async function cfChanged(c) {
   if (JSON.stringify(CF[c]) !== want) return; // another choice came in meanwhile; its own fetch redraws
   HC[c] = r; if (homeRedraw) homeRedraw();
 }
+// "Clear filters" in a list that the filters left empty
+function cfClear(c) {
+  cfClose(); CF_CARDS[c].keys.forEach(k => { CF[c][k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); cfSave();
+  if (CF_CARDS[c].local) { if (cfLocalRedraw[c]) cfLocalRedraw[c](); } else { HC[c] = null; if (homeRedraw) homeRedraw(); }
+}
+const clearLink = c => `<a href="#" data-cfclear="${c}">Clear filters</a>`;
 function cfOpen(btn) {
   const c = btn.dataset.cf, same = cfPop && cfPop.card === c; cfClose(); if (same) return;
   const el = document.createElement('div'); el.className = 'cfp'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', `Filter ${CF_CARDS[c].title}`);
@@ -1084,8 +1249,8 @@ pages.home = async (v, opts = {}) => {
     const q = d.quick, teams = d.teams, att = d.attention, SHOW = 8;
     const quick = [
       ['calendar', '', 'Scheduling', '#/scheduling', `${q.datesCollected} of ${q.datesTotal} dates collected`],
-      ['chart', 'y', 'Status report', '#/report', 'Org and team views'],
-      ['chart', 'g', 'Team report', '#/yearly', 'KRA scores month by month'],
+      ['chart', 'y', 'Review Report', '#/report', 'Org and team views'],
+      ['chart', 'g', 'Team Report', '#/yearly', 'KRA scores month by month'],
       S.me.role === 'admin' ? ['idcard', 'r', 'Employees', '#/employees', `${q.employees.active} active · ${q.employees.inactive} inactive`] : ['team', 'r', 'My team', '#/team', `${q.teamReviews} review${q.teamReviews === 1 ? '' : 's'} in your scope`],
     ];
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
@@ -1097,11 +1262,13 @@ pages.home = async (v, opts = {}) => {
       const sc = hs ? hs.counts : c, nT = hs ? hs.teamCount : S.hteam ? 1 : teams.length, share = n => `${pctOf(n, sc.scheduled)}% of scheduled`;
       const bar = (t, label) => t.scheduled ? stackBar(t, label) : `<div class="tbar"><span class="n" title="${esc(label)}">${esc(label)}</span><div class="tr"></div><b>0/0</b></div>`;
       const prog = hp ? hp.groups.map(g => bar(g, hp.group === 'mgr' ? g.label : tl(g.team))) : teams.map(t => bar(t, tl(t.team)));
-      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${cfPill('status')}</div>
+      const remind = S.month === S.me.currentMonth && c.notFilled && !S.me.viewingAs
+        ? `<button type="button" class="btn sm" id="remind" title="Send a reminder under the bell to everyone whose form is not filled yet">${ico('bell')}Remind not filled</button>` : '';
+      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
     <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
-      ${widget('award', 'Review quality' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
-      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? 'Nothing matches these filters.' : 'No teams in your scope.'}</div>`}</div>`)}
+      ${widget('award', 'Review insights' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
+      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? `Nothing matches these filters. ${clearLink('progress')}` : 'No teams in your scope.'}</div>`}</div>`)}
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>`;
     };
@@ -1151,7 +1318,7 @@ pages.home = async (v, opts = {}) => {
       <ol class="eh-steps">${st.map(([t, s2, ok, pg], i) => `<li class="${ok ? 'done' : i === cur ? 'now' : ''}"><i>${ok ? ico('tick') : i + 1}</i><div><b>${esc(t)}</b><span>${esc(s2)}</span>${pg != null ? `<em class="eh-pg"><u style="width:${pg}%"></u></em>` : ''}</div></li>`).join('')}</ol></div>`;
     // what is left: the server's list, grouped by the part of the form it belongs to
     const groups = groupTodo(issues), SHOWN = 4;
-    const todoBody = !o ? '<div class="mb"><div class="empty">No review form for this month.</div></div>'
+    const todoBody = !o ? `<div class="mb"><div class="empty">No review form for this month yet. It appears here by itself${w && w.start ? ` when your review window opens on ${fmtD(w.start)}` : ' when your review window opens'}.</div></div>`
       : o.submitted ? `<div class="mb"><div class="ok" style="margin:0">Your manager has submitted this review. Nothing left to do.</div></div>`
       : o.selfSubmitted ? `<div class="mb"><div class="ok" style="margin:0">You have sent your part to your manager. Nothing left for you unless they send it back.</div></div>`
       : !issues.length ? `<div class="mb"><div class="ok" style="margin:0">Everything is filled in. Open your review and click <b>Submit to manager</b>.</div></div>`
@@ -1163,7 +1330,7 @@ pages.home = async (v, opts = {}) => {
     const RATE_NOTE = '<p class="ed-note">Monthly rating = 30% your rating + 70% your manager’s, weighted by sub-KRA and then by KRA.</p>';
     const recent = yr && yr.people[0] ? yr.months.map((m, i) => ({ m, t: yr.people[0].cells[i] && yr.people[0].cells[i].total })).filter(x => x.t != null).slice(-5).reverse() : [];
     const recentBody = recent.length ? `<div class="mb">${recent.map(x => `<div class="ed-rate"><span>${esc(x.m.label.split(' ')[0].slice(0, 3))} ${x.m.label.split(' ')[1].slice(2)}</span><div class="ed-bar"><i class="${rateCls(x.t)}" style="width:${x.t}%"></i></div><b class="rt ${rateCls(x.t)}">${x.t.toFixed(1)}%</b></div>`).join('')}
-      <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a>${RATE_NOTE}</div>` : `<div class="mb"><div class="empty">No submitted reviews yet this year.</div>${RATE_NOTE}</div>`;
+      <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a>${RATE_NOTE}</div>` : `<div class="mb"><div class="empty">No ratings yet this year. They show here once your manager submits your first review.${o ? ` <a href="#/form/${S.me.id}/${S.month}">Open my ${esc(monthLabel(S.month).split(' ')[0])} form</a>` : ''}</div>${RATE_NOTE}</div>`;
     html = `${head(`My ${monthSel('msel', { heading: true })} review`, `Welcome back, ${esc(S.me.name.split(' ')[0])} · ${esc(S.me.designation || ROLE_LABEL[S.me.role])}${S.me.team ? ` · ${esc(tl(S.me.team))}` : ''}`)}
     ${hero}
     ${kraAccessCard(o)}
@@ -1178,6 +1345,8 @@ pages.home = async (v, opts = {}) => {
   onMonth(() => pages.home(v));
   v.onclick = async e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // a card's Filter pill
+    if (e.target.closest('#remind')) return remindAll();
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     const kd = e.target.closest('[data-kdash]');
     if (kd) {
       try { await api('/kra-request/decide', { method: 'POST', body: { empId: +kd.dataset.emp, month: kd.dataset.mon, approve: kd.dataset.kdash === '1' } }); toast(kd.dataset.kdash === '1' ? 'Access given' : 'Request rejected'); pages.home(v, { partial: true }); }
@@ -1220,6 +1389,7 @@ pages.form = async (v, emp, month) => {
 };
 
 const editingQ = new Set();
+const qOrig = {}; // question id -> its stored answer when the pencil opened it (to tell a typed change from an open box)
 // the three KRA weightages (Operational + Process + People) should add up to 100
 const kraTotal = f => Object.values(f.kras).reduce((q, x) => q + (+x.weight || 0), 0);
 const kraTotalMsg = f => { const t = kraTotal(f); return `Total KRA weightage is ${t}%: ${t < 100 ? `${100 - t}% is still remaining` : `${t - 100}% over`}. It must be exactly 100%: update a KRA above so Operational + Process + People add up to 100%.`; };
@@ -1254,9 +1424,8 @@ const editingW = new Set(); // KRAs whose "Weightage of KRA" box is open (the pe
 const folded = new Set(); // form sections folded with the arrow on their heading (operational, process, people, qa)
 const foldBtn = (k, label) => `<button type="button" class="ibtn opf-fold" data-fold="${k}" aria-expanded="${!folded.has(k)}" title="${folded.has(k) ? 'Show' : 'Hide'} ${label}" aria-label="${folded.has(k) ? 'Show' : 'Hide'} ${label}">${CHEV}</button>`;
 // KRA rating colours (managers' review, 2026-11-16): 75 and above green, 74 to 50 yellow, 49 to 25 orange, 24 and below red
-const rateCol = x => x == null || x === '' ? '' : +x >= 75 ? 'r-g' : +x >= 50 ? 'r-y' : +x >= 25 ? 'r-o' : 'r-r';
+const rateCol = x => x == null || x === '' ? '' : +x >= 75 ? 'r-g' : +x >= 50 ? 'r-y' : 'r-r';
 let focusQ = null; // question answer box to put the cursor in after a redraw
-const qOrig = {}; // question id -> the answer when its box was opened (only a changed answer is saved)
 const qSavedAt = {}; // question id -> when its answer was last saved automatically (shows "Saved automatically")
 let qTimer = null; // pending automatic save of a question answer
 function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
@@ -1274,7 +1443,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     const top = !rows.length && FP.newJoiner ? '<div class="info">New joiner: no KRAs set yet. Only the questionnaire is checked.</div>' : '';
     const w = `<div class="opf-w"><b>Weightage Of KRA:</b>${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<span>${kr.weight}</span>`}${ed ? `<button type="button" class="ibtn opf-pen" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}${kraErr[k] ? `<div class="opf-werr" role="alert">${esc(kraErr[k])}</div>` : ''}${ed && k === 'people' && kraTotal(f) !== 100 ? `<div class="opf-wwarn" role="alert">${esc(kraTotalMsg(f))}</div>` : ''}</div>`;
     const btns = ed ? `<div class="opf-btns">${kraUnsaved(k) ? '<span class="opf-unsaved">Not saved yet: click save to keep these changes</span>' : ''}<button type="button" class="opf-y sq" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">+</button><button type="button" class="opf-y soft" data-savek="${k}" title="Save the ${label} KRA">save</button></div>` : '';
-    return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:60px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col></colgroup><tr><th>Sr.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th></tr>
+    return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:56px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col>${ed ? '<col style="width:52px">' : ''}</colgroup><tr><th>S.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th>${ed ? '<th class="opf-act">Action</th>' : ''}</tr>
     ${rows.map((r, i) => {
       // every rated sub-KRA needs a manager remark; after a Submit attempt, unrated ones are marked too
       const needRemark = r.mgr != null && r.self != null && +r.mgr !== +r.self && !(r.mgrRemark || '').trim();
@@ -1284,7 +1453,8 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
       // SOP (Process) and learning (People) sub-KRAs need the document link in the self remark
       const linkKind = !FP.newJoiner && (k === 'process' && /sop/i.test(r.kpi) ? 'SOP' : k === 'people' && /learn/i.test(r.kpi) ? 'learning' : '');
       const needLink = linkKind && (attempted || (r.selfRemark || '').trim()) && !HAS_LINK.test(r.selfRemark || '');
-      return `<tr><td><span class="opf-no">${i + 1}${ed ? `<button type="button" class="xdel" data-del="${k}:${i}" title="Remove sub-KRA" aria-label="Remove sub-KRA ${i + 1}">${ico('trash')}</button>` : ''}</span></td>
+      // delete sits in its own Action column at the row's end (Harish 2026-11-19: not next to the S.No)
+      return `<tr><td class="opf-no">${i + 1}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="kpi">${esc(r.kpi)}</textarea>` : esc(r.kpi)}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="target">${esc(r.target)}</textarea>` : esc(r.target)}</td>
       <td>${ed ? `<input class="num" type="number" data-k="${k}" data-i="${i}" data-f="weight" value="${r.weight}">` : r.weight}</td>
@@ -1293,9 +1463,9 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
       <td><textarea class="${(needSelf && !(r.selfRemark || '').trim()) || needLink ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="selfRemark" ${p.editSelf ? '' : 'disabled'} ${linkKind ? `placeholder="What you did, and the ${linkKind} document link"` : ''}>${esc(r.selfRemark)}</textarea>
       ${needLink ? `<div class="flag">Add the ${linkKind} document link (https://…) in this remark.</div>` : ''}</td>
       <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'} ${p.editManager && !selfDone ? 'readonly data-locked="k"' : ''}>${esc(r.mgrRemark)}</textarea>
-      ${needRemark ? '<div class="flag">Manager remark is required: the manager rating differs from the self rating.</div>' : ''}</td></tr>`;
+      ${needRemark ? '<div class="flag">Manager remark is required: the manager rating differs from the self rating.</div>' : ''}</td>${ed ? `<td class="opf-act"><button type="button" class="opf-del" data-del="${k}:${i}" title="Remove this sub-KRA" aria-label="Remove sub-KRA ${i + 1}">${ico('trash')}</button></td>` : ''}</tr>`;
     }).join('')}
-    <tr class="sub"><td></td><td></td><td>Totals</td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td>Total Calculation : ${calc}</td><td></td></tr></table></div>` + btns;
+    <tr class="sub"><td></td><td></td><td>Totals</td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td>Total Calculation : ${calc}</td><td></td>${ed ? '<td></td>' : ''}</tr></table></div>` + btns;
   };
   const qs = FP.questions;
   const text = qs.filter(q => q.type === 'text'), rate = qs.filter(q => q.type === 'rating');
@@ -1306,7 +1476,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
   const pen = (id, label) => `<button type="button" class="ibtn opf-pen" data-qedit="${id}" title="${label}" aria-label="${label}">${ico('pencil')}</button>`;
   // order of the old portal (managers' review, 2026-11-16): title, month / year / View Question-Answer, the KRA card with the
   // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
-  v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span>${badge(FP.status)} ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+  v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span><span class="opf-st">${badge(FP.status)}</span> ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
     ${f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The employee can no longer change it.'}</div>`
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
@@ -1381,8 +1551,15 @@ function ratingBox(f) {
     <tr class="sub"><td>Monthly Rating</td><td colspan="2"><b>${r2(0.3 * sr + 0.7 * mr)}%</b></td></tr></table></div>`;
 }
 // Export KPI: the monthly form as it is on screen, as a CSV file Excel opens directly (UTF-8 with BOM)
+// one CSV download for every Export button: UTF-8 with BOM so Excel shows names and remarks correctly
+function fileSave(name, text) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const csvSave = (name, lines) => fileSave(name, lines.map(l => l.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n'));
+const fileName = s => String(s).trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '');
 function exportKpi() {
-  const { form: f, employee: e, manager: m } = FP, sum = formSummary(f), q = x => `"${String(x ?? '').replace(/"/g, '""')}"`;
+  const { form: f, employee: e, manager: m } = FP, sum = formSummary(f);
   const lines = [['Employee', e.name], ['Designation', e.designation], ['Reporting manager', m ? m.name : ''], ['Month', monthLabel(f.month)], ['Review date', f.reviewDate || ''],
     ['Status', STATUS_TEXT[FP.status] || FP.status], ['Monthly rating (%)', sum.rating ?? ''], [], ['KRA', 'KRA weightage', 'Sr. no', 'Key performance indicator', 'Target', 'Weightage', 'Self rating (30%)', 'Manager rating (70%)', 'Remark', 'Manager remark']];
   sum.kras.forEach(k => {
@@ -1391,15 +1568,13 @@ function exportKpi() {
   });
   lines.push([], ['Questionnaire'], ['Sr. no', 'Question', 'Answer', 'Self rating (of 5)', 'Manager rating (of 5)', 'Manager remark']);
   (FP.questions || []).forEach((x, i) => { const a = f.qa[x.id]; lines.push(x.type === 'text' ? [i + 1, x.text, a || ''] : [i + 1, x.text, '', a && a.self != null ? a.self : '', a && a.mgr != null ? a.mgr : '', a ? a.remark || '' : '']); });
-  const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `KPI_${e.name.replace(/\s+/g, '_')}_${f.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  csvSave(`KPI_${fileName(e.name)}_${f.month}.csv`, lines);
 }
 // KRA change requests: employees ask, the manager approves, then the employee can edit once
 function kraBanner(p) {
   const r = FP.kraRequest; let h = '';
   if (r && r.status === 'pending') h = p.decideKra
-    ? `<div class="warn"><b>${esc(r.by)} asked to change their KRAs.</b><div class="row" style="margin:10px 0 0"><button class="btn pri sm" data-kdec="1">Approve</button><button class="btn sm" data-kdec="0">Reject</button></div></div>`
+    ? `<div class="alert-w"><b>${esc(r.by)} asked to change their KRAs.</b><div class="row" style="margin:10px 0 0"><button class="btn pri sm" data-kdec="1">Approve</button><button class="btn sm" data-kdec="0">Reject</button></div></div>`
     : `<div class="info">KRA change request sent to <b>${esc(FP.manager ? FP.manager.name : 'your manager')}</b>. You can edit the KRAs once it is approved.</div>`;
   else if (r && r.status === 'approved') h = p.editKras && S.me.id === FP.employee.id ? `<div class="info"><b>${esc(r.decidedBy)}</b> gave you access to change the KRAs. Edit the KRAs below and save. After you save, a new request is needed for further changes.</div>` : `<div class="info">KRA change approved by <b>${esc(r.decidedBy)}</b>. ${esc(FP.employee.name)} can now edit the KRAs.</div>`;
   else if (r && r.status === 'rejected') h = `<div class="warn">KRA change request was rejected by ${esc(r.decidedBy)}.${r.reply ? '<br>' + esc(r.reply) : ''}</div>`;
@@ -1422,7 +1597,7 @@ function wireForm(v) {
     else if (t.dataset.k) {
       const r = f.kras[t.dataset.k].rows[+t.dataset.i]; r[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value;
       if (RATING_FIELDS.includes(t.dataset.f)) formDirty.add(`k|${t.dataset.k}|${r.id}|${t.dataset.f}`);
-      if (t.dataset.f === 'self' || t.dataset.f === 'mgr') { t.classList.remove('r-g', 'r-y', 'r-o', 'r-r'); const c = rateCol(t.value); if (c) t.classList.add(c); }
+      if (t.dataset.f === 'self' || t.dataset.f === 'mgr') { t.classList.remove('r-g', 'r-y', 'r-r'); const c = rateCol(t.value); if (c) t.classList.add(c); }
     }
     if (t.dataset.kw || (t.dataset.k && !RATING_FIELDS.includes(t.dataset.f))) draftStore();
     if (t.id === 'reviewDate') return;
@@ -1569,7 +1744,7 @@ function wireForm(v) {
       if (lk) return toast(lk.dataset.locked === 'q' ? 'The employee has not added their self rating yet. It is needed before the manager rating or remark.' : 'The employee has not added their self rating and self remark yet. Both are needed before the manager rating or remark.', 'err');
       if (fb) { const k = fb.dataset.fold; folded.has(k) ? folded.delete(k) : folded.add(k); redraw(); }
       else if (kw) { const k = kw.dataset.kwedit; editingW.has(k) ? editingW.delete(k) : editingW.add(k); redraw(); const box = v.querySelector(`[data-kw="${k}"]`); if (box) { box.focus(); box.select(); } }
-      else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); qOrig[id] = f.qa[id] || ''; focusQ = id; redraw(); }
+      else if (qe) { const id = qe.dataset.qedit; editingQ.add(id); qOrig[id] = f.qa[id] ?? ''; focusQ = id; redraw(); }
       else if (t.dataset.kreq) {
         FP = await post('/kra-request', {}); toast('Request sent to your manager'); drawForm(v);
       }
@@ -1621,7 +1796,7 @@ const monShort = () => esc(monthLabel(S.month).split(' ')[0]);
 const rateCls = x => x == null ? '' : x >= 80 ? 'g' : x >= 60 ? 'a' : 'r'; // percentage ratings
 // where a person's name leads back to: admins use the Reporting flow, everyone else My Team
 const personHref = id => S.me.role === 'admin' ? `#/reporting/${id}` : `#/team/${id}`;
-const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Team report</a>` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
+const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class="btn sm" href="#/yearly/${r.id}" title="Team Report: everyone under ${esc(r.name)}">${ico('check')}Team Report</a>` : ''}${opts.kpi === false || S.me.role !== 'admin' ? '' : `<a class="btn sm" href="#/kpi/${r.id}" title="${esc(r.name)}'s own KRA scores by month">${ico('award')}KPI report</a>`}</span>`;
 const reportHead = (d, title, crumbLabel) => head(d.me ? `My ${title}` : `${title[0].toUpperCase() + title.slice(1)}: ${esc(d.person.name)}`,
   d.me ? '' : `<a href="${personHref(d.person.id)}">${esc(d.person.name)}</a> › ${crumbLabel || title}`); // no "PMS" crumbs (Harish, 2026-11-17)
 
@@ -1638,9 +1813,9 @@ pages.team = async (v, arg) => {
   const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${list ? (r.direct ? `<a class="nm" href="#/team/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`) : `<a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${esc(r.name)}</a>`}<div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
   const rows = list ? d.managers : d.members;
   const table = list
-    ? `<tr><th>Sr. no</th><th>Name</th><th>Email</th><th>Designation</th><th>Reports to</th><th>Employees</th><th>Team report</th></tr>
+    ? `<tr><th>Sr. no</th><th>Name</th><th>Email</th><th>Designation</th><th>Reports to</th><th>Employees</th><th>Team Report</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td class="small">${esc(r.email) || 'N/A'}</td><td>${esc(r.designation)}</td><td>${r.manager ? esc(r.manager.name) : 'N/A'}</td><td>${count(r)}</td>
-        <td><a class="btn sm" href="#/yearly/${r.id}" title="Team report: everyone under ${esc(r.name)}">${ico('check')}Open</a></td></tr>`).join('')
+        <td><a class="btn sm" href="#/yearly/${r.id}" title="Team Report: everyone under ${esc(r.name)}">${ico('check')}Open</a></td></tr>`).join('')
         || '<tr><td colspan="7" class="small">No managers under you. Everyone in your team reports to you directly.</td></tr>'}`
     : `<tr><th>Sr. no</th><th>Name</th><th>Employees</th><th>${mon} review</th><th>Rating</th><th>Reports</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td>${count(r)}</td><td>${review(r)}</td><td>${r.review && r.review.rating != null ? `<b class="rt ${rateCls(r.review.rating)}">${pc(r.review.rating)}</b>` : 'N/A'}</td><td>${reportLinks(r)}</td></tr>`).join('')
@@ -1664,14 +1839,14 @@ pages.team = async (v, arg) => {
 };
 
 // My Team Report: every review under the person this month, with the flags
-pages.teamreport = (v, id) => location.replace('#/yearly' + (id ? '/' + id : '')); // merged into the Team report (status cards on top)
+pages.teamreport = (v, id) => location.replace('#/yearly' + (id ? '/' + id : '')); // merged into the Team Report (status cards on top)
 
 // My MIS Report: month-by-month figures for the whole team, and each person's monthly rating
 pages.mis = async (v, id) => {
   if (S.me.role !== 'admin') return pages.home(v); // MIS, KPI and manager emails are admin-only
   const d = await api(`/mis${id ? '?id=' + id : ''}`), short = m => esc(m.label.split(' ')[0].slice(0, 3));
   const cell = x => !x ? '<span class="small" title="No form">–</span>' : x.rating != null ? `<b class="rt ${rateCls(x.rating)}" title="${esc(x.status)}">${pc(x.rating)}</b>` : `<span class="small" title="${esc(x.status)}">${{ 'Review Pending': 'Pending' }[x.status] || '–'}</span>`;
-  v.innerHTML = (d.org ? head('MIS report', 'Whole organisation') : reportHead(d, 'MIS report', 'MIS report')) + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for ${d.org ? 'everyone in the organisation' : `everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)`}</span><span class="sp"></span>${d.org ? '' : `<a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team report</a>`}<button class="btn pri" id="misx">Download CSV</button></div>
+  v.innerHTML = (d.org ? head('MIS report', 'Whole organisation') : reportHead(d, 'MIS report', 'MIS report')) + `<div class="row"><span class="small">${esc(S.me.fy || '')} so far, for ${d.org ? 'everyone in the organisation' : `everyone under ${d.me ? 'you' : esc(d.person.name)} (all levels)`}</span><span class="sp"></span>${d.org ? '' : `<a class="btn" href="#/teamreport${id ? '/' + id : ''}">${ico('check')}Team Report</a>`}<button class="btn pri" id="misx">Download CSV</button></div>
   <div id="mgraph"></div>
   <h2>Month by month</h2>
   <div class="tablewrap"><table><tr><th>Month</th><th class="nr">Scheduled</th><th class="nr">Filled</th><th class="nr">Not Filled</th><th class="nr">Review Completed</th><th class="nr">Review Pending</th><th class="nr" title="Review held within the window">On time</th><th class="nr" title="Review held after the window">Late</th><th class="nr">Avg rating</th><th>Completion</th></tr>
@@ -1683,10 +1858,8 @@ pages.mis = async (v, id) => {
   <p class="small">Ratings appear once a review is submitted. "Not sub." = completed but not submitted, "Open" = review not completed yet, – = no form that month. Ratings are percentages: blue is 80% and above, orange 60% to 79%, red below 60%.</p>`;
   misGraph($('#mgraph'), id).catch(er => { $('#mgraph').innerHTML = errBox(er); });
   $('#misx').onclick = () => {
-    const q = x => `"${String(x ?? '').replace(/"/g, '""')}"`;
-    const lines = [['Employee', 'Designation', 'Reports to', ...d.months.map(m => m.label), 'Average'].map(q).join(','),
-      ...d.grid.map(r => [r.name, r.designation, r.manager, ...r.cells.map(x => !x ? '' : x.rating ?? x.status), r.avg ?? ''].map(q).join(','))];
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `MIS-${d.person.name.replace(/\s+/g, '-')}.csv`; a.click();
+    csvSave(`MIS_${fileName(d.person.name)}.csv`, [['Employee', 'Designation', 'Reports to', ...d.months.map(m => m.label), 'Average'],
+      ...d.grid.map(r => [r.name, r.designation, r.manager, ...r.cells.map(x => !x ? '' : x.rating ?? x.status), r.avg ?? ''])]);
   };
 };
 
@@ -1751,13 +1924,265 @@ pages.kpi = async (v, id) => {
 const NIL = '<span class="nil">–</span>';
 const rDate = d => d ? fmtD(d) : NIL;
 const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th class="nr">Rating</th><th>Flags</th></tr>
-  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.due)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${badge(r.form)} ${badge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || '<tr><td colspan="9">No reviews in your access for this month.</td></tr>'}</table></div>`;
+  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.due)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${badge(r.form)} ${badge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || `<tr><td colspan="9">${cfCount('report') ? `Nothing matches these filters. ${clearLink('report')}` : `No reviews in your access for ${esc(monthLabel(S.month))}. Pick another month above.`}</td></tr>`}</table></div>`;
 // a review's flags: the first one, the rest behind "+N" (click to open), so one row stays one line tall; numbered 1, 2, 3
 const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
   : flags.length === 1 ? `<td class="rflag">${esc(flags[0])}</td>`
   : `<td class="rflag"><details class="flags"><summary title="Show all ${flags.length} flags">1. ${esc(flags[0])} <b class="more">+${flags.length - 1}</b></summary>${flags.slice(1).map((x, i) => `<div>${i + 2}. ${esc(x)}</div>`).join('')}</details></td>`;
 
-// ---------- Team report / My report (KRA scores month by month for the year) ----------
+// ---------- Performance Analytics (Fiza 2026-11-19; layout "C2" picked by Harish 2026-11-19) ----------
+// Light cards (the dark "command centre" only in dark mode): four number cards (notched gauge, month bars, sparkline, dot
+// grid), the review cycle funnel (layered, curved, Bklit UI), KRA rings, reviews held on time, rating bands (tick donut), parameters pie,
+// team race (squares), review meetings calendar and "Needs attention". Every card has its own Filter pill (the same
+// panel as the dashboard cards, CF_CARDS an*), filtering in the browser on one /api/analytics answer.
+// Scores come from submitted reviews only; this month's reviews are still running, so the period ends at the latest
+// finished month. The Sample data switch shows made-up ratings with placeholder names (nothing saved).
+const AF = (() => { try { return { fy: 0, sample: false, ...JSON.parse(localStorage.getItem('pms.analytics') || '{}') }; } catch { return { fy: 0, sample: false }; } })();
+const afSave = () => { try { localStorage.setItem('pms.analytics', JSON.stringify(AF)); } catch {} };
+const AN_CARDS = ['anAvg', 'anStrong', 'anParam', 'anMove', 'anFunnel', 'anKra', 'anTime', 'anBands', 'anPar', 'anRace', 'anMeet', 'anAlert'];
+const AN_KRAS = [['operational', 'Operational', '--vr-anx-k1'], ['process', 'Process', '--vr-anx-k2'], ['people', 'People', '--vr-anx-k3']];
+let AN = null; // the last /api/analytics answer; the cards redraw from it when a card filter changes
+let AN_LAST = {}; // card -> its last HTML: only a card that changed plays its entrance again (a filter on one card leaves the rest still)
+pages.analytics = async v => {
+  const qs = [AF.fy && `fy=${AF.fy}`, AF.sample && 'sample=1'].filter(Boolean).join('&');
+  AN = await api('/analytics' + (qs ? '?' + qs : ''));
+  const ppl = AN.people, mgrName = k => (ppl.find(p => String(p.managerId) === k) || {}).manager || k;
+  PF.xteam = optCount(ppl, p => p.team, tl);
+  PF.xdesig = optCount(ppl, p => p.group);
+  PF.xmgr = optCount(ppl, p => String(p.managerId), mgrName);
+  PF.xpar = AN.params.map((q, i) => [i ? q.id : '', q.label]); PF.hide.anPar = ['xpar'];
+  AN_CARDS.forEach(c => { cfLocalRedraw[c] = () => anDraw(v); });
+  AN_LAST = {}; // every card plays its entrance on a new visit, FY or Sample data change
+  anDraw(v);
+  // page events (set once per visit): Sample data switch, FY, Remind, card filters, hover numbers
+  v.onclick = e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    if (e.target.closest('#asample')) { AF.sample = !AN.sample; afSave(); return pages.analytics(v); }
+    if (e.target.closest('[data-anremind]')) return remindAll();
+    const pt = e.target.closest('[data-anpar]'); if (pt) { CF.anPar.xpar = pt.dataset.anpar; cfSave(); anDraw(v); const b = v.querySelector(`[data-anpar="${pt.dataset.anpar}"]`); if (b) b.focus(); }
+  };
+  v.onchange = e => { if (e.target.id === 'afy') { AF.fy = +e.target.value; afSave(); pages.analytics(v); } };
+  anTipWire(v);
+};
+// numbers on hover / keyboard focus for every mark with data-tip (one floating box for the page, Bklit UI style:
+// title, then a row per series with its dot). Hover sync (Harish 2026-11-20, Bklit UI recording): marks and legend rows
+// that share a data-hk key light up together and the rest of that card dims; a ring / donut centre (.an-ctr) shows the
+// hovered item's data-cv / data-cl and counts back to its own value when the pointer leaves.
+function anTipWire(v) {
+  let t = document.getElementById('antip');
+  if (!t) { t = document.createElement('div'); t.id = 'antip'; t.setAttribute('role', 'tooltip'); t.hidden = true; document.body.appendChild(t); }
+  const place = (x, y) => { const r = t.getBoundingClientRect(); let L = x + 14, T = y + 14; if (L + r.width > innerWidth - 8) L = x - r.width - 14; if (T + r.height > innerHeight - 8) T = y - r.height - 14; t.style.left = Math.max(8, L) + 'px'; t.style.top = Math.max(8, T) + 'px'; };
+  const show = (el, x, y) => { t.innerHTML = el.dataset.tip; t.hidden = false; place(x, y); };
+  let hot = null; // { card, key } lit right now
+  const centre = (card, el) => {
+    const c = card && card.querySelector('.an-ctr'); if (!c) return;
+    const src = el && el.dataset.cv != null ? el : c, n = c.querySelector('[data-count]');
+    if (n) anCount(n, +src.dataset.cv, parseFloat(n.textContent) || 0, 450);
+    c.querySelector('.an-cl').textContent = src.dataset.cl;
+  };
+  const setHot = el => {
+    const card = el ? el.closest('.anc') : null, key = el ? el.dataset.hk : null;
+    if (hot && hot.card === card && hot.key === key) return;
+    if (hot) { hot.card.removeAttribute('data-hot'); hot.card.querySelectorAll('[data-hk].hot').forEach(x => x.classList.remove('hot')); if (hot.card !== card && hot.card.isConnected) centre(hot.card, null); }
+    hot = null;
+    if (card && key) { hot = { card, key }; card.setAttribute('data-hot', ''); card.querySelectorAll(`[data-hk="${CSS.escape(key)}"]`).forEach(x => x.classList.add('hot')); centre(card, el); }
+  };
+  v.onpointerover = e => { setHot(e.target.closest('[data-hk]')); const el = e.target.closest('[data-tip]'); if (!el) { t.hidden = true; return; } show(el, e.clientX, e.clientY); };
+  v.onpointermove = e => { if (!t.hidden) place(e.clientX, e.clientY); };
+  v.onpointerleave = () => { t.hidden = true; setHot(null); };
+  v.onfocusin = e => { setHot(e.target.closest('[data-hk]')); const el = e.target.closest('[data-tip]'); if (!el) { t.hidden = true; return; } const r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.bottom); };
+  v.onfocusout = () => { t.hidden = true; setHot(null); };
+  addEventListener('hashchange', () => { t.hidden = true; }, { once: true });
+}
+// counts a number up (or across) to its value; data-dec = decimals. Skipped when the person asked for less motion.
+function anCount(el, to, from = 0, ms = 800) {
+  if (!el || isNaN(to)) return;
+  const dec = +el.dataset.dec || 0, fmt = x => x.toFixed(dec);
+  cancelAnimationFrame(el._raf);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
+  const t0 = performance.now(), step = now => { const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(from + (to - from) * e); if (k < 1) el._raf = requestAnimationFrame(step); };
+  el._raf = requestAnimationFrame(step);
+}
+function anDraw(v) {
+  const d = AN, PI = Math.PI, mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null, f1 = x => (Math.round(x * 10) / 10).toFixed(1), pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+  const tp = h => `data-tip="${esc(h)}"`, mon = k => (d.months.find(m => m.key === k) || { label: k }).label.split(' ')[0].slice(0, 3);
+  // months: finished months only (this month's reviews are still running), ending at the latest month with a submitted review
+  const done = d.months.map(m => m.key).filter(m => m < d.current), had = done.filter(m => d.people.some(p => p.scores[m]));
+  const upto = had.length ? done.filter(m => m <= had[had.length - 1]) : done;
+  const per = c => { const x = CF[c].xper; return x === 'fy' ? upto : upto.slice(-(+x || 6)); };
+  const pool = c => { const f = CF[c]; return d.people.filter(p => (!f.xteam || !f.xteam.length || f.xteam.includes(p.team)) && (!f.xdesig || !f.xdesig.length || f.xdesig.includes(p.group)) && (!f.xmgr || !f.xmgr.length || f.xmgr.includes(String(p.managerId)))); };
+  const sc = (ps, m, k) => ps.map(p => p.scores[m]).filter(Boolean).map(s => s[k]).filter(x => x != null);
+  const avgOf = (p, ms, k = 'total') => mean(ms.map(m => p.scores[m]).filter(Boolean).map(s => s[k]).filter(x => x != null));
+  const span = ms => ms.length ? (ms.length > 1 ? `${mon(ms[0])}–${mon(ms[ms.length - 1])}` : mon(ms[0])) : 'no months yet';
+  const chip = (x, unit = ' pts', inv = false) => { if (x == null || isNaN(x) || Math.abs(x) < .05) return ''; const up = x > .05, dn = x < -.05, good = inv ? dn : up; return `<span class="anchip ${up || dn ? (good ? 'up' : 'dn') : 'nt'}">${up ? '▲' : dn ? '▼' : '•'} ${Number.isInteger(x) ? Math.abs(x) : f1(Math.abs(x))}${unit}</span>`; };
+  const none = t => `<p class="anx-none">${t}${d.sample ? '' : ' Switch on <b>Sample data</b> above to see how it looks.'}</p>`;
+  const noScores = 'No submitted reviews in this period yet.';
+  const out = {}; // card -> HTML, compared with the last draw so only changed cards animate in
+  const card = (c, cls, title, sub, body, extra = '') => (out[c] = `<section class="anc ${cls}" data-c="${c}"><header><div><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</div><div class="anc-t">${extra}${cfPill(c)}</div></header><div class="anc-b">${body}</div></section>`);
+  // Bklit UI pieces (Harish 2026-11-20): tooltip = title + one row per series with its dot (+ a footer line);
+  // num = a number that counts up when its card comes in; xlab = month label that turns into a pill on hover
+  const mlab = k => (d.months.find(m => m.key === k) || { label: k }).label;
+  const tipH = (title, rows, foot) => `<b class="tt">${title}</b>${rows.map(([col, l, val]) => `<span class="tr"><i style="background:var(${col})"></i>${l}<b>${val}</b></span>`).join('')}${foot ? `<span class="tf">${foot}</span>` : ''}`;
+  const num = (x, dec = 0, tag = 'span') => `<${tag} data-count="${x}" data-dec="${dec}">${x.toFixed(dec)}</${tag}>`;
+  const xlab = (cx, y, t) => `<rect class="ax-xp" x="${(cx - 17).toFixed(1)}" y="${y - 12}" width="34" height="17" rx="8.5"/><text class="ax-tk ax-xt" x="${cx.toFixed(1)}" y="${y}" text-anchor="middle">${t}</text>`;
+  // pie / donut entrance: a mask circle whose stroke draws itself clockwise from 12 o'clock, revealing the slices (radius R)
+  const sweepMask = (id, cx, cy, R) => `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="${cx - R - 20}" y="${cy - R - 20}" width="${2 * R + 40}" height="${2 * R + 40}"><circle class="sweep" cx="${cx}" cy="${cy}" r="${R / 2}" fill="none" stroke="white" stroke-width="${R}" pathLength="100" stroke-dasharray="100 100" transform="rotate(-90 ${cx} ${cy})"/></mask></defs>`;
+  // smooth line through points (Catmull-Rom as cubic curves), for the sparkline
+  const smooth = P => P.map(([x, y], i) => { if (!i) return `M${x.toFixed(1)},${y.toFixed(1)}`; const p0 = P[i - 2] || P[i - 1], p1 = P[i - 1], p3 = P[i + 1] || [x, y];
+    return `C${(p1[0] + (x - p0[0]) / 6).toFixed(1)},${(p1[1] + (y - p0[1]) / 6).toFixed(1)} ${(x - (p3[0] - p1[0]) / 6).toFixed(1)},${(y - (p3[1] - p1[1]) / 6).toFixed(1)} ${x.toFixed(1)},${y.toFixed(1)}`; }).join(' ');
+  const pt = (cx, cy, r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const arcP = (cx, cy, r0, r1, a0, a1) => { const big = a1 - a0 > PI ? 1 : 0, [x1, y1] = pt(cx, cy, r1, a0), [x2, y2] = pt(cx, cy, r1, a1), [x3, y3] = pt(cx, cy, r0, a1), [x4, y4] = pt(cx, cy, r0, a0);
+    return `M${x1.toFixed(2)},${y1.toFixed(2)} A${r1},${r1} 0 ${big} 1 ${x2.toFixed(2)},${y2.toFixed(2)} L${x3.toFixed(2)},${y3.toFixed(2)} A${r0},${r0} 0 ${big} 0 ${x4.toFixed(2)},${y4.toFixed(2)} Z`; };
+  const canRemind = !S.me.viewingAs && d.current === S.me.currentMonth && !d.sample;
+
+  // 1. Average rating: notched gauge, lit notches glow, mark at the 75% goal
+  const k1 = (() => { const c = 'anAvg', ps = pool(c), ms = per(c), all = ms.flatMap(m => sc(ps, m, 'total')), v0 = mean(all);
+    if (v0 == null) return card(c, 'c3', 'Average rating', span(ms), none(noScores));
+    const first = mean(sc(ps, ms[0], 'total')), last = mean(sc(ps, ms[ms.length - 1], 'total')), N = 34, cx = 110, cy = 104, a = t => PI + t * PI;
+    let s = '<defs><filter id="anglow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+    for (let k = 0; k < N; k++) { const on = (k + .5) / N <= v0 / 100; s += `<path ${on ? 'class="gn"' : ''} d="${arcP(cx, cy, 70, 92, a(k / N) + .012, a((k + 1) / N) - .012)}" style="--i:${k};fill:var(${on ? '--vr-anx-yellow' : '--vr-anx-line'})" ${on ? 'filter="url(#anglow)"' : ''}/>`; }
+    const [mx, my] = pt(cx, cy, 64, a(.75)), [nx, ny] = pt(cx, cy, 98, a(.75));
+    s += `<line x1="${mx}" y1="${my}" x2="${nx}" y2="${ny}" style="stroke:var(--vr-anx-ink2)" stroke-width="1.5"/><text class="ax-tk" x="${nx + 3}" y="${ny - 3}">75</text><text class="ax-lb" x="${cx}" y="${cy - 10}" text-anchor="middle" style="font-size:30px;font-weight:800">${num(+f1(v0), 1, 'tspan')}<tspan style="font-size:15px;fill:var(--vr-anx-muted)">%</tspan></text><text class="ax-lb2" x="${cx}" y="${cy + 8}" text-anchor="middle">${all.length} submitted review${all.length === 1 ? '' : 's'}</text>`;
+    return card(c, 'c3', 'Average rating', `${span(ms)} ${ms.length > 1 ? chip(last - first) : ''}`, `<svg viewBox="0 0 220 116" role="img" aria-label="Average rating ${f1(v0)}%" tabindex="0" ${tp(`<b>Average rating, ${span(ms)}</b><br>${f1(v0)}% · goal 75%${ms.length > 1 ? `<br>${mon(ms[0])} ${f1(first)}% → ${mon(ms[ms.length - 1])} ${f1(last)}%` : ''}`)}>${s}</svg>`); })();
+  // 2. Strong performers (75%+) per month: bar sparkline, the latest month lit
+  const k2 = (() => { const c = 'anStrong', ps = pool(c), ms = per(c), n = ms.map(m => ps.filter(p => p.scores[m] && p.scores[m].total >= 75).length);
+    if (!ms.some(m => sc(ps, m, 'total').length)) return card(c, 'c3', 'Strong performers (75%+)', span(ms), none(noScores));
+    // Bklit bar chart: bars spring up from the base one after another; hover lights one month, dims the rest, month label as a pill
+    const w = 220, h = 70, bw = w / ms.length, mx = Math.max(1, ...n);
+    return card(c, 'c3', 'Strong performers (75%+)', span(ms), `<div class="anbig">${num(n[n.length - 1])} ${ms.length > 1 ? chip(n[n.length - 1] - n[0], '') : ''}<small>in ${mon(ms[ms.length - 1])}</small></div>
+      <svg viewBox="0 0 ${w} ${h + 16}" role="img" aria-label="Strong performers per month">${n.map((x, i) => { const bh = Math.max(3, x / mx * h), lit = i === n.length - 1 ? '--vr-anx-yellow' : '--vr-anx-series', rated = ps.filter(p => p.scores[ms[i]]).length;
+        return `<g data-hk="${ms[i]}" tabindex="0" ${tp(tipH(mlab(ms[i]), [[lit, 'Rated 75%+', x], ['--vr-anx-muted', 'Rated', rated]]))}><rect x="${i * bw}" y="0" width="${bw}" height="${h}" fill="transparent"/><rect class="grow" x="${i * bw + 4}" y="${h - bh}" width="${Math.max(4, bw - 8)}" height="${bh}" rx="${Math.min(6, Math.max(2, (bw - 8) / 2))}" style="--i:${i};fill:var(${lit})"/>${xlab(i * bw + bw / 2, h + 14, mon(ms[i]))}</g>`; }).join('')}</svg>`); })();
+  // 3. Parameter rating (manager, out of 5): notch bar
+  const k3 = (() => { const c = 'anParam', ps = pool(c), ms = per(c), pv = m => ps.map(p => p.scores[m]).filter(Boolean).flatMap(s => Object.values(s.params || {})), all = ms.flatMap(pv), v0 = mean(all);
+    if (v0 == null) return card(c, 'c3', "Parameter rating", span(ms), none(noScores));
+    // Bklit sparkline (Harish 2026-11-20): the month-by-month average as a thin line that draws itself in, the latest month
+    // as a yellow dot; hover a month for a crosshair, its dot and the numbers
+    const pts = ms.map(m => { const a = pv(m); return { m, v: mean(a), n: a.length }; }).filter(p => p.v != null), first = pts[0].v, last = pts[pts.length - 1].v;
+    const W = 220, H = 58, lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v)), pad = Math.max((hi - lo) * .3, .15), cw = pts.length > 1 ? (W - 8) / (pts.length - 1) : W;
+    const X = i => pts.length > 1 ? 4 + i * cw : W / 2, Y = x => 6 + (1 - (x - lo + pad) / (hi - lo + 2 * pad)) * (H - 12), P = pts.map((p, i) => [X(i), Y(p.v)]), [ex, ey] = P[P.length - 1];
+    return card(c, 'c3', 'Parameter rating', `Manager's rating · ${span(ms)}`, `<div class="anbig">${num(+v0.toFixed(1), 1)}<small>/5</small> ${pts.length > 1 ? chip(last - first, '') : ''}</div>
+      <svg viewBox="0 0 ${W} ${H}" class="anspark" role="img" aria-label="Parameter rating by month, ${v0.toFixed(1)} out of 5">${pts.length > 1 ? `<path class="sp-l" d="${smooth(P)}" pathLength="100"/>` : ''}<circle class="sp-end" cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="3.5"/>
+      ${pts.map((p, i) => `<g data-hk="${p.m}" tabindex="0" ${tp(tipH(mlab(p.m), [['--vr-anx-series', 'Average', p.v.toFixed(2) + ' / 5'], ['--vr-anx-muted', 'Ratings', p.n]]))}><rect x="${(X(i) - cw / 2).toFixed(1)}" y="0" width="${cw.toFixed(1)}" height="${H}" fill="transparent"/><line class="sp-x" x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="0" y2="${H}"/><circle class="sp-x sp-d" cx="${X(i).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.5"/></g>`).join('')}</svg>
+      <span class="ancap">${d.params.map(q => esc(q.label)).slice(0, 3).join(', ')}${d.params.length > 3 ? '…' : ''}</span>`); })();
+  // 4. Who is moving: one square per person, up / steady / down (first to last rated month in the period)
+  const k4 = (() => { const c = 'anMove', ps = pool(c), ms = per(c), mv = ps.map(p => { const r = ms.filter(m => p.scores[m]); return r.length < 2 ? null : { p, d: p.scores[r[r.length - 1]].total - p.scores[r[0]].total }; }).filter(Boolean);
+    if (!mv.length) return card(c, 'c3', 'Who is moving', span(ms), none('Needs two rated months per person in the period.'));
+    const up = mv.filter(x => x.d >= 2).sort((a, b) => b.d - a.d), dn = mv.filter(x => x.d <= -2).sort((a, b) => a.d - b.d), flat = mv.filter(x => x.d > -2 && x.d < 2), all = [...up, ...flat, ...dn];
+    const cols = 15, sz = 11, g = 4;
+    return card(c, 'c3', 'Who is moving', `First to last rated month · ${span(ms)}`, `<div class="anbig">${num(up.length)}<small>up · ${dn.length} down</small></div>
+      <svg viewBox="0 0 ${cols * (sz + g)} ${Math.ceil(all.length / cols) * (sz + g)}" role="img" aria-label="${up.length} up, ${flat.length} steady, ${dn.length} down">${all.map((x, i) => `<rect class="pop" tabindex="0" x="${(i % cols) * (sz + g)}" y="${Math.floor(i / cols) * (sz + g)}" width="${sz}" height="${sz}" rx="3" style="--i:${i};fill:var(${x.d >= 2 ? '--vr-anx-good' : x.d <= -2 ? '--vr-anx-bad' : '--vr-anx-line'})" ${tp(`<b>${esc(x.p.name)}</b><br>${esc(tl(x.p.team))}<br>${x.d >= 0 ? '+' : ''}${f1(x.d)} points`)}/>`).join('')}</svg>
+      <span class="ancap ankeys"><i style="background:var(--vr-anx-good)"></i>Up 2+ <i style="background:var(--vr-anx-line)"></i>Steady <i style="background:var(--vr-anx-bad)"></i>Down 2+</span>`); })();
+
+  // 5. Review cycle funnel (this month): layered bands, straight edges, % pills
+  const funnel = (() => { const c = 'anFunnel', ps = pool(c).filter(p => p.cycle), due = ps.length;
+    const st = [['Reviews due', due], ['Meeting booked', ps.filter(p => p.cycle.scheduled).length], ['Form filled', ps.filter(p => p.cycle.filled).length], ['Ratings in', ps.filter(p => p.cycle.rated).length], ['Submitted', ps.filter(p => p.cycle.submitted).length]];
+    const notFilled = due - st[2][1], btn = canRemind && notFilled ? `<button type="button" class="btn sm" data-anremind>${ico('bell')}Remind ${notFilled} not filled</button>` : '';
+    if (!due) return card(c, 'c8', `Review cycle · ${esc(d.currentLabel)}`, 'From due to submitted', '<p class="anx-none">No reviews this month for these filters.</p>');
+    // Bklit funnel (Harish 2026-11-20): each step curves smoothly down to the next one, with two halo layers around it;
+    // the steps wipe in from the left one after another, then their numbers and % pills fade in; hover lights one step
+    const W = 680, H = 280, G = 3, sw = (W - G * (st.length - 1)) / st.length, cy = 146, hh = x => 5 + Math.pow(x / due, 1.6) * 52;
+    const f = st.map(([l, x], i) => { const x0 = i * (sw + G), x1 = x0 + sw, a = hh(x), b = i < st.length - 1 ? hh(st[i + 1][1]) : a, c1 = x0 + sw * .45, c2 = x0 + sw * .8;
+      const band = (k, op) => { const ea = (a + k * (6 + a * .22)).toFixed(1), eb = (b + k * (6 + b * .22)).toFixed(1);
+        return `<path d="M${x0},${cy - ea} C${c1},${cy - ea} ${c2},${cy - eb} ${x1},${cy - eb} L${x1},${+cy + +eb} C${c2},${+cy + +eb} ${c1},${+cy + +ea} ${x0},${+cy + +ea} Z" style="fill:var(--vr-anx-series)" opacity="${op}"/>`; };
+      return `<g data-hk="s${i}" tabindex="0" style="--i:${i}" ${tp(tipH(l, [['--vr-anx-series', 'People', `${x} of ${due}`], ['--vr-anx-muted', 'Share', pct(x, due) + '%']], i ? `${pct(x, st[i - 1][1])}% of "${st[i - 1][0]}"` : ''))}><g class="wipe">${band(2, .16)}${band(1, .34)}${band(0, 1)}</g><g class="fin"><rect x="${x0 + sw / 2 - 28}" y="${cy - 13}" width="56" height="26" rx="13" class="ax-pill"/><text x="${x0 + sw / 2}" y="${cy + 5}" text-anchor="middle" class="ax-pillt">${pct(x, due)}%</text><text class="ax-lb" x="${x0 + sw / 2}" y="26" text-anchor="middle" style="font-size:18px;font-weight:800">${num(x, 0, 'tspan')}</text><text class="ax-lb2" x="${x0 + sw / 2}" y="${H - 10}" text-anchor="middle" style="font-size:13px">${l}</text></g></g>`; }).join('');
+    const drop = st.slice(1).map(([l, x], i) => ({ l, n: st[i][1] - x })).sort((a, b) => b.n - a.n)[0];
+    return card(c, 'c8', `Review cycle · ${esc(d.currentLabel)}`, `From due to submitted${drop && drop.n ? ` · biggest drop: ${drop.n} before "${drop.l}"` : ''}`, `<svg viewBox="0 0 ${W} ${H}" class="anfun" role="img" aria-label="Review cycle funnel">${f}</svg>`, btn); })();
+  // 6. KRA scores: one ring per KRA (out of 100), rows with the change
+  const kra = (() => { const c = 'anKra', ps = pool(c), ms = per(c), ks = AN_KRAS.map(([k, l, col]) => ({ k, l, col, v: mean(ms.flatMap(m => sc(ps, m, k))), a: mean(sc(ps, ms[0], k)), b: mean(sc(ps, ms[ms.length - 1], k)) }));
+    if (ks.every(x => x.v == null)) return card(c, 'c4', 'KRA scores', span(ms), none(noScores));
+    // Bklit ring chart (Harish 2026-11-20): the arcs sweep in one after another and the centre counts up; hovering a ring or
+    // its legend row dims the others and the centre shows that KRA; the legend rows carry a thin progress bar
+    const all = mean(ms.flatMap(m => sc(ps, m, 'total'))), ctr = all != null ? +f1(all) : 0;
+    const hk = x => x.v != null ? `data-hk="${x.k}" data-cv="${f1(x.v)}" data-cl="${x.l}"` : '';
+    return card(c, 'c4', 'KRA scores', `Average per KRA · ${span(ms)}`, `<svg viewBox="0 0 180 180" class="anring" role="img" aria-label="KRA scores">${ks.map((x, i) => { const r = 78 - i * 18; return `<g ${hk(x)} ${x.v != null ? `tabindex="0" ${tp(tipH(x.l, [[x.col, 'Average', f1(x.v) + '%']], ms.length > 1 && x.a != null && x.b != null ? `${mon(ms[0])} ${f1(x.a)}% → ${mon(ms[ms.length - 1])} ${f1(x.b)}%` : ''))}` : ''}><circle cx="90" cy="90" r="${r}" fill="none" style="stroke:var(--vr-anx-line2)" stroke-width="12"/>${x.v != null ? `<circle class="ringa" cx="90" cy="90" r="${r}" fill="none" pathLength="100" style="--i:${i};stroke:var(${x.col})" stroke-width="12" stroke-linecap="round" stroke-dasharray="${x.v.toFixed(2)} 100" transform="rotate(-90 90 90)"/>` : ''}</g>`; }).join('')}
+      <g class="an-ctr" data-cv="${ctr}" data-cl="overall %"><text class="ax-lb" x="90" y="93" text-anchor="middle" style="font-size:22px;font-weight:800">${all != null ? num(ctr, 1, 'tspan') : '–'}</text><text class="ax-lb2 an-cl" x="90" y="109" text-anchor="middle">overall %</text></g></svg>
+      <div class="anrows anleg">${ks.map(x => `<div ${hk(x)}><i style="background:var(${x.col})"></i><span>${x.l}</span><b>${x.v != null ? f1(x.v) + '%' : '–'}</b>${ms.length > 1 && x.a != null && x.b != null ? chip(x.b - x.a) : '<em></em>'}<u class="anpb"><s style="width:${x.v != null ? x.v.toFixed(1) : 0}%;background:var(${x.col})"></s></u></div>`).join('')}</div>`); })();
+  // 7. Reviews held on time (finished months): on time / late / missed, stacked, round tops
+  const time = (() => { const c = 'anTime', ps = pool(c), ms = per(c), rows = ms.map(m => { const t = ps.map(p => p.timing[m]).filter(Boolean); return { m, on: t.filter(x => x === 'on').length, late: t.filter(x => x === 'late').length, miss: t.filter(x => x === 'missed').length, n: t.length }; });
+    if (!rows.some(r => r.n)) return card(c, 'c5', 'Reviews held on time', span(ms), '<p class="anx-none">No finished review months in this period yet.</p>');
+    const w = 400, h = 250, L = 28, B = 22, T = 8, pw = w - L - 4, ph = h - B - T, bw = pw / rows.length, mx = Math.max(...rows.map(r => r.n)), y = x => T + ph * (1 - x / mx);
+    let s = [0, .5, 1].map(f => Math.round(mx * f)).map(x => `<line class="ax-gl" x1="${L}" x2="${w - 4}" y1="${y(x)}" y2="${y(x)}"/><text class="ax-tk" x="${L - 6}" y="${y(x) + 4}" text-anchor="end">${x}</text>`).join('');
+    // Bklit bars: each month's stack springs up from the base, one after another; hover = month pill + the three numbers
+    s += rows.map((r, i) => { let acc = 0; const segs = [[r.on, '--vr-anx-series'], [r.late, '--vr-anx-warn'], [r.miss, '--vr-anx-bad']].filter(z => z[0]);
+      return `<g data-hk="${r.m}" tabindex="0" ${tp(tipH(mlab(r.m), [['--vr-anx-series', 'On time', r.on], ['--vr-anx-warn', 'Late', r.late], ['--vr-anx-bad', 'Missed', r.miss]], `${pct(r.on, r.n)}% on time`))}><rect x="${L + i * bw}" y="${T}" width="${bw}" height="${ph}" fill="transparent"/><g class="grow" style="--i:${i}">${segs.map(([x, col], j) => { const y0 = y(acc), y1 = y(acc + x); acc += x; return `<rect x="${L + i * bw + Math.min(14, bw * .18)}" y="${(y1 + 1.5).toFixed(1)}" width="${Math.max(4, bw - 2 * Math.min(14, bw * .18))}" height="${Math.max(0, y0 - y1 - 3).toFixed(1)}" rx="${j === segs.length - 1 ? 7 : 2}" style="fill:var(${col})"/>`; }).join('')}</g>${xlab(L + i * bw + bw / 2, h - 4, mon(r.m))}</g>`; }).join('');
+    const tot = rows.reduce((a, r) => a + r.n, 0), on = rows.reduce((a, r) => a + r.on, 0);
+    return card(c, 'c5', 'Reviews held on time', `${pct(on, tot)}% on time · ${span(ms)}`, `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Reviews on time by month">${s}</svg><div class="ankeys"><i style="background:var(--vr-anx-series)"></i>On time <i style="background:var(--vr-anx-warn)"></i>Late (after the window) <i style="background:var(--vr-anx-bad)"></i>Missed</div>`); })();
+  // 8. Rating bands: tick donut, 96 ticks shared out by band
+  const bands = (() => { const c = 'anBands', ps = pool(c), ms = per(c), av = ps.map(p => avgOf(p, ms)).filter(x => x != null);
+    if (!av.length) return card(c, 'c3', 'Rating bands', span(ms), none(noScores));
+    const b = [['Strong (75%+)', av.filter(x => x >= 75).length, '--vr-anx-good'], ['Doing fine (50–74%)', av.filter(x => x >= 50 && x < 75).length, '--vr-anx-warn'], ['Needs support (<50%)', av.filter(x => x < 50).length, '--vr-anx-bad']].filter(x => x[1]);
+    const TN = 96, slots = []; let used = 0;
+    b.forEach(([l, x, col], i) => { const k = i === b.length - 1 ? TN - used - 1 : Math.max(1, Math.round(x / av.length * (TN - b.length))); for (let j = 0; j < k; j++) slots.push([l, x, col]); slots.push(null); used += k + 1; });
+    const ticks = slots.slice(0, TN).map((z, i) => { if (!z) return ''; const a = -PI / 2 + i / TN * 2 * PI, [x1, y1] = pt(90, 90, 62, a), [x2, y2] = pt(90, 90, 84, a); return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" style="stroke:var(${z[2]})" stroke-width="2.6" stroke-linecap="round"/>`; }).join('');
+    const strong = av.filter(x => x >= 75).length;
+    return card(c, 'c3', 'Rating bands', `${av.length} people · ${span(ms)}`, `<svg viewBox="0 0 180 180" class="anring" role="img" aria-label="Rating bands" tabindex="0" ${tp(tipH('Rating bands', b.map(([l, x, col]) => [col, l, x]), `${av.length} people`))}>${sweepMask('anm-bands', 90, 90, 92)}<g mask="url(#anm-bands)">${ticks}</g><text class="ax-lb" x="90" y="93" text-anchor="middle" style="font-size:22px;font-weight:800">${num(pct(strong, av.length), 0, 'tspan')}%</text><text class="ax-lb2" x="90" y="109" text-anchor="middle">strong</text></svg>
+      <div class="anrows">${b.map(([l, x, col]) => `<div><i style="background:var(${col})"></i><span>${l}</span><b>${x}</b><em>${pct(x, av.length)}%</em></div>`).join('')}</div>`); })();
+  // 9. Parameters: one pie card; the parameter (Attendance, Conduct, ...) is picked under its Filter (first one by default).
+  //    Pie of the manager's ratings 1-2 / 3 / 4 in a navy ramp and full marks (5) in yellow, the average in the middle.
+  const pcard = (() => { const c = 'anPar', ms = per(c), ps = pool(c), q = d.params.find(x => x.id === CF[c].xpar) || d.params[0];
+    // short tab names: the part before " and " / "&" (Skills set and quality of work -> Skills set); the full name on hover
+    const tabs = q ? `<div class="antabs" role="tablist" aria-label="Parameter">${d.params.map((x, i) => `<button type="button" role="tab" class="antab ${x.id === q.id ? 'on' : ''}" aria-selected="${x.id === q.id}" data-anpar="${i ? x.id : ''}" title="${esc(x.label)}">${esc(x.label.split(/ and | & /i)[0])}</button>`).join('')}</div>` : '';
+    if (!q) return card(c, 'c4', 'Parameters', "Manager's rating", '<p class="anx-none">No rating parameters in the questionnaire.</p>');
+    const rv = (pp, mm) => pp.flatMap(p => mm.map(m => p.scores[m]).filter(Boolean).map(z => z.params && z.params[q.id]).filter(x => x != null));
+    const all5 = rv(ps, ms), v0 = mean(all5), sub = `Manager's rating · ${span(ms)}`;
+    if (v0 == null) return card(c, 'c4', esc(q.label), sub, tabs + none(noScores));
+    const first = mean(rv(ps, [ms[0]])), lastV = mean(rv(ps, [ms[ms.length - 1]])), cnt = [1, 2, 3, 4, 5].map(k => all5.filter(x => Math.round(x) === k).length), tot = all5.length;
+    const tv = [...new Set(ps.map(p => p.team))].map(t => ({ t, v: mean(rv(ps.filter(p => p.team === t), ms)) })).filter(x => x.v != null).sort((x, y) => y.v - x.v)[0];
+    const seg = [['1–2', cnt[0] + cnt[1], '--vr-anx-o1'], ['3', cnt[2], '--vr-anx-o2'], ['4', cnt[3], '--vr-anx-o3'], ['5 ★', cnt[4], '--vr-anx-yellow']];
+    // Bklit pie (Harish 2026-11-20): the slices sweep in clockwise from the top; hovering a slice or its legend row pops that
+    // slice out, dims the others and highlights the row; the centre counts up to the average
+    let ang = -PI / 2;
+    const slices = seg.map((z, k) => [...z, k]).filter(z => z[1]).map(([l, n, col, k], i, arr) => { const a0 = ang, a1 = arr.length === 1 ? a0 + 2 * PI - .0001 : ang + n / tot * 2 * PI; ang = a1;
+      const mid = (a0 + a1) / 2, pop = arr.length === 1 ? 0 : 5;
+      return `<g class="pslice" data-hk="p${k}" tabindex="0" style="--dx:${(Math.cos(mid) * pop).toFixed(2)}px;--dy:${(Math.sin(mid) * pop).toFixed(2)}px" ${tp(tipH(`${esc(q.label)} · ${l}`, [[col, 'Ratings', n], ['--vr-anx-muted', 'Share', pct(n, tot) + '%']]))}><path d="${arcP(80, 80, 44, 72, a0, a1)}" style="fill:var(${col});stroke:var(--vr-anx-card)" stroke-width="2"/></g>`; }).join('');
+    return card(c, 'c4', esc(q.label), sub, `${tabs}<div class="anpie"><svg viewBox="0 0 160 160" role="img" aria-label="${esc(q.label)}: ratings by score">${sweepMask('anm-par', 80, 80, 84)}<g mask="url(#anm-par)">${slices}</g><text class="ax-lb" x="80" y="82" text-anchor="middle" style="font-size:26px;font-weight:800">${num(+v0.toFixed(1), 1, 'tspan')}</text><text class="ax-lb2" x="80" y="99" text-anchor="middle">of 5 ${ms.length > 1 && first != null && lastV != null && Math.abs(lastV - first) >= .05 ? `· ${lastV - first > 0 ? '▲' : '▼'} ${Math.abs(lastV - first).toFixed(1)}` : ''}</text></svg>
+      <div class="anrows anleg">${seg.map((z, k) => [...z, k]).reverse().map(([l, n, col, k]) => `<div ${n ? `data-hk="p${k}"` : ''}><i style="background:var(${col})"></i><span>${l}</span><b>${n}</b><em>${pct(n, tot)}%</em></div>`).join('')}</div></div>
+      <span class="ancap">${tot} rating${tot === 1 ? '' : 's'}, ${cnt[4]} at full marks (★)${tv ? ` · best team: <b class="anink">${esc(tl(tv.t))}</b> ${tv.v.toFixed(1)}` : ''}</span>`); })();
+  // 10. Team race: one square = 2 points above 50%
+  const race = (() => { const c = 'anRace', ms = per(c), f = CF[c], base = d.people.filter(p => !f.xdesig.length || f.xdesig.includes(p.group));
+    const ts = [...new Set(base.map(p => p.team))].map(t => { const ps = base.filter(p => p.team === t), av = mean(ps.map(p => avgOf(p, ms)).filter(x => x != null)); return { t, n: ps.length, av }; }).filter(x => x.av != null).sort((a, b) => b.av - a.av);
+    if (!ts.length) return card(c, 'c4', 'Team race', span(ms), none(noScores));
+    return card(c, 'c4', 'Team race', `One square = 3 points above 50% · ${span(ms)}`, `<div class="ansq">${ts.map((x, i) => { const n = Math.max(0, Math.round((x.av - 50) / 3));
+      return `<div class="ansqr" tabindex="0" ${tp(`<b>${esc(tl(x.t))}</b><br>${f1(x.av)}% · ${x.n} people`)}><span class="anrk ${i ? '' : 'g'}">${i + 1}</span><b>${esc(tl(x.t))}</b><span class="ansqs">${Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? (i ? 'on' : 'y') : ''}" style="--i:${k + i * 2}"></i>`).join('')}</span><em>${num(+f1(x.av), 1)}</em></div>`; }).join('')}</div>`); })();
+  // 11. Review meetings this month: calendar heatmap (held up to today, booked after)
+  const meet = (() => { const c = 'anMeet', ps = pool(c).filter(p => p.cycle && p.cycle.meeting && p.cycle.meeting.slice(0, 7) === d.current), [yy, mm] = d.current.split('-').map(Number);
+    const days = new Date(yy, mm, 0).getDate(), lead = (new Date(yy, mm - 1, 1).getDay() + 6) % 7, cnt = {}; ps.forEach(p => { const k = +p.cycle.meeting.slice(8, 10); cnt[k] = (cnt[k] || 0) + 1; });
+    const lvl = n => !n ? 0 : Math.min(6, n + 1), today = d.today && d.today.slice(0, 7) === d.current ? +d.today.slice(8, 10) : 0;
+    let g = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span class="wd">${x}</span>`).join('') + '<span></span>'.repeat(lead);
+    // Bklit heatmap entrance (Harish 2026-11-20): the days fade and scale in as a diagonal wave from the top left;
+    // tooltip = the date, the weekday, then the count
+    const wdName = k => new Date(yy, mm - 1, k).toLocaleDateString('en-IN', { weekday: 'long' });
+    for (let k = 1; k <= days; k++) { const n = cnt[k] || 0, fut = today && k > today, pos = lead + k - 1; g += `<span class="dd ${fut ? (n ? 'f h' + lvl(n) : 'f') : 'h' + lvl(n)} ${k === today ? 't' : ''}" style="--i:${pos % 7 + Math.floor(pos / 7)}" tabindex="0" ${tp(`<b class="tt">${k} ${esc(d.currentLabel)}</b><span class="ts">${wdName(k)}${k === today ? ' · today' : ''}</span><span class="tf">${n} review meeting${n === 1 ? '' : 's'} ${fut ? 'booked' : 'held'}</span>`)}>${k}</span>`; }
+    return card(c, 'c4', `Review meetings · ${esc(d.currentLabel)}`, `${ps.length} booked · darker = more meetings · outlined = today`, `<div class="ancal">${g}</div><div class="anscale"><span>Less</span>${[0, 1, 2, 3, 4, 5, 6].map(i => `<i class="h${i}"></i>`).join('')}<span>More</span></div>`); })();
+  // 12. Needs attention: picked from the numbers above, each with a way in
+  const alert = (() => { const c = 'anAlert', ps = pool(c), ms = upto.slice(-3), cur = ps.filter(p => p.cycle), nf = cur.filter(p => !p.cycle.filled).length;
+    const gap = ps.map(p => ({ p, g: mean(ms.map(m => p.scores[m]).filter(s => s && s.self != null && s.mgr != null).map(s => s.self - s.mgr)) })).filter(x => x.g != null && x.g >= 15);
+    const ts = [...new Set(ps.map(p => p.team))].map(t => ({ t, av: mean(ps.filter(p => p.team === t).map(p => avgOf(p, ms)).filter(x => x != null)) })).filter(x => x.av != null).sort((a, b) => a.av - b.av);
+    const rise = ps.map(p => { const r = ms.filter(m => p.scores[m]); return r.length < 2 ? null : { p, d: p.scores[r[r.length - 1]].total - p.scores[r[0]].total, from: r[0] }; }).filter(x => x && x.d > 0).sort((a, b) => b.d - a.d)[0];
+    const items = [
+      nf && ['r', '!', `<b>${nf} ${nf === 1 ? 'person has' : 'people have'}</b> not filled their ${esc(d.currentLabel)} form yet.`, canRemind ? '<button type="button" class="anlink" data-anremind>Remind</button>' : ''],
+      gap.length && ['w', '≠', `<b>${gap.length} ${gap.length === 1 ? 'person rates' : 'people rate'}</b> themselves 15+ points above their manager (last 3 months).`, '<a class="anlink" href="#/report">View</a>'],
+      ts.length > 1 && ['w', '↓', `<b>${esc(tl(ts[0].t))}</b> is the lowest team at ${f1(ts[0].av)}% (last 3 months).`, '<a class="anlink" href="#/yearly">Open</a>'],
+      rise && ['g', '↑', `<b>${esc(rise.p.name)}</b> rose ${f1(rise.d)} points since ${mon(rise.from)}.`, rise.p.id ? `<a class="anlink" href="#/yearly/${rise.p.id}">Open</a>` : ''],
+    ].filter(Boolean);
+    return card(c, 'c4', 'Needs attention', 'Picked out for you', items.length ? `<div class="analerts">${items.map(([k, ic, t, a]) => `<div class="anal ${k}"><span class="ic">${ic}</span><p>${t}</p>${a}</div>`).join('')}</div>` : '<p class="anx-none">Nothing needs attention for these filters.</p>'); })();
+
+  const fySel = d.fys.length > 1 ? `<select id="afy" aria-label="Financial year">${d.fys.map(y => `<option value="${y}" ${y === d.fy ? 'selected' : ''}>FY ${y}-${y + 1}</option>`).join('')}</select>` : '';
+  v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · ${d.sample ? 'SAMPLE DATA' : 'submitted reviews only'}`) + `
+  <div class="row anbar">${fySel}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
+  ${d.sample ? '<div class="asample" role="note"><b>Sample data.</b> These ratings are made up to show how the charts look. Names are placeholders, nothing is saved, and real reviews are not changed. Switch "Sample data" off to see the real reviews.</div>' : ''}
+  <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}</div></div>
+  <p class="small">Each card has its own Filter. Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA); parameters are the manager's rating out of 5. "On time" = the review was held inside the team's review window.</p>`;
+  // entrance (Bklit-style motion, CSS under .anin): only for cards whose content changed since the last draw
+  const prev = AN_LAST; AN_LAST = out;
+  v.querySelectorAll('.anc[data-c]').forEach(s => {
+    if (prev[s.dataset.c] === out[s.dataset.c]) return;
+    s.classList.add('anin');
+    s.querySelectorAll('[data-count]').forEach(el => anCount(el, +el.dataset.count));
+  });
+}
+
+// ---------- Team Report / My report (KRA scores month by month for the year) ----------
 // #/yearly = me and everyone under me (admins and directors: everyone), #/yearly/me = only me, #/yearly/<id> = that person and their team
 // KRA scores per month for a financial year, one table per person: an employee sees their own, a manager sees themselves
 // and everyone under them, admins and directors see everyone. Scores come from submitted reviews (30% self + 70% manager).
@@ -1771,6 +2196,18 @@ pages.yearly = async (v, id) => {
   const pool = d.people.filter(p => !YF.team || p.team === YF.team);
   if (YF.person && !pool.some(p => String(p.id) === YF.person)) YF.person = '';
   const list = pool.filter(p => !YF.person || String(p.id) === YF.person);
+  // Financial year, Quarter, Team and Person sit behind the Filter pill; '' = this financial year
+  const curFy = fyOf(S.me.currentMonth);
+  PF.yfy = d.fys.map(y => [y === curFy ? '' : String(y), `FY ${y}-${y + 1}${y === curFy ? ' (this year)' : ''}`]);
+  PF.yteam = [['', 'All teams'], ...d.teams.map(teamOpt)];
+  PF.yper = [['', 'All people'], ...pool.map(p => [String(p.id), p.name])];
+  PF.hide.yearly = [!d.org && 'yteam', d.people.length < 2 && 'yper'].filter(Boolean);
+  Object.assign(CF.yearly, { yfy: d.fy === curFy ? '' : String(d.fy), yq: YF.q, yteam: YF.team, yper: YF.person });
+  cfLocalRedraw.yearly = () => {
+    const f = CF.yearly; S.yfy = f.yfy ? +f.yfy : curFy;
+    if (f.yteam !== YF.team) f.yper = '';
+    Object.assign(YF, { q: f.yq, team: f.yteam, person: f.yper }); return pages.yearly(v, id);
+  };
   const n2 = x => x == null ? '' : x.toFixed(2);
   const mh = m => { const [mo, y] = m.label.split(' '); return `${mo}<br>${y}`; };
   // the months shown: the whole year, or the three months of the chosen quarter (Quarter I = Apr-Jun)
@@ -1785,20 +2222,24 @@ pages.yearly = async (v, id) => {
     <tr class="yavg"><td>Quarterly average</td>${(qi == null ? p.quarters.map((a, i) => [a, i]) : [[p.quarters[qi], qi]]).map(([a, i]) => `<td colspan="3" class="c"><small>Q${i + 1}</small> <b class="rt ${rateCls(a)}">${a != null ? n2(a) : '–'}</b></td>`).join('')}</tr>
     ${qi != null ? '' : `<tr class="yavg"><td>Year average</td><td colspan="12" class="c"><b class="rt ${rateCls(p.year)}">${p.year != null ? n2(p.year) : '–'}</b></td></tr>`}</table></div></div>`;
   const root = d.person, mgrView = root && d.teamView;
-  v.innerHTML = head(d.me ? (mgrView ? 'Team report' : 'My report') : root ? (mgrView ? `Team report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team report',
+  v.innerHTML = head(d.me ? (mgrView ? 'Team Report' : 'My Report') : root ? (mgrView ? `Team Report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team Report',
       root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
-    `<div class="row">${d.org ? ddSelect('yteam', YF.team, [['', 'All teams'], ...d.teams.map(teamOpt)]) : ''}
-    ${d.people.length > 1 ? ddSelect('yper', YF.person, [['', 'All people'], ...pool.map(p => [String(p.id), p.name])], { icon: 'team' }) : ''}
-    ${ddSelect('yq', YF.q, [['', 'All'], ['0', 'Quarter I (Apr-Jun)'], ['1', 'Quarter II (Jul-Sep)'], ['2', 'Quarter III (Oct-Dec)'], ['3', 'Quarter IV (Jan-Mar)']], { icon: 'filter' })}
-    ${ddSelect('yfy', String(d.fy), d.fys.map(y => [String(y), `FY ${y}-${y + 1}`]), { icon: 'calendar' })}
-    <span class="sp"></span>${id && !self ? `<a class="btn" href="#/yearly">← Team report</a>` : ''}</div>
+    `<div class="row">${cfPill('yearly')}
+    <span class="sp"></span>${list.length ? exportMenu() : ''}${id && !self ? `<a class="btn" href="#/yearly">← Team Report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
-    ${list.map(block).join('') || '<div class="empty card">No one to show for this filter.</div>'}
+    ${list.map(block).join('') || `<div class="empty card">No one to show for this filter. ${clearLink('yearly')}</div>`}
     <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
-  $('#yfy').onchange = e => { S.yfy = +e.target.value; pages.yearly(v, id); };
-  $('#yq').onchange = e => { YF.q = e.target.value; pages.yearly(v, id); };
-  if ($('#yper')) $('#yper').onchange = e => { YF.person = e.target.value; pages.yearly(v, id); };
-  if ($('#yteam')) $('#yteam').onchange = e => { YF.team = e.target.value; YF.person = ''; pages.yearly(v, id); };
+  v.onclick = e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
+  };
+  const fx = $('#fexp');
+  if (fx) fx.onchange = e => {
+    const kind = e.target.value; e.target.value = '';
+    if (kind === 'csv') csvSave(`Team_report_FY${d.fy}${qi == null ? '' : '_Q' + (qi + 1)}.csv`, [['Employee', 'Designation', 'Team', 'Reporting manager', 'KRA', ...pick(d.months).map(m => m.label)],
+      ...list.flatMap(p => [['operational', 'Operational'], ['process', 'Process'], ['people', 'People'], ['total', 'Total']].map(([k, l]) => [p.name, p.designation, tl(p.team), p.manager || '', l, ...pick(p.cells).map(c => c && c[k] != null ? c[k].toFixed(2) : '')]))]);
+    if (kind === 'pdf') yearlyPdf(root ? `Team Report: ${root.name}` : 'Team Report', `${d.fyLabel}${qi == null ? '' : ` · Q${qi + 1}`}`, pick(d.months), list.map(p => ({ ...p, cellsShown: pick(p.cells) })));
+  };
 };
 
 // ---------- review status report ----------
@@ -1812,20 +2253,46 @@ const exportMenu = () => `<div class="dd" data-dd="list"><button type="button" c
 function reportPdf(d, c) {
   const filt = [RF.view === 'org' ? 'Organisation-wise' : `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}`, RF.manager && (d.managers.find(m => String(m.id) === String(RF.manager)) || {}).name, RF.status && (REPORT_STATUSES.find(x => x[0] === RF.status) || [])[1]].filter(Boolean).join(' · ');
   const st = r => `${r.form} · ${r.status}`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>PMS review status ${esc(monthLabel(S.month))}</title><style>
-    body{font:12px/1.4 system-ui,sans-serif;color:#232b3b;margin:24px}h1{font-size:18px;margin:0 0 2px}p{margin:0 0 14px;color:#5a6475}
-    .k{display:flex;gap:8px;margin:0 0 16px}.k div{flex:1;border:1px solid #ebe7df;border-radius:8px;padding:8px 10px}.k small{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a8494}.k b{font-size:18px}
-    table{width:100%;border-collapse:collapse}th{background:#0c1f4a;color:#fff;text-align:left;font-size:10px;padding:6px}td{padding:6px;border-bottom:1px solid #ebe7df;vertical-align:top}tr{page-break-inside:avoid}
-    footer{margin-top:16px;font-size:10px;color:#7a8494}@page{size:A4 landscape;margin:12mm}</style></head><body>
-    <h1>Review status report · ${esc(monthLabel(S.month))}</h1><p>${esc(d.scope)} · ${esc(filt)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>PMS review status ${esc(monthLabel(S.month))}</title><style>${printCss(12)}
+    .k{display:flex;gap:8px;margin:0 0 16px}.k div{flex:1;border-radius:8px;padding:8px 10px;background:${PRINT.tile}}.k small{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${PRINT.muted}}.k b{font-size:18px;font-variant-numeric:tabular-nums}
+    th{text-align:left}td{vertical-align:top}</style></head><body>
+    <h1>Review Report · ${esc(monthLabel(S.month))}</h1><p>${esc(d.scope)} · ${esc(filt)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
     <div class="k">${[['Scheduled', c.scheduled], ['Filled', c.filled], ['Not Filled', c.notFilled], ['Review Completed', c.reviewCompleted], ['Review Pending', c.reviewPending]].map(([l, n]) => `<div><small>${l}</small><b>${n}</b></div>`).join('')}</div>
     <table><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
     ${d.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map((x, i) => (r.flags.length > 1 ? `${i + 1}. ` : '') + esc(x)).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="10">No reviews.</td></tr>'}</table>
     <footer>Verve Advisory · Performance Management System</footer></body></html>`;
+  printHtml(html);
+}
+// PDF colours = the app's light-theme tokens in index.html (portal look). The print frame is its own document and
+// cannot read the page's CSS variables (and in dark mode they would be the dark values), so they are repeated here;
+// keep them in step with --vr-thead, --vr-n-*, --vr-tbl-line, --vr-pms-blue(-50) and --vr-pms-y-50.
+const PRINT = { navy: '#23408b', head: '#ffffff', ink: '#212121', ink2: '#565e64', muted: '#6c757d', line: '#e4e5e6', blue: '#cbdaff', tile: '#e8eeff', total: '#fff8e1' };
+const printCss = size => `body{font:${size}px/1.4 system-ui,sans-serif;color:${PRINT.ink};margin:24px}h1{font-size:18px;font-weight:500;margin:0 0 2px}p{margin:0 0 14px;color:${PRINT.ink2}}
+  table{width:100%;border-collapse:collapse;border:1px solid ${PRINT.line}}th{background:${PRINT.navy};color:${PRINT.head};font-size:10px;font-weight:700;padding:6px;border:1px solid ${PRINT.line}}
+  td{padding:6px;border:1px solid ${PRINT.line};font-variant-numeric:tabular-nums}tr{page-break-inside:avoid}
+  footer{margin-top:16px;font-size:10px;color:${PRINT.muted}}@page{size:A4 landscape;margin:12mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
+// prints a page in a hidden frame; the browser's print dialog saves it as PDF
+function printHtml(html) {
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
   document.body.appendChild(f);
   f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
   setTimeout(() => { f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => f.remove(), 1000); }, 200);
+}
+// Team Report as PDF (Fiza, 2026-11-19: the same Export choices as Review Report): one table per person, KRA rows by month
+function yearlyPdf(title, sub, months, list) {
+  const n2 = x => x == null ? '' : x.toFixed(2);
+  // same look as the Team Report on screen: light-blue KRA head row with dark bold names, Total row soft yellow
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${printCss(11)}
+    h2{font-size:13px;margin:14px 0 4px}h2 small{font-weight:400;color:${PRINT.ink2}}
+    table{page-break-inside:avoid}th{background:${PRINT.blue};color:${PRINT.ink};font-size:9px;padding:5px;text-align:center}th:first-child{text-align:left}
+    td{padding:5px;text-align:center}td:first-child{text-align:left;font-weight:600}tr.t td{background:${PRINT.total};font-weight:700}</style></head><body>
+    <h1>${esc(title)}</h1><p>${esc(sub)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
+    ${list.map(p => `<h2>${esc(p.name)} <small>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · Reporting manager ${esc(p.manager)}` : ''}</small></h2>
+    <table><tr><th>KRA</th>${months.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr>
+    ${[['operational', 'Operational'], ['process', 'Process'], ['people', 'People'], ['total', 'Total']].map(([k, l]) => `<tr class="${k === 'total' ? 't' : ''}"><td>${l}</td>${p.cellsShown.map(c => `<td>${c && c[k] != null ? n2(c[k]) : ''}</td>`).join('')}</tr>`).join('')}</table>`).join('') || '<p>No one to show.</p>'}
+    <footer>Verve Advisory · Performance Management System</footer></body></html>`;
+  printHtml(html);
 }
 // "Full details": the PMS report format sheet (management, 2026-11-13), one column per sheet column; the CSV export has the same columns
 const FS_CLS = { 'Review Done': 'b-green', 'Questionnaire Done': 'b-green', 'Review Pending': 'b-amber', 'Questionnaire Pending': 'b-amber', 'PMS form incomplete/errors/queries': 'b-red', 'Employee on leave': 'b-blue', 'Serving Notice': 'b-blue' };
@@ -1837,17 +2304,26 @@ function fullTable(d) {
   const cell = (k, x, r) => k === 'name' ? `<td>${nameLink(r.empId, x)}</td>`
     : ['doj', 'scheduled', 'actual'].includes(k) ? `<td>${rDate(x)}</td>`
     : k === 'reschedules' ? `<td class="nr">${x || NIL}</td>`
-    : k === 'finalStatus' ? `<td><span class="badge ${FS_CLS[x] || 'b-grey'}">${esc(x)}</span></td>`
+    : k === 'finalStatus' ? (r.canSetStatus && d.finalStatuses ? `<td>${fsSelect(r, d.finalStatuses)}</td>` : `<td><span class="badge ${FS_CLS[x] || 'b-grey'}">${esc(x)}</span></td>`)
     : k === 'percentage' ? `<td class="nr">${x != null ? `<b>${pc(x)}</b>` : NIL}</td>`
     : k === 'escalations' ? (x.length ? `<td class="resc">${x.map(esc).join('<br>')}</td>` : `<td>${NIL}</td>`)
     : ['sopKra', 'opRemark', 'processRemark', 'peopleRemark'].includes(k) ? longCell(x)
     : x === 'Yes' ? '<td class="yn">Yes</td>' : x === 'No' ? '<td class="yn no">No</td>'
-    : k === 'department' ? `<td class="mut">${x ? teamTag(x) : NIL}</td>`
     : x === 'N/A' ? `<td>${NIL}</td>` : x === 'Not rated yet' ? '<td class="mut">Not rated</td>'
     : `<td${['designation', 'department', 'manager', 'director'].includes(k) ? ' class="mut"' : ''}>${x ? esc(x) : NIL}</td>`;
-  return `<div class="tablewrap"><table class="pmsfull rtab"><tr><th class="nr">Sl No</th>${cols.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr>
-    ${d.rows.map((r, i) => `<tr><td class="nr">${i + 1}</td>${cols.map(([k]) => cell(k, r.detail[k], r)).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length + 1}">No reviews in your access for this month.</td></tr>`}</table></div>`;
+  // S.No, Employee Code and Name stay in view while the wide table scrolls sideways (Fiza, 2026-11-19)
+  const stick = k => ({ code: ' class="stk stk2"', name: ' class="stk stk3"' })[k] || '';
+  const withStick = (k, html) => stick(k) ? html.replace(/^<td(?: class="([^"]*)")?/, (m, c) => `<td class="${c ? c + ' ' : ''}${stick(k).slice(8, -1)}"`) : html;
+  return `<div class="tablewrap"><table class="pmsfull rtab"><tr><th class="nr stk stk1">S.No</th>${cols.map(c => `<th${stick(c[0])}>${esc(c[1])}</th>`).join('')}</tr>
+    ${d.rows.map((r, i) => `<tr><td class="nr stk stk1">${i + 1}</td>${cols.map(([k]) => withStick(k, cell(k, r.detail[k], r))).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length + 1}">No reviews in your access for this month.</td></tr>`}</table></div>`;
 }
+// Final Status picker (admins and the person's managers): one list, each status once (Harish 2026-11-19). The selected
+// one is the current status; picking the one the form gives on its own goes back to automatic (the server decides)
+const fsSelect = (r, list) => {
+  const cur = r.detail.finalStatus, set = r.detail.finalStatusBy != null;
+  return `<select class="fssel ${FS_CLS[cur] || 'b-grey'}" data-fs="${r.empId}" aria-label="Final status for ${esc(r.name)}" title="${set ? `Set by ${esc(r.detail.finalStatusBy)}. Pick ${esc(r.detail.finalStatusAuto)} to follow the form again.` : 'Follows the form until someone picks another status'}">
+    ${list.map(s => `<option value="${esc(s)}" ${s === cur ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`;
+};
 pages.report = async v => {
   const q = `month=${S.month}&team=${RF.team}&manager=${RF.manager}&status=${encodeURIComponent(RF.status)}`;
   const d = await api('/report?' + q + (RF.full ? '&detail=1' : ''));
@@ -1855,51 +2331,73 @@ pages.report = async v => {
   const noDetail = RF.full && !(d.columns && d.rules);
   if (noDetail) RF.full = false;
   const full = ['director', 'admin'].includes(S.me.role);
-  RF.view ||= full ? 'org' : 'team';
+  RF.view ||= 'org';
   const c = d.counts;
-  v.innerHTML = head('Review status report', 'One report, two views · ' + d.scope) +
+  // Team, Reporting manager and Status sit behind the Filter pill (same panel as the dashboard cards); RF stays the truth
+  PF.rteam = [['', 'All teams'], ...d.teams.map(teamOpt)];
+  PF.rmgr = [['', 'All managers'], ...d.managers.map(m => [String(m.id), m.name])];
+  PF.rst = REPORT_STATUSES.map(x => [x[0], x[1]]);
+  Object.assign(CF.report, { rteam: RF.team || '', rmgr: String(RF.manager || ''), rst: RF.status || '' });
+  cfLocalRedraw.report = () => {
+    const f = CF.report; if (f.rteam && f.rteam !== RF.team) RF.view = 'team';
+    Object.assign(RF, { team: f.rteam, manager: f.rmgr, status: f.rst }); return pages.report(v);
+  };
+  v.innerHTML = head('Review Report', 'One report, two views · ' + d.scope) +
     `<div class="row">${monthSel()}
-    ${full ? `<button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}Organisation-wise</button>` : ''}
-    ${ddSelect('fteam', RF.view === 'team' ? RF.team : null, [['', 'All teams'], ...d.teams.map(teamOpt)], { ph: 'Team-wise', btn: RF.view === 'team' ? `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}` : 'Team-wise', on: RF.view === 'team' })}
-    ${ddSelect('fmgr', RF.manager, [['', 'All managers'], ...d.managers.map(m => [String(m.id), m.name])], { icon: 'idcard' })}
-    ${ddSelect('fst', RF.status, REPORT_STATUSES)}
-    <span class="sp"></span>${exportMenu()}</div>
+    <button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}${full ? 'Organisation-wise' : 'Employee-wise'}</button><button class="chip vchip ${RF.view === 'team' ? 'on' : ''}" data-view="team">${ico('team')}Team-wise</button>
+    ${cfPill('report')}
+    <span class="sp"></span>${searchBox('rsearch', 'Search name, code, manager, team', RF.q, 260)}${exportMenu()}</div>
     ${countTiles(c)}
-    ${RF.view === 'team' ? `<h2>Team-wise</h2><div class="tablewrap"><table><tr><th>Manager</th><th>Team</th><th class="nr">Scheduled</th><th class="nr">Filled</th><th class="nr">Not Filled</th><th class="nr">Review Completed</th><th class="nr">Review Pending</th></tr>${d.teamCounts.map(t => `<tr><td>${esc(t.manager)}</td><td>${teamTag(t.team)}</td><td class="nr">${t.scheduled}</td><td class="nr">${t.filled}</td><td class="nr">${t.notFilled}</td><td class="nr">${t.reviewCompleted}</td><td class="nr">${t.reviewPending}</td></tr>`).join('')}</table></div>` : ''}
-    <div class="row" style="align-items:center"><h2 style="margin:0">${RF.view === 'org' ? 'Employee-wise (organisation)' : 'Employee-wise'}</h2><span class="sp"></span>
-      <div class="row" style="margin:0;gap:8px" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
-    ${noDetail ? '<div class="warn">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
+    ${RF.view === 'team' ? `<h2>Team-wise</h2><p class="small" style="margin:-4px 0 10px">One row per reporting manager and team. "View people" opens that team's people.</p>
+    <div class="tablewrap"><table class="rtab"><tr><th>Manager</th><th>Team</th><th class="nr">Scheduled</th><th class="nr">Filled</th><th class="nr">Not Filled</th><th class="nr">Review Completed</th><th class="nr">Review Pending</th><th></th></tr>${d.teamCounts.map(t => `<tr><td>${esc(t.manager)}</td><td>${teamTag(t.team)}</td><td class="nr">${t.scheduled}</td><td class="nr">${t.filled}</td><td class="nr">${t.notFilled}</td><td class="nr">${t.reviewCompleted}</td><td class="nr">${t.reviewPending}</td><td class="nr"><button type="button" class="btn sm" data-tpeople="${t.managerId}" data-tteam="${esc(t.team)}">View people</button></td></tr>`).join('') || '<tr><td colspan="8">No reviews in your access for this month.</td></tr>'}</table></div>`
+    // Team-wise shows only the team table (Harish 2026-11-19: the employee list and its Summary / Full details buttons
+    // under it were confusing); the employee list, with its two buttons, is the other view
+    : `<div class="row sechd"><h2>${full ? 'Employee-wise (organisation)' : 'Employee-wise'}</h2><span class="sp"></span>
+      <div class="vsw" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
+    ${noDetail ? '<div class="alert-w">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
     ${RF.full ? fullTable(d) : reportTable(d.rows)}
-    ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningDoneMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}
+    ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}`}
     <p class="small">Directors see the whole organisation. Managers see their own team and everyone under them at every level. Employees do not see this report.</p>`;
+  // search (Harish 2026-11-19, right of the toolbar): hides the rows of the table on screen that do not match; the
+  // counts and Export stay for the whole month
+  const rsearch = () => { const t = (RF.q || '').trim().toLowerCase();
+    v.querySelectorAll('.tablewrap table tr').forEach(tr => { if (tr.querySelector('th')) return; const txt = [...tr.cells].map(td => { const sel = td.querySelector('select'); return sel ? (sel.selectedOptions[0] || {}).text || '' : td.textContent; }).join(' ');
+      tr.hidden = !!t && !txt.toLowerCase().includes(t); }); };
+  rsearch();
+  $('#rsearch').oninput = e => { RF.q = e.target.value; rsearch(); };
   onMonth(() => pages.report(v));
   v.onclick = async e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     const b = e.target.closest('[data-view]');
-    if (b && RF.view !== b.dataset.view) { RF.view = b.dataset.view; RF.team = ''; pages.report(v); }
+    if (b && RF.view !== b.dataset.view) { RF.view = b.dataset.view; RF.team = ''; RF.manager = ''; pages.report(v); }
+    const tp = e.target.closest('[data-tpeople]');
+    if (tp) { Object.assign(RF, { view: 'org', manager: tp.dataset.tpeople, team: tp.dataset.tteam }); return pages.report(v); }
     const fb = e.target.closest('[data-full]');
     if (fb && !!RF.full !== (fb.dataset.full === '1')) { RF.full = fb.dataset.full === '1'; pages.report(v); }
+  };
+  v.onchange = async e => {
+    const s = e.target.closest('[data-fs]'); if (!s) return;
+    try {
+      const r = await api('/report/final-status', { method: 'POST', body: { empId: +s.dataset.fs, month: S.month, status: s.value } });
+      toast(`Final status saved: ${r.finalStatus}`, 'ok');
+      pages.report(v);
+    } catch (er) { toast(er.message, 'err'); pages.report(v); }
   };
   $('#fexp').onchange = async e => {
     const kind = e.target.value; e.target.value = '';
     try {
       // the PMS report format columns; UTF-8 with BOM so Excel shows names and remarks correctly
-      if (kind === 'csv') { const r = await api('/report.csv?' + q); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + r.csv], { type: 'text/csv;charset=utf-8' })); a.download = `PMS_report_${S.month}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+      if (kind === 'csv') { const r = await api('/report.csv?' + q); fileSave(`PMS_report_${S.month}.csv`, r.csv); }
       if (kind === 'pdf') reportPdf(d, c);
     } catch (er) { toast(er.message, 'err'); }
   };
-  $('#fteam').onchange = e => { RF.view = 'team'; RF.team = e.target.value; pages.report(v); };
-  $('#fmgr').onchange = e => { RF.manager = e.target.value; pages.report(v); };
-  $('#fst').onchange = e => { RF.status = e.target.value; pages.report(v); };
 };
 
 // ---------- scheduling ----------
 // "11:00" -> "11:00 am"
 const fmtT = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
 const calStart = () => { location.href = `/api/auth/google/start?calendar=1&origin=${encodeURIComponent(location.origin)}`; };
-// the thresholds that used to sit on a separate Settings page (admin), shown on the Scheduling page under the review windows
-const RULES = [['operationalRange', 'Operational weightage range (min,max)'], ['peopleMin', 'People weightage minimum'], ['peopleMax', 'People weightage maximum'], ['clickupMin', 'ClickUp manager rating minimum (%)'],
-  ['learningMin', 'Learning manager rating minimum (%)'], ['ratingGapFlag', 'Self vs manager gap flag (points)'], ['emailGapFlag', 'Gap highlighted in the email (points)'],
-  ['learningDoneMin', 'Learning properly done from (%)'], ['qMinWords', 'Questionnaire answer minimum words'], ['opMinSubKras', 'Operational sub-KRAs minimum']];
 // dates a review was moved to, without repeats: first date, then each new date once
 // a booked review (option A of the designs, Harish 2026-11-17): date and time in one light-blue chip, the pencil inside reschedules
 const slotCell = r => {
@@ -1910,14 +2408,38 @@ const slotCell = r => {
   return `<span class="slot ${pen ? '' : 'np'}">${ico('calendar')}${esc(day)}<i>·</i><em>${r.time ? fmtT(r.time) : 'Time not set'}${len}</em>${pen}</span>`;
 };
 const reschedDates = r => { const out = []; [r.history[0] && r.history[0].from, ...r.history.map(h => h.to)].forEach(x => { if (x && !out.includes(x)) out.push(x); }); return out; };
+// Scheduling › Team members as a calendar (Harish 2026-11-18): the same rows (and Filter) as the list, Monday to Sunday
+// weeks from the first review window day to the last booked or window day; window days are shaded, today is outlined.
+// A booked review is a chip (time + name): a manager's opens Reschedule, others open the form. Not booked yet: below.
+function calView(rows, windows) {
+  const wins = windows.filter(w => rows.some(r => r.winKey === w.key) && w.start && w.end), booked = rows.filter(r => r.scheduled);
+  const ds = [...wins.flatMap(w => [w.start, w.end]), ...booked.map(r => r.scheduled)].sort();
+  if (!ds.length) return '<div class="empty card">No review window or booked review to show.</div>';
+  const day = s => new Date(s + 'T00:00:00Z'), iso = x => x.toISOString().slice(0, 10), today = new Date().toLocaleDateString('en-CA');
+  const a = day(ds[0]), b = day(ds[ds.length - 1]);
+  a.setUTCDate(a.getUTCDate() - (a.getUTCDay() + 6) % 7); b.setUTCDate(b.getUTCDate() + (7 - b.getUTCDay()) % 7);
+  const by = {}; booked.forEach(r => (by[r.scheduled] ||= []).push(r));
+  const chip = r => {
+    const t = `${r.time ? fmtT(r.time) : 'No time'} · ${r.name}`;
+    return r.canManage ? `<button type="button" class="scal-ev" data-resch="${r.empId}" title="${esc(t)}: click to reschedule">${r.time ? `<b>${esc(fmtT(r.time))}</b>` : ''}${esc(r.name)}</button>`
+      : `<a class="scal-ev" href="#/form/${r.empId}/${S.month}" title="${esc(t)}: open the form">${r.time ? `<b>${esc(fmtT(r.time))}</b>` : ''}${esc(r.name)}</a>`;
+  };
+  const cells = [];
+  for (const x = new Date(a); x <= b; x.setUTCDate(x.getUTCDate() + 1)) {
+    const k = iso(x), list = (by[k] || []).sort((p, q) => (p.time || '').localeCompare(q.time || '')), inWin = wins.some(w => k >= w.start && k <= w.end);
+    const lab = x.getUTCDate() === 1 || k === iso(a) ? x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : x.getUTCDate();
+    cells.push(`<div class="scal-d ${inWin ? 's-win' : ''} ${k === today ? 's-today' : ''} ${x.getUTCDay() % 6 === 0 ? 's-we' : ''}"><span class="scal-n">${lab}</span>${list.map(chip).join('')}</div>`);
+  }
+  const open = rows.filter(r => !r.scheduled);
+  return `<div class="scal"><div class="scal-h">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(x => `<span>${x}</span>`).join('')}</div><div class="scal-g">${cells.join('')}</div>
+    <div class="scal-k"><span><i class="s-win"></i>Review window</span><span><i class="s-today"></i>Today</span><span>${booked.length} booked · ${open.length} not booked yet</span></div></div>
+    ${open.length ? `<div class="scal-open"><b>Not booked yet (${open.length})</b>${open.map(r => `<span class="scal-o">${esc(r.name)}${r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : ''}</span>`).join('')}</div>` : ''}`;
+}
 pages.scheduling = async v => {
+  if (!S.schView) { try { S.schView = localStorage.getItem('pms.schView'); } catch {} S.schView ||= 'list'; } // List or Calendar, remembered in this browser
   const d = await api('/scheduling?month=' + S.month), cal = d.calendar;
-  const rules = d.canEditWindows ? await api('/config') : null;
-  // admins only watch the schedule (no booking, no calendar): the reporting managers schedule the reviews
-  const asMgr = d.adminView && d.rows.some(r => r.managerOnly);
-  const calCard = asMgr ? `<div class="info">You are viewing as ${esc(S.me.name)}. ${esc(S.me.name.split(' ')[0])} sees these Schedule buttons and books the reviews from their own sign-in; they are greyed out for you because admins do not schedule reviews.</div>`
-    : d.adminView ? `<div class="info">Reporting managers schedule the reviews. As admin you set the review windows and rules here; the team list shows only the people who report to ${S.me.viewingAs ? esc(S.me.name) : 'you'} directly. Use Review status report for everyone.</div>`
-    : !cal.google ? `<div class="info">Calendar invites are off on this server: Google sign-in is not set up yet. Reviews can still be scheduled here.</div>`
+  // admins can book any review too (2026-11-19): same calendar card as the managers, invites from the admin's own calendar
+  const calCard = !cal.google ? `<div class="info">Calendar invites are off on this server: Google sign-in is not set up yet. Reviews can still be scheduled here.</div>`
     : cal.connected ? `<div class="calcard on">${ico('calendar')}<div><b>Google Calendar connected</b><span>Invites go out from ${esc(cal.email)}, Google emails the employee, and their manager if someone else schedules.</span></div><span class="sp"></span><button class="btn sm" id="caloff">Disconnect</button></div>`
     : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
     : `<div class="info">To send calendar invites, sign in with your @${esc(S.me.domain)} Google account${S.me.viewingAs ? ' (invites always come from your own calendar, not the person you are viewing as)' : ''}.</div>`;
@@ -1926,17 +2448,21 @@ pages.scheduling = async v => {
     : !r.hasEmail ? `<span class="st no" title="Add a @${esc(S.me.domain)} email on the Employees page">No work email</span>`
     : r.scheduled && r.canManage && cal.connected ? `<button class="btn sm" data-inv="${r.empId}">${ico('send')}Send invite</button>`
     : r.scheduled ? `<span class="st no" title="${r.canManage && !cal.connected ? 'Connect Google Calendar at the top of this page to send invites' : 'No Google Calendar invite for this review'}">Not sent</span>` : '<span class="small">–</span>';
-  v.innerHTML = head('Review scheduling', d.adminView ? 'Review windows, review rules and where each review stands' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
+  // Team members: the same Filter pill as the dashboard (team, booked or not, invite, status), filtered in the browser
+  PF.steam = optCount(d.rows, r => r.team, tl); PF.sst = optCount(d.rows, r => r.status);
+  cfLocalRedraw.sched = () => pages.scheduling(v);
+  const SF = CF.sched, anyOf = (a, x) => !a.length || a.includes(String(x));
+  const rows = d.rows.filter(r => anyOf(SF.steam, r.team) && (SF.sslot === 'any' || (SF.sslot === 'booked') === !!r.scheduled)
+    && (SF.sinv === 'any' || (SF.sinv === 'sent') === !!r.invite) && anyOf(SF.sst, r.status));
+  v.innerHTML = head('Review scheduling', d.adminView && !S.me.viewingAs ? 'Review windows, and a date and time for any review (for example when a manager is away). Rescheduling moves the calendar invite too.' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
   ${calCard}
   <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
-  ${rules ? `<h2>Review rules</h2><div class="card"><div class="setgrid">${RULES.map(([k, l]) => `<div><label class="f">${l}</label><input data-c="${k}" value="${esc([].concat(rules[k]).join(','))}"></div>`).join('')}</div>
-  <div style="margin-top:16px"><button class="btn pri" id="sc">Save review rules</button></div></div>` : ''}
-  <h2>Team members</h2><div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
-  ${d.rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
+  <div class="row sechd"><h2>Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
+  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
   <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="st mv" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">Moved ${r.reschedules}×</span>` : '<span class="small">–</span>'}</td>
-  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}</table></div>
+  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>`}
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
@@ -1953,8 +2479,8 @@ pages.scheduling = async v => {
       ${inv ? `<div class="info">The Google Calendar invite moves too; ${esc(inv.guests.join(' and '))} ${inv.guests.length > 1 ? 'are' : 'is'} told by Google.</div>`
         : canInvite ? `<label class="chk"><input type="checkbox" id="si" checked ${mode === 'invite' ? 'disabled' : ''}> Send a Google Calendar invite to ${esc(r.name)}</label>`
         : !r.hasEmail ? `<div class="info">No calendar invite: ${esc(r.name)} has no @${esc(S.me.domain)} email in PMS yet.</div>`
-        : cal.google && cal.canConnect ? `<div class="warn calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Your Google Calendar is not connected, so this only saves the date in PMS. Connect it first, then schedule (or use Send invite on the row afterwards).</span><button type="button" class="btn pri sm" id="dcal">Connect Google Calendar</button></div>`
-        : cal.google ? `<div class="warn calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Invites come from your own Google Calendar: sign in with your @${esc(S.me.domain)} Google account to connect it.</span></div>` : ''}
+        : cal.google && cal.canConnect ? `<div class="alert-w calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Your Google Calendar is not connected, so this only saves the date in PMS. Connect it first, then schedule (or use Send invite on the row afterwards).</span><button type="button" class="btn pri sm" id="dcal">Connect Google Calendar</button></div>`
+        : cal.google ? `<div class="alert-w calnote">${ico('calendar')}<span><b>No invite or email will go out.</b> Invites come from your own Google Calendar: sign in with your @${esc(S.me.domain)} Google account to connect it.</span></div>` : ''}
       <div class="row"><button class="btn pri" id="ok">${mode === 'invite' ? 'Send invite' : mode === 'schedule' ? 'Schedule' : 'Save'}</button><button class="btn" id="no">Cancel</button></div>`);
     m.querySelector('#no').onclick = () => m.remove();
     if (m.querySelector('#dcal')) m.querySelector('#dcal').onclick = () => { m.remove(); calStart(); };
@@ -1970,14 +2496,12 @@ pages.scheduling = async v => {
     };
   };
   v.onclick = async e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const t = e.target.closest('button, a'); if (!t) return;
     try {
-      if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
-      else if (t.id === 'sc') {
-        const b = {};
-        v.querySelectorAll('[data-c]').forEach(i => { const k = i.dataset.c; b[k] = k === 'operationalRange' ? i.value.split(',').map(Number) : Number(i.value); });
-        btnBusy(t); try { await api('/config', { method: 'PUT', body: b }); toast('Review rules saved'); } finally { btnIdle(t); }
-      }
+      if (t.dataset.cfclear) { e.preventDefault(); cfClear(t.dataset.cfclear); }
+      else if (t.dataset.sv) { S.schView = t.dataset.sv; try { localStorage.setItem('pms.schView', S.schView); } catch {} pages.scheduling(v); }
+      else if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
       else if (t.id === 'calon') calStart();
       else if (t.id === 'caloff') { if (await confirmBox('Disconnect Google Calendar?', 'Invites already sent stay in calendars, but you cannot move or cancel them from PMS until you connect again.', { ok: 'Disconnect', danger: true })) { await api('/calendar/disconnect', { method: 'POST' }); toast('Google Calendar disconnected'); pages.scheduling(v); } }
       else if (t.dataset.sch) slotDialog(row(t.dataset.sch), 'schedule');
@@ -2009,7 +2533,7 @@ pages.profile = async v => {
       <p>${esc(p.designation) || esc(role)}${p.team ? `<span class="pf-dot">·</span>${teamIco(p.team)}${esc(tl(p.team))}` : ''}</p></div></div>`;
   const work = widget('idcard', 'Work details', '', `<div class="mb"><div class="pf-grid">
     ${field('idcard', 'n', 'Employee code', esc(p.code))}${field('mail', 'b', 'Work email', esc(p.email))}
-    ${field('shield', 'a', 'Access role', esc(role))}${field('calendar', 'p', 'Date of joining', fmt(p.joined))}
+    ${field('sitemap', 'g', 'Department', esc(p.department))}${field('shield', 'a', 'Access role', esc(role))}${field('calendar', 'p', 'Date of joining', fmt(p.joined))}
     ${p.window ? field('clock', 'b', 'Review window', `${fmtD(p.window.start)} to ${fmtD(p.window.end)} <span class="pf-sub">${esc(p.window.month)}</span>`) : ''}
     ${field('team', 'g', me ? 'People reporting to you' : 'People reporting to them', p.reports ? `${p.reports}${S.me.role !== 'admin' ? ` <a class="pf-sub" href="#/team">Open My team</a>` : ''}` : '<span class="pf-none">None</span>')}
   </div></div>`, 'w8');
@@ -2054,7 +2578,7 @@ pages.emails = async v => {
 pages.annual = async (v, emp) => {
   const d = await api('/annual?emp=' + (emp || S.me.id));
   const list = ['manager', 'teamlead', 'director', 'admin'].includes(S.me.role) ? (await api('/report?month=' + S.me.currentMonth)).rows : [];
-  v.innerHTML = head('One pager document', `${esc(d.employee.name)} · ${d.fy}`) +
+  v.innerHTML = head('One Pager Document', `${esc(d.employee.name)} · ${d.fy}`) +
     `${list.length ? `<div class="row"><select id="who"><option value="${S.me.id}">Myself</option>${list.map(r => `<option value="${r.empId}" ${r.empId === d.employee.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div>` : ''}
   <h2>One-page summary <span class="small">(${d.months.filter(m => m.filled).length} of 12 months filled; fills as each monthly review finishes)</span></h2>
   <div class="row"><b>${esc(d.employee.name)}</b> (${esc(d.employee.designation)}) · ${d.fy} (April 2026 to March 2027)<span class="sp"></span><button class="btn pri" onclick="window.print()">Download PDF</button></div>
@@ -2067,18 +2591,20 @@ pages.annual = async (v, emp) => {
 // ---------- parameters summary ----------
 pages.params = async (v, arg) => {
   const admin = S.me.role === 'admin';
+  // the questionnaire used to sit below the parameters; it is its own page now (Settings › Questionnaire)
+  if (arg === 'questions') { location.replace('#/questions'); return; }
   const d = await api('/params?month=' + S.month);
   let P = JSON.parse(JSON.stringify(d.data));
-  // admins also get the questionnaire editor below the parameters (own box, so a question save keeps unsaved parameter edits)
-  v.innerHTML = '<div id="pbox"></div>' + (admin ? '<div id="qbox"></div>' : '');
+  v.innerHTML = '<div id="pbox"></div>';
   const pb = $('#pbox');
   const draw = (dirty) => {
-    pb.innerHTML = head('Parameters summary', 'Soft parameters reviewed alongside the KRAs' + (admin ? ' · admin view' : '')) + `<div class="row"><span class="small">Wording for ${esc(monthLabel(S.month))} (change the month in the calendar at the top) · applies from ${esc(monthLabel(d.from) || d.from)}</span><span class="sp"></span>${admin ? `<button class="btn pri" data-a="addsec">${ico('plus')}Add section</button>` : ''}</div>
+    pb.innerHTML = head('Parameters Summary', 'Soft parameters reviewed alongside the KRAs' + (admin ? ' · admin view' : '')) + `<div class="row"><span class="small">Wording for ${esc(monthLabel(S.month))} (change the month in the calendar at the top) · applies from ${esc(monthLabel(d.from) || d.from)}</span><span class="sp"></span>${admin ? `<button class="btn pri" data-a="addsec">${ico('plus')}Add section</button>` : ''}</div>
     ${P.sections.map((s, si) => `<div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico(paramIcon(s.title))}</i>${esc(s.title)}:</b>${admin ? `<span class="acts"><button class="btn sm" data-a="editsec" data-s="${si}">Edit section</button><button class="btn sm dng" data-a="delsec" data-s="${si}">Delete section</button></span>` : ''}</div>
       ${s.items.map((it, ii) => `<div class="pitem"><span class="pn">${ii + 1}.</span><span class="pt">${esc(it)}</span>${admin ? `<span class="acts"><button class="btn sm" data-a="edit" data-s="${si}" data-i="${ii}">Edit</button><button class="btn sm dng" data-a="del" data-s="${si}" data-i="${ii}">Delete</button></span>` : ''}</div>`).join('')}
       ${admin ? `<div style="padding-top:10px"><button class="btn sm pri" data-a="add" data-s="${si}">${ico('plus')}Add item</button></div>` : ''}</div>`).join('')}
     <div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico('star')}</i>Rating scale (applies to the parameters above):</b>${admin ? '<span class="acts"><button class="btn sm" data-a="scale">Edit scale</button></span>' : ''}</div>${P.scale.map(x => `<div class="pitem"><span class="pt">${esc(x)}</span></div>`).join('')}</div>
-    ${admin ? `<div class="row" style="justify-content:flex-end"><button class="btn pri" id="savep" ${dirty ? '' : 'disabled'}>Save changes…</button></div><p class="small">Soft parameters here are not part of the monthly rating calculation. Changes apply from the month you choose and are written to the audit log.</p>` : ''}`;
+    ${admin && dirty ? `<div class="row" style="justify-content:flex-end;align-items:center"><span class="small" style="color:var(--vr-warn-700);font-weight:600">You have unsaved changes</span><button class="btn" id="discp">Discard</button><button class="btn pri" id="savep">Save changes</button></div>` : ''}
+    ${admin ? `<p class="small">Soft parameters here are not part of the monthly rating calculation. Changes apply from the month you choose and are written to the audit log.</p>` : ''}`;
   };
   draw();
   const ask = (title, val, cb) => { const m = modal(`<h2>${title}</h2><textarea id="tv" style="min-height:80px">${esc(val)}</textarea><div class="row" style="margin-top:12px"><button class="btn pri" id="ok">OK</button><button class="btn" id="no">Cancel</button></div>`); m.querySelector('#no').onclick = () => m.remove(); m.querySelector('#ok').onclick = () => { const t = m.querySelector('#tv').value.trim(); if (t) { cb(t); m.remove(); draw(true); } }; };
@@ -2091,25 +2617,28 @@ pages.params = async (v, arg) => {
     if (a === 'edit') ask('Edit item', P.sections[s].items[i], x => P.sections[s].items[i] = x);
     if (a === 'del' && await confirmBox('Delete this item?', P.sections[s].items[i], { ok: 'Delete item', danger: true })) { P.sections[s].items.splice(i, 1); draw(true); }
     if (a === 'scale') ask('Rating scale (one line per level)', P.scale.join('\n'), x => P.scale = x.split('\n').map(z => z.trim()).filter(Boolean));
+    if (t.id === 'discp') { P = JSON.parse(JSON.stringify(d.data)); draw(); }
     if (t.id === 'savep') {
       const m = modal(`<h2>Apply from which review month?</h2><select id="eff">${S.me.months.map(x => `<option value="${x.key}" ${x.key === S.me.currentMonth ? 'selected' : ''}>${x.label}</option>`).join('')}</select><p class="small">Forms from this month onward (including future months) use the new wording. Submitted forms keep the earlier wording.</p><div class="row"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
       m.querySelector('#ok').onclick = async () => { await api('/params', { method: 'PUT', body: { from: m.querySelector('#eff').value, data: P } }); m.remove(); toast('Saved'); pages.params(v); };
     }
   };
-  // the page may have been left while the questions loaded, so look the box up again before scrolling to it
-  if (admin) { await questionsBox($('#qbox')); if (arg === 'questions') requestAnimationFrame(() => { const b = $('#qbox'); if (b) SC().scrollTop = b.offsetTop - 24; }); }
 };
 
-// ---------- questionnaire (admin, shown inside Parameters Summary) ----------
-pages.questions = () => location.replace('#/params'); // old link
+// ---------- questionnaire (admin, Settings › Questionnaire) ----------
+pages.questions = async v => {
+  if (S.me.role !== 'admin') { location.replace('#/params'); return; }
+  v.innerHTML = head('Questionnaire', 'Questions on the monthly review form') + '<div id="qbox"></div>';
+  await questionsBox($('#qbox'));
+};
 async function questionsBox(v) {
   const qs = await api('/questions');
-  const tab = S.qtab || 'text';
+  // only the text-answer questions are managed here; the rating questions stay on the review form (Harish 2026-11-19)
+  const tab = 'text';
   const list = qs.filter(q => q.type === tab && !q.to).sort((a, b) => a.order - b.order);
-  v.innerHTML = `<div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico('question')}</i>Questionnaire (monthly review form):</b><span class="acts"><button class="btn sm pri" data-a="new">${ico('plus')}Add new question</button></span></div>
-  <div class="row"><div class="seg" style="margin:0"><button class="chip ${tab === 'text' ? 'on' : ''}" data-tab="text">Questions 1 to 5 (text answers)</button><button class="chip ${tab === 'rating' ? 'on' : ''}" data-tab="rating">Questions 6 to 12 (ratings)</button></div></div>
-  <div class="tablewrap"><table class="qtab"><tr><th>No.</th><th>Question</th><th>Answer type</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.type === 'text' ? 'Text answer' : 'Rating (0 to 5)'}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
+  v.innerHTML = `<div class="card pcard"><div class="phead"><span class="acts" style="margin-left:auto"><button class="btn sm pri" data-a="new">${ico('plus')}Add new question</button></span></div>
+  <div class="tablewrap"><table class="qtab"><tr><th>No.</th><th>Question</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
   <p class="small">Changes apply from the review month you choose. Forms already submitted keep the question and answers as they were. No limit on the number of questions.</p></div>`;
   // reorder by drag-and-drop (the row moves live under the mouse) or, on the grip, with the arrow keys; saved when dropped
   const tbl = v.querySelector('table.qtab'), order = () => [...tbl.querySelectorAll('tr[data-q]')].map(r => r.dataset.q), start = order();
@@ -2139,24 +2668,22 @@ async function questionsBox(v) {
   const monthSelHtml = (sel) => `<select id="eff">${S.me.months.map(x => `<option value="${x.key}" ${x.key === sel ? 'selected' : ''}>${x.label}</option>`).join('')}</select>`;
   const dialog = (title, q) => {
     const m = modal(`<h2>${title}</h2><label class="f">Question text <i>*</i></label><textarea id="qt">${esc(q?.text || '')}</textarea>
-    <label class="f">Answer type</label><select id="qty" ${q ? 'disabled' : ''}><option value="text" ${tab === 'text' ? 'selected' : ''}>Text answer</option><option value="rating" ${tab === 'rating' ? 'selected' : ''}>Rating</option></select>
     <label class="f">Mandatory</label><select id="qm"><option value="true" ${q?.mandatory !== false ? 'selected' : ''}>Yes</option><option value="false" ${q?.mandatory === false ? 'selected' : ''}>No</option></select>
     <label class="f">Applies from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="info">Forms already submitted keep the old wording.</div>
     <div class="row"><button class="btn pri" id="ok">Save question</button><button class="btn" id="no">Cancel</button></div>`);
     m.querySelector('#no').onclick = () => m.remove();
     m.querySelector('#ok').onclick = async () => {
-      const body = { id: q?.id, text: m.querySelector('#qt').value.trim(), type: m.querySelector('#qty').value, mandatory: m.querySelector('#qm').value === 'true', from: m.querySelector('#eff').value };
+      const body = { id: q?.id, text: m.querySelector('#qt').value.trim(), type: 'text', mandatory: m.querySelector('#qm').value === 'true', from: m.querySelector('#eff').value };
       try { await api('/questions', { method: q ? 'PUT' : 'POST', body }); m.remove(); questionsBox(v); } catch (e) { toast(e.message, 'err'); }
     };
   };
   v.onclick = async e => {
     const t = e.target, a = t.dataset.a;
-    if (t.dataset.tab) { S.qtab = t.dataset.tab; questionsBox(v); }
     if (a === 'new') dialog('Add new question');
     if (a === 'edit') dialog('Edit question', qs.find(q => q.id === t.dataset.id));
     if (a === 'del') {
       const q = qs.find(x => x.id === t.dataset.id);
-      const m = modal(`<h2>Delete question?</h2><p>${esc(q.text)}</p><div class="warn">New forms from the chosen month will no longer show this question. Answers already submitted are kept and stay visible in past forms.</div><label class="f">Delete from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="row" style="margin-top:12px"><button class="btn dng solid" id="ok">Delete question</button><button class="btn" id="no">Cancel</button></div>`);
+      const m = modal(`<h2>Delete question?</h2><p>${esc(q.text)}</p><div class="alert-w">New forms from the chosen month will no longer show this question. Answers already submitted are kept and stay visible in past forms.</div><label class="f">Delete from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="row" style="margin-top:12px"><button class="btn dng solid" id="ok">Delete question</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
       m.querySelector('#ok').onclick = async () => { await api('/questions/delete', { method: 'POST', body: { id: q.id, from: m.querySelector('#eff').value } }); m.remove(); questionsBox(v); };
     }
@@ -2188,7 +2715,7 @@ function allStats(st) {
     ['exe', 'review', 'Executives', by['Executive'] ?? '–', '', ['active', 'Executive']],
     ['ina', 'list', 'Article / Intern', by['Article/Intern'] ?? '–', '', ['active', 'Article/Intern']],
   ];
-  // big numbers fading into each role's colour, a faint icon in the corner (Harish picked this design, 2026-11-13)
+  // big white numbers (one colour for all, 2026-11-19), the role's colour only in the dot, a faint icon in the corner
   return `<section class="hero allstats" aria-label="All stats">${ORBS}${cards.map(([c, ic, label, n, sub, to]) =>
     `<a class="bstat ${c}" href="#/employees/${to[0]}${to[1] ? '/' + encodeURIComponent(to[1]) : ''}" data-role="${to[1]}" title="Open: ${esc(label)}"><i class="wm">${ico(ic)}</i><span class="bl">${esc(label)}</span><b class="bn">${n}</b><span class="bs">${esc(sub)}</span></a>`).join('')}</section>`;
 }
@@ -2197,6 +2724,7 @@ function allStats(st) {
 // set by the admin in Edit; shown as the Final Status in the review status report (Full details)
 const WORK_STATUS = [['', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']];
 pages.employees = async (v, arg, grp) => {
+  if (arg === 'pw') { S.etab = 'active'; S.eq = S.eteam = ''; pwFor = grp; } // #/employees/pw/<id>: a "forgot password" notification
   if (arg === 'active' || arg === 'inactive') { S.etab = arg; S.eq = S.eteam = ''; if (grp) empPreset(decodeURIComponent(grp)); } // the address carries the tile's group
   const [d, md] = await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
@@ -2214,11 +2742,16 @@ pages.employees = async (v, arg, grp) => {
     mgr: count(e => String(e.managerId ?? ''), x => x ? (all.find(e => String(e.managerId) === x) || {}).manager || x : 'No manager (top-level director)').sort((a, b) => a[1].localeCompare(b[1])),
   };
   cfLocalRedraw.emp = () => pages.employees(v);
+  if (pwFor) {
+    const p = d.active.find(x => String(x.id) === String(pwFor)); pwFor = null; history.replaceState(null, '', '#/employees/active');
+    if (p) passwordDialog(p, () => pages.employees(v)); else toast('That person is not active any more.', 'err');
+  }
   const rows = all.filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && passF(e));
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
   const inScope = all.filter(passF);
-  const teamN = inScope.reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
+  // top-level directors carry "Directors" as their team, but it is not a team: no chip for it (they are under All departments)
+  const teamN = inScope.filter(e => e.team !== 'Directors').reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
   const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(tl(t))}: ${teamN[t]}">${teamIco(t)}${esc(tl(t))}</button>`).join('')}</div></div>`;
   const opts = (list, cur, lab = x => x) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option value="${esc(x)}" ${x === cur ? 'selected' : ''}>${esc(lab(x))}</option>`).join('');
   // anyone active can be picked: people who already lead first, then everyone else (picking one makes them a manager)
@@ -2258,14 +2791,14 @@ pages.employees = async (v, arg, grp) => {
   const cell = (e, f, html, text) => ed ? `<select class="cell" data-f="${f}" data-id="${e.id}" aria-label="${f === 'managerId' ? 'Reporting manager' : f} for ${esc(e.name)}">${html}</select>` : esc(text);
   v.innerHTML = head(tab === 'inactive' ? 'Inactive Employees' : 'Active Employees', 'Change team, designation or manager right in the table') + `
   <div class="row"><div class="seg" style="margin:0"><a class="chip ${tab === 'active' ? 'on' : ''}" href="#/employees/active">Active <span class="cnt">${d.active.length}</span></a><a class="chip ${tab === 'inactive' ? 'on' : ''}" href="#/employees/inactive">Inactive <span class="cnt">${d.inactive.length}</span></a></div></div>
-  <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
-  ${md.diffs.length ? `<div class="warn" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
+  <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><button type="button" class="btn" id="empx" title="Download this list as it is filtered (CSV for Excel)">${ico('download')}Export CSV</button><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
+  ${md.diffs.length ? `<div class="alert-w" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
   ${teamChips}
   ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
   ${rows.map(e => `<tr><td><a href="${tab === 'active' ? `#/form/${e.id}/${S.month}` : `#/empforms/${e.id}`}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a>${e.workStatus ? ` <span class="badge b-amber" title="Since ${esc(monthLabel(e.workStatus.from))}">${esc((WORK_STATUS.find(w => w[0] === e.workStatus.type) || [])[1] || '')}</span>` : ''}<div class="small" style="max-width:220px;overflow-wrap:anywhere">${esc(e.code)} · ${e.email ? esc(e.email) : 'No work email'}</div></td>
   <td title="${e.role === 'director' ? 'Top level, not reviewed' : e.role === 'employee' ? 'Is reviewed by their reporting manager' : 'Has people reporting to them: reviews their team'}">${roleBadge(e.role)}</td>
-  <td>${cell(e, 'team', opts(byLabel(d.teams), e.team, tl), tl(e.team))}</td>
+  <td>${e.team === 'Directors' ? '<span class="small" title="Top-level director, not in a team">–</span>' : cell(e, 'team', opts(byLabel(d.teams), e.team, tl), tl(e.team))}</td>
   <td>${cell(e, 'designation', opts(d.designations, e.designation) + '<option value="__new">Other…</option>', e.designation)}</td>
   <td>${cell(e, 'managerId', mgrOpts(e), e.manager || 'No manager')}${e.pending ? `<div class="small" title="Planned: the current manager finishes this month's review">Moves to ${esc(e.pending.to)} from ${esc(e.pending.from)}</div>` : ''}</td>
   ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
@@ -2300,6 +2833,8 @@ pages.employees = async (v, arg, grp) => {
   v.onclick = async e => {
     const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // the Filter pill
+    if (e.target.closest('#empx')) return csvSave(`Employees_${tab}_${new Date().toISOString().slice(0, 10)}.csv`, [['Code', 'Name', 'Work email', 'Designation', 'Team', 'Role', 'Reporting manager', 'Joining date', 'Work status'],
+      ...rows.map(r => [r.codeSet === false ? '' : r.code, r.name, r.email, r.designation, r.team === 'Directors' ? '' : tl(r.team), ROLE_LABEL[r.role] || r.role, r.manager, r.joinedSet === false ? '' : r.joined, r.workStatus ? (r.workStatus.type === 'leave' ? 'On leave' : 'Serving notice') : 'Working'])]);
     const t = e.target.closest('[data-a], [data-stat]') || e.target, a = t.dataset.a;
     if (a === 'mdsync') {
       try { const r = await api('/master/sync', { method: 'POST' }); toast(r.changes.length ? `${r.changes.length} change${r.changes.length === 1 ? '' : 's'} brought in from the list` : 'The list has no new changes'); pages.employees(v); }
@@ -2308,7 +2843,7 @@ pages.employees = async (v, arg, grp) => {
     }
     if (t.dataset.stat) {
       const k = t.dataset.stat;
-      if (k === 'questions') { location.hash = '#/params'; return; }
+      if (k === 'questions') { location.hash = '#/questions'; return; }
       S.etab = k === 'inactive' ? 'inactive' : 'active'; empPreset('');
       const h = '#/employees/' + S.etab; // keep the address (and the menu highlight) in step with the tile
       if (location.hash !== h) { location.hash = h; return; }
@@ -2474,7 +3009,7 @@ pages.teams = async v => {
   <div class="row"><button class="btn pri" id="tnew">${ico('plus')}Add team</button></div>
   <div id="er"></div>
   <div class="tablewrap"><table><tr><th>Team</th><th title="Active people in the team">Members</th><th>Review window</th><th>Actions</th></tr>${list.map((t, i) => `<tr>
-    <td data-name="${i}"><span style="display:inline-flex;align-items:center;gap:6px">${teamIco(t.name)}<b>${esc(t.name)}</b></span>${t.sheetName.length ? `<div class="small">Called ${t.sheetName.map(esc).join(', ')} in the sheet</div>` : t.added ? '<div class="small">Added in the app</div>' : ''}</td>
+    <td data-name="${i}"><span style="display:inline-flex;align-items:center;gap:6px">${teamIco(t.name)}<b>${esc(t.label || t.name)}</b></span>${[t.sheetName.length && `Called ${t.sheetName.map(esc).join(', ')} in the sheet`, t.added && 'Added in the app'].filter(Boolean).map(x => `<div class="small">${x}</div>`).join('')}</td>
     <td>${t.members ? `<a href="#/employees/active" data-t="people" data-i="${i}" title="Show them on the Employees page">${t.members}</a>` : 0}</td><td style="white-space:nowrap">${days(t.window)}</td>
     <td><span class="acts"><button class="btn sm" data-t="win" data-i="${i}">Window</button>${t.fixed ? '<span class="small" title="Holds the top-level directors">Fixed</span>' : `<button class="btn sm" data-t="ren" data-i="${i}">Rename</button><button class="btn sm dng" data-t="del" data-i="${i}" ${t.members ? `disabled title="Move its ${t.members} active ${t.members === 1 ? 'person' : 'people'} to another team first"` : ''}>Delete</button>`}</span></td></tr>`).join('')}</table></div>
   <p class="small">Teams come from the employee sheet. A rename here is remembered, so the next import of the sheet keeps the new name. To move people between teams, change the Team column on the Employees page.</p>`;
@@ -2530,11 +3065,23 @@ pages.teams = async v => {
 };
 
 // ---------- audit ----------
-pages.audit = async v => {
-  const rows = await api('/audit');
-  v.innerHTML = head('Audit log', 'Every change made in PMS, newest first') + `<div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(new Date(r.at).toLocaleString())}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')}</table></div>`;
+// the same Filter pill as the dashboard: when, who, action (filtered in the browser)
+pages.audit = async (v, again) => {
+  const all = Array.isArray(again) ? again : await api('/audit');
+  PF.awho = optCount(all, r => r.who); PF.aact = optCount(all, r => r.action);
+  cfLocalRedraw.audit = () => pages.audit(v, all);
+  const F = CF.audit, anyOf = (a, x) => !a.length || a.includes(String(x));
+  const from = { today: new Date(new Date().setHours(0, 0, 0, 0)), '7d': new Date(Date.now() - 7 * 864e5), '30d': new Date(Date.now() - 30 * 864e5) }[F.aper];
+  const rows = all.filter(r => anyOf(F.awho, r.who) && anyOf(F.aact, r.action) && (!from || new Date(r.at) >= from));
+  v.innerHTML = head('Audit log', 'Every change made in PMS, newest first') + `<div class="row"><span class="small">${rows.length === all.length ? '' : `${rows.length} of `}${all.length} change${all.length === 1 ? '' : 's'}</span><span class="sp"></span>${cfPill('audit')}</div>
+    <div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${rows.map(r => `<tr><td>${esc(apWhen(r.at))}</td><td>${esc(r.who)}</td><td>${esc(r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('')
+      || `<tr><td colspan="4">${all.length ? `Nothing matches these filters. ${clearLink('audit')}` : 'No changes yet.'}</td></tr>`}</table></div>`;
+  v.onclick = e => {
+    const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); cfClear(cl.dataset.cfclear); }
+  };
 };
-pages.config = () => location.replace('#/scheduling'); // Settings now live on the Scheduling page (Review rules)
+pages.config = () => location.replace('#/scheduling'); // old Settings link (the review rules are fixed in the server now)
 
 boot();
 
@@ -2543,7 +3090,8 @@ let AP = null, apStep = 1;
 const AP_STEPS = ['Information', 'Yearly Recap', 'KSA Setting', 'Self-KRA', 'Review & Submit'];
 const apFilled = f => [f.recap.some(r => (r.expectation + r.achievements + r.improvement).trim()), ...['strengths', 'improvements', 'operational', 'process', 'people'].map(k => f[k].trim())].filter(Boolean).length;
 const apPct = f => Math.round(apFilled(f) / 6 * 100);
-const apWhen = iso => new Date(iso).toLocaleString('en-GB');
+// a moment in Indian format, e.g. "20 Nov 2026, 4:52 pm" (brief: en-IN); Audit Log and "Submitted on"
+const apWhen = iso => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 async function drawAppraisal(v, emp, fy) {
   AP = await api('/appraisal?emp=' + emp + (fy ? '&fy=' + fy : '')); apStep = 1;
@@ -2619,3 +3167,64 @@ function apExcel() {
   <h3>Key Strengths</h3><p>${c(f.strengths)}</p><h3>Area of Improvement</h3><p>${c(f.improvements)}</p><h3>Operational KRA</h3><p>${c(f.operational)}</p><h3>Process KRA</h3><p>${c(f.process)}</p><h3>People KRA</h3><p>${c(f.people)}</p></body></html>`;
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' })); a.download = `Appraisal-${AP.fy}-${e.name.replace(/\s+/g, '-')}.xls`; a.click();
 }
+
+// ---------- UI Components (VerviRecruit UI brief, section 10: "a components page that renders every item in section 6
+// in both themes so it can be compared with VerviRecruit side by side"). Admin only, at #/components (not in the menu: Harish removed it 2026-11-20).
+// Each theme is drawn in its own frame with the app's real stylesheet, so light and dark show side by side whatever
+// theme the admin uses. The short notes say where PMS follows the old PMS portal look instead of the brief, and who
+// asked for it (Harish 2026-11-20: keep the portal look; the brief stays the reference for structure).
+pages.components = async v => {
+  if (S.me.role !== 'admin') return pages.home(v);
+  const note = t => `<p class="uic-note">${t}</p>`;
+  const sec = (title, body, n) => `<section class="card uic-sec"><h3>${title}</h3>${body}${n ? note(n) : ''}</section>`;
+  const r = h => `<div class="uic-row">${h}</div>`;
+  const body = [
+    sec('Typography', `<h1>Page title</h1><div class="crumb">Page subtitle directly under the title</div><h2>Section heading</h2><p>Body text is 14px. <span class="small">Secondary text is 12px.</span> <a class="lk" href="#/components">Link-style action</a></p><p class="small">Numbers use Indian grouping and tabular figures: <b class="rt">${(1234567).toLocaleString('en-IN')}</b></p>`,
+      "Brief: 30px bold title. PMS: 24px regular, the old portal's headings (Harish, 17 Nov). Menu names in Title Case (Fiza, 19 Nov)."),
+    sec('Buttons', r(`<button class="btn pri">${ico('plus')}Primary action</button><button class="btn pri sm">Small primary</button><button class="btn">Secondary</button><button class="btn sm">Small secondary</button><button class="btn" disabled>Disabled</button>`)
+      + r(`<button class="pill">${ico('download')}Pill button</button><button type="button" class="cfpill">${ico('filter')}Filter</button><button type="button" class="cfpill on">${ico('filter')}Filter · 2</button><button class="ibtn" title="Icon button">${ico('pencil')}</button>`)
+      + r(`<button class="btn dng">${ico('trash')}Delete</button><button class="btn dng solid">Delete for good</button><button class="xdel" title="Remove">${ico('trash')}</button>`),
+      'Brief: navy primary buttons. PMS: every button, pill and dropdown button in the portal yellow, delete stays red (managers via Harish, 19 Nov).'),
+    sec('Fields', `<div class="uic-2"><div><label class="f">Text input</label><input value="Typed text"></div><div><label class="f">With an error <i>*</i></label><input class="err" value="Wrong value"></div>
+      <div><label class="f">Select</label><select><option>First option</option><option>Second option</option></select></div><div><label class="f">Disabled</label><input value="Read only" disabled></div></div>
+      <label class="f">Text area</label><textarea>Longer text goes here.</textarea>
+      ${r(`${searchBox('uicq', 'Search by name', '', 220)}<label class="chk" style="margin:0"><input type="checkbox" checked>Checkbox</label><button type="button" class="sw" role="switch" aria-checked="false" aria-label="Switch off"><i></i></button><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Switch on"><i></i></button>`)}`,
+      'Brief: white inputs, 8px corners, no green anywhere. PMS: grey portal fields, pale yellow dropdowns (Harish, 17 and 19 Nov), green on/off switches (Harish, 12 Nov).'),
+    sec('Dropdown menu', `<button type="button" class="dd-btn">${ico('calendar')}<span class="dd-val">November 2026</span>${CHEV}</button>
+      <div class="dd-menu uic-static" role="listbox"><button type="button" class="dd-item">October 2026</button><button type="button" class="dd-item on">November 2026</button><button type="button" class="dd-item">December 2026</button></div>`,
+      'PMS: the chosen item is yellow (Harish, 19 Nov).'),
+    sec('Stat tiles', `<div class="tiles" style="margin:0"><div class="tile"><small>Scheduled</small><b>${(72).toLocaleString('en-IN')}</b><span>This month</span></div><div class="tile g"><small>Filled</small><b>61</b><span>85% of due</span></div><div class="tile a"><small>Pending</small><b>7</b><span>Overdue</span></div><div class="tile r"><small>Not filled</small><b>11</b><span>Remind them</span></div></div>`,
+      'Brief: white tile with a coloured stripe on top. PMS: light-blue portal tiles, no stripe (Harish, 17 Nov).'),
+    sec('Card and empty state', `<div class="card"><b>Card title</b><p class="small" style="margin:4px 0 0">Cards are white on the soft page, with a thin line and a soft shadow.</p></div><div class="card empty" style="margin:0">Nothing to show here yet.</div>`,
+      'Brief: 16px corners on a warm off-white page. PMS: 8px corners on a soft blue-grey page (Harish, 17 and 19 Nov).'),
+    sec('Table', `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Status</th><th class="nr">Rating</th></tr>
+      <tr><td><a href="#/components">Sample person 01</a></td><td>Team Accounts</td><td><span class="badge b-green">Review Done</span></td><td class="nr">78.4%</td></tr>
+      <tr><td><a href="#/components">Sample person 02</a></td><td>Team HR</td><td><span class="badge b-amber">Review Pending</span></td><td class="nr">${NIL}</td></tr>
+      <tr><td><a href="#/components">Sample person 03</a></td><td>Team Sales</td><td><span class="badge b-red">Not Filled</span></td><td class="nr">${NIL}</td></tr></table></div>`,
+      "Brief: navy head, row lines only. PMS: the portal's tables, soft lines between all cells, light-blue hover (Harish, 19 and 20 Nov)."),
+    sec('Badges, chips and avatar', r(`<span class="badge">Neutral</span><span class="badge b-green">Success</span><span class="badge b-amber">Warning</span><span class="badge b-red">Danger</span><span class="badge b-blue">Info</span><span class="badge b-purple">Special</span><span class="cnt">3</span><span class="ochip">Outlined chip</span><span class="avatar s">SP</span>`),
+      'Success is azure, as in the brief.'),
+    sec('Alerts', '<div class="warn">Error: the review date is required before you submit.</div><div class="alert-w">Warning: no calendar invite will go out for this booking.</div><div class="ok">Success: the review was submitted.</div><div class="info" style="margin-bottom:0">Info: your manager will rate this month next.</div>'),
+    sec('Tabs', '<div class="seg" style="margin:0"><a class="on">Active <span class="cnt">72</span></a><a>Inactive <span class="cnt">5</span></a><a>All</a></div>',
+      'Selected tab navy: blue = where you are, yellow = what you can do (Harish, 19 Nov).'),
+    sec('Modal', '<div class="modal uic-static"><div class="box"><h2 style="margin-top:0">Delete question?</h2><p>New forms will no longer show this question. Answers already submitted are kept.</p><div class="row" style="justify-content:flex-end;margin:16px 0 0"><button class="btn">Cancel</button><button class="btn dng solid">Delete</button></div></div></div>'),
+    sec('Loading and messages', `${spinner('Loading…')}${r('<div class="toast t-ok uic-static"><span class="ti"><b>✓</b></span><span>Answer saved</span></div><div class="toast t-err uic-static"><span class="ti"><b>!</b></span><span>Could not save. Try again.</span></div>')}`,
+      'Brief: a spinning loader, never a skeleton (followed). PMS: the success message is green (Harish, 16 Nov).'),
+  ].join('');
+  const styles = [...document.querySelectorAll('style')].map(s => s.outerHTML).join('');
+  // frame-only layout helpers; everything else is the app's own stylesheet
+  const local = `<style>body{margin:0;padding:16px}.uic-sec h3{margin:0 0 12px;font-size:14px;font-weight:600;color:var(--vr-n-900)}
+    .uic-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}.uic-2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+    .uic-note{margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--vr-n-200);font-size:12px;line-height:16px;color:var(--vr-n-500)}
+    .uic-static.modal{position:relative;inset:auto;z-index:0;border-radius:12px}.uic-static.dd-menu{position:static;display:block;width:220px;margin-top:6px}
+    .uic-static.toast{position:static;transform:none}</style>`;
+  const doc = theme => `<!doctype html><html class="${theme}"><head><meta charset="utf-8">${styles}${local}</head><body>${body}</body></html>`;
+  v.innerHTML = head('UI Components', "Every shared piece of PMS in light and dark, drawn with the app's own styles, to compare with VerviRecruit (UI brief, section 10). The notes say where PMS follows the old portal look instead of the brief.") +
+    `<div class="uic-grid"><div><div class="uic-lab">Light</div><iframe class="uic-f" title="Components, light theme" srcdoc="${esc(doc(''))}"></iframe></div>
+     <div><div class="uic-lab">Dark</div><iframe class="uic-f" title="Components, dark theme" srcdoc="${esc(doc('dark'))}"></iframe></div></div>`;
+  // each frame as tall as its content; links and buttons inside do nothing
+  v.querySelectorAll('.uic-f').forEach(f => f.addEventListener('load', () => {
+    const d = f.contentDocument; f.style.height = d.documentElement.scrollHeight + 'px';
+    d.addEventListener('click', e => { if (e.target.closest('a,button')) e.preventDefault(); });
+  }));
+};
