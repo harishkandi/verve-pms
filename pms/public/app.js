@@ -555,7 +555,7 @@ async function start() {
 function formUnsaved() {
   if (!FP || !FP.form) return [];
   const qs = [...editingQ].filter(id => String(FP.form.qa[id] ?? '') !== String(qOrig[id] ?? ''));
-  return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved yet (click outside the answer box to save it)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
+  return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved yet (it saves a moment after you stop typing, or when you click outside the box)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
 }
 let navSkip = false;
 async function navGuard(e) {
@@ -1052,7 +1052,7 @@ function qualityBody(h, c, p) {
 // /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
 const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any',
   rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sinv: 'any', sst: [], aper: 'all', awho: [], aact: [],
-  xper: '6', xteam: [], xdesig: [], xmgr: [], xpar: '' };
+  xper: 'fy', xteam: [], xdesig: [], xmgr: [], xpar: '' }; // Analytics: the financial year by default (Harish 2026-11-20, the history is in)
 const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review insights', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
   // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
   emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true },
@@ -1069,7 +1069,10 @@ const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'm
   anRace: { title: 'Team race', keys: ['xper', 'xdesig'], local: true },
   // one Parameters card: Attendance, Conduct, ... are picked under its Filter (Harish 2026-11-19: not one card each)
   anPar: { title: 'Parameters', keys: ['xpar', 'xper', 'xteam', 'xdesig'], local: true }, // xpar = the tab on the card, hidden in the panel
-  anMeet: { title: 'Review meetings', keys: ['xteam', 'xmgr'], local: true }, anAlert: { title: 'Needs attention', keys: ['xteam', 'xdesig'], local: true } };
+  anMeet: { title: 'Review meetings', keys: ['xteam', 'xmgr'], local: true }, anAlert: { title: 'Needs attention', keys: ['xteam', 'xdesig'], local: true },
+  // history cards (Harish 2026-11-20, from the old portal's April-October reviews)
+  anTrend: { title: 'Rating trend', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anGap: { title: 'Self vs manager', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true },
+  anPeople: { title: 'People', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anRev: { title: 'Ratings by reviewer', keys: ['xper', 'xteam', 'xdesig'], local: true } };
 // choices of the page filters that depend on the data (each page sets its own as it draws); PF.hide[card] = fields not
 // shown on that page right now (e.g. Team on a manager's Team Report)
 const PF = { hide: {} };
@@ -1116,6 +1119,8 @@ const CF = (() => {
   return Object.fromEntries(Object.entries(CF_CARDS).map(([c, d]) => [c, Object.fromEntries(d.keys.map(k => [k, fix(k, saved[c] && saved[c][k])]))]));
 })();
 const cfSave = () => { try { localStorage.setItem('pms.cardFilters', JSON.stringify(CF)); } catch {} };
+// Analytics cards saved with the old default "Last 6 months" move to the new default, the financial year (once)
+try { if (localStorage.getItem('pms.anPerV') !== '2') { Object.values(CF).forEach(f => { if (f.xper === '6') f.xper = 'fy'; }); localStorage.setItem('pms.anPerV', '2'); cfSave(); } } catch {}
 const HC = {}; // filtered card answers from the server; none = the card shows the /api/home numbers
 const empPreset = grp => { Object.keys(CF.emp).forEach(k => { CF.emp[k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); if (grp) CF.emp.edesig = [grp]; cfSave(); };
 let homeRedraw = null; // redraws the dashboard cards from the last /api/home answer and HC
@@ -1479,7 +1484,8 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
   // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
   v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span><span class="opf-st">${badge(FP.status)}</span> ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
-    ${f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The employee can no longer change it.'}</div>`
+    ${f.imported ? `<div class="info">Brought over from the ${esc(f.imported.from)}${f.imported.manager ? `, reviewed by ${esc(f.imported.manager)}` : ''}. ${f.submitted ? 'The review was completed there.' : 'The review was not finished there.'} Question answers were not part of the old data.</div>`
+      : f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The employee can no longer change it.'}</div>`
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="opf-bar">${fyPick(S.month)}<button type="button" class="opf-y" id="toqa">View Question-Answer</button></div>
     <div class="opf-card"><div class="opf-band">KRA : ${esc(FP.fy || '')} ${esc(mon)},${esc(yr)}</div>
@@ -1495,7 +1501,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     ${sec('people', 'People', 'Self updating of skills')}
     ${ratingBox(f)}
     <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
-    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved when you click outside the box">${esc(f.qa[q.id] || '')}</textarea>`
+    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved automatically">${esc(f.qa[q.id] || '')}</textarea><div class="small opf-qsv" data-qsv="${q.id}" aria-live="polite">${qSavedAt[q.id] ? 'Saved automatically' : ''}</div>`
       : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${(p.editSelf || p.editManager) && !f.locked ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id]) ? `<div class="flag">A single word is not enough. Please write a short answer in a few words.</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       // the Self Rating / Manager Rating / Remark heading only above the first rated question
@@ -1602,7 +1608,7 @@ function wireForm(v) {
     }
     if (t.dataset.kw || (t.dataset.k && !RATING_FIELDS.includes(t.dataset.f))) draftStore();
     if (t.id === 'reviewDate') return;
-    if (t.dataset.qt) f.qa[t.dataset.qt] = t.value; // a draft: stored only when the tick is clicked
+    if (t.dataset.qt) { f.qa[t.dataset.qt] = t.value; const id = t.dataset.qt; clearTimeout(qTimer); qTimer = setTimeout(() => qQuiet(id), 1200); } // saved a moment after typing stops
     else if (t.dataset.qr) { const a = f.qa[t.dataset.qr] ||= {}; a[t.dataset.f] = t.type === 'number' || t.tagName === 'SELECT' ? (t.value === '' ? null : +t.value) : t.value; formDirty.add(`qr|${t.dataset.qr}|${t.dataset.f}`); }
   };
   // re-render on blur-ish changes so remark requirements update
@@ -1686,8 +1692,16 @@ function wireForm(v) {
     }
   };
   const redraw = () => { const y = SC().scrollTop; drawForm(v); SC().scrollTop = y; };
-  // question answers: the pencil opens a box; clicking outside the box saves the answer and closes it (no Save button, Vidya 2026-11-20).
-  // Typing alone saves nothing, and a locked (submitted) form never gets here because it has no pencil.
+  // question answers: the pencil opens a box; no Save button (Vidya 2026-11-20). The answer saves by itself a moment after
+  // typing stops (Harish 2026-11-20: "saved automatically only"), and clicking outside the box saves it and closes it.
+  // A locked (submitted) form never gets here because it has no pencil.
+  // While typing: only that answer is sent, quietly (no spinner, no redraw), so the box and the cursor stay where they are
+  const qQuiet = async id => {
+    const val = f.qa[id] || '', note = () => v.querySelector(`[data-qsv="${id}"]`);
+    if (val === (qOrig[id] ?? '') || !v.querySelector(`textarea[data-qt="${id}"]`)) return;
+    try { await apiCall('/form', { method: 'PUT', body: { empId: f.empId, month: f.month, qa: { [id]: val } } }); qOrig[id] = val; qSavedAt[id] = Date.now(); const n = note(); if (n) n.textContent = 'Saved automatically'; }
+    catch { const n = note(); if (n) n.textContent = 'Not saved yet: it saves when you click outside the box'; }
+  };
   const qSave = async id => {
     const val = f.qa[id] || '';
     if (val === (qOrig[id] ?? '')) return true; // unchanged: nothing to store
@@ -1699,6 +1713,7 @@ function wireForm(v) {
   if (v._qfo) v.removeEventListener('focusout', v._qfo);
   v.addEventListener('focusout', v._qfo = e => {
     const id = e.target.dataset && e.target.dataset.qt; if (!id) return;
+    clearTimeout(qTimer);
     qSave(id).then(ok => ok && setTimeout(() => {
       // wait a moment so a click elsewhere (another pencil, a button) still lands before the form is redrawn
       if (!v.querySelector(`textarea[data-qt="${id}"]`) || document.activeElement?.dataset?.qt === id) return; // page changed, or back in the box
@@ -1940,7 +1955,7 @@ const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
 // finished month. The Sample data switch shows made-up ratings with placeholder names (nothing saved).
 const AF = (() => { try { return { fy: 0, sample: false, ...JSON.parse(localStorage.getItem('pms.analytics') || '{}') }; } catch { return { fy: 0, sample: false }; } })();
 const afSave = () => { try { localStorage.setItem('pms.analytics', JSON.stringify(AF)); } catch {} };
-const AN_CARDS = ['anAvg', 'anStrong', 'anParam', 'anMove', 'anFunnel', 'anKra', 'anTime', 'anBands', 'anPar', 'anRace', 'anMeet', 'anAlert'];
+const AN_CARDS = ['anAvg', 'anStrong', 'anParam', 'anMove', 'anTrend', 'anGap', 'anFunnel', 'anKra', 'anTime', 'anBands', 'anPar', 'anRace', 'anMeet', 'anAlert', 'anPeople', 'anRev'];
 const AN_KRAS = [['operational', 'Operational', '--vr-anx-k1'], ['process', 'Process', '--vr-anx-k2'], ['people', 'People', '--vr-anx-k3']];
 let AN = null; // the last /api/analytics answer; the cards redraw from it when a card filter changes
 let AN_LAST = {}; // card -> its last HTML: only a card that changed plays its entrance again (a filter on one card leaves the rest still)
@@ -1960,6 +1975,7 @@ pages.analytics = async v => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     if (e.target.closest('#asample')) { AF.sample = !AN.sample; afSave(); return pages.analytics(v); }
     if (e.target.closest('[data-anremind]')) return remindAll();
+    const rk = e.target.closest('[data-anrank]'); if (rk) { AF.rank = rk.dataset.anrank; afSave(); anDraw(v); const b = v.querySelector(`[data-anrank="${rk.dataset.anrank}"]`); if (b) b.focus(); return; }
     const pt = e.target.closest('[data-anpar]'); if (pt) { CF.anPar.xpar = pt.dataset.anpar; cfSave(); anDraw(v); const b = v.querySelector(`[data-anpar="${pt.dataset.anpar}"]`); if (b) b.focus(); }
   };
   v.onchange = e => { if (e.target.id === 'afy') { AF.fy = +e.target.value; afSave(); pages.analytics(v); } };
@@ -2018,6 +2034,9 @@ function anDraw(v) {
   const chip = (x, unit = ' pts', inv = false) => { if (x == null || isNaN(x) || Math.abs(x) < .05) return ''; const up = x > .05, dn = x < -.05, good = inv ? dn : up; return `<span class="anchip ${up || dn ? (good ? 'up' : 'dn') : 'nt'}">${up ? '▲' : dn ? '▼' : '•'} ${Number.isInteger(x) ? Math.abs(x) : f1(Math.abs(x))}${unit}</span>`; };
   const none = t => `<p class="anx-none">${t}${d.sample ? '' : ' Switch on <b>Sample data</b> above to see how it looks.'}</p>`;
   const noScores = 'No submitted reviews in this period yet.';
+  // the old portal's reviews (April-October 2026) carry no parameter ratings and no review dates
+  const noPar = (ps, ms) => ms.some(m => sc(ps, m, 'total').length) ? '<p class="anx-none">No parameter ratings in this period. Reviews from the old portal have none; they start with reviews submitted in PMS.</p>' : none(noScores);
+  const now = c => pool(c).filter(p => !p.left); // people here now (the cards about people today leave out those who left)
   const out = {}; // card -> HTML, compared with the last draw so only changed cards animate in
   const card = (c, cls, title, sub, body, extra = '') => (out[c] = `<section class="anc ${cls}" data-c="${c}"><header><div><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</div><div class="anc-t">${extra}${cfPill(c)}</div></header><div class="anc-b">${body}</div></section>`);
   // Bklit UI pieces (Harish 2026-11-20): tooltip = title + one row per series with its dot (+ a footer line);
@@ -2050,12 +2069,12 @@ function anDraw(v) {
     if (!ms.some(m => sc(ps, m, 'total').length)) return card(c, 'c3', 'Strong performers (75%+)', span(ms), none(noScores));
     // Bklit bar chart: bars spring up from the base one after another; hover lights one month, dims the rest, month label as a pill
     const w = 220, h = 70, bw = w / ms.length, mx = Math.max(1, ...n);
-    return card(c, 'c3', 'Strong performers (75%+)', span(ms), `<div class="anbig">${num(n[n.length - 1])} ${ms.length > 1 ? chip(n[n.length - 1] - n[0], '') : ''}<small>in ${mon(ms[ms.length - 1])}</small></div>
+    return card(c, 'c3', 'Strong performers (75%+)', span(ms), `<div class="anbig">${num(n[n.length - 1])} ${ms.length > 1 ? chip(n[n.length - 1] - n[0], '') : ''}<small>of ${ps.filter(p => p.scores[ms[ms.length - 1]]).length} rated in ${mon(ms[ms.length - 1])}</small></div>
       <svg viewBox="0 0 ${w} ${h + 16}" role="img" aria-label="Strong performers per month">${n.map((x, i) => { const bh = Math.max(3, x / mx * h), lit = i === n.length - 1 ? '--vr-anx-yellow' : '--vr-anx-series', rated = ps.filter(p => p.scores[ms[i]]).length;
         return `<g data-hk="${ms[i]}" tabindex="0" ${tp(tipH(mlab(ms[i]), [[lit, 'Rated 75%+', x], ['--vr-anx-muted', 'Rated', rated]]))}><rect x="${i * bw}" y="0" width="${bw}" height="${h}" fill="transparent"/><rect class="grow" x="${i * bw + 4}" y="${h - bh}" width="${Math.max(4, bw - 8)}" height="${bh}" rx="${Math.min(6, Math.max(2, (bw - 8) / 2))}" style="--i:${i};fill:var(${lit})"/>${xlab(i * bw + bw / 2, h + 14, mon(ms[i]))}</g>`; }).join('')}</svg>`); })();
   // 3. Parameter rating (manager, out of 5): notch bar
   const k3 = (() => { const c = 'anParam', ps = pool(c), ms = per(c), pv = m => ps.map(p => p.scores[m]).filter(Boolean).flatMap(s => Object.values(s.params || {})), all = ms.flatMap(pv), v0 = mean(all);
-    if (v0 == null) return card(c, 'c3', "Parameter rating", span(ms), none(noScores));
+    if (v0 == null) return card(c, 'c3', "Parameter rating", span(ms), noPar(ps, ms));
     // Bklit sparkline (Harish 2026-11-20): the month-by-month average as a thin line that draws itself in, the latest month
     // as a yellow dot; hover a month for a crosshair, its dot and the numbers
     const pts = ms.map(m => { const a = pv(m); return { m, v: mean(a), n: a.length }; }).filter(p => p.v != null), first = pts[0].v, last = pts[pts.length - 1].v;
@@ -2066,7 +2085,7 @@ function anDraw(v) {
       ${pts.map((p, i) => `<g data-hk="${p.m}" tabindex="0" ${tp(tipH(mlab(p.m), [['--vr-anx-series', 'Average', p.v.toFixed(2) + ' / 5'], ['--vr-anx-muted', 'Ratings', p.n]]))}><rect x="${(X(i) - cw / 2).toFixed(1)}" y="0" width="${cw.toFixed(1)}" height="${H}" fill="transparent"/><line class="sp-x" x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="0" y2="${H}"/><circle class="sp-x sp-d" cx="${X(i).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.5"/></g>`).join('')}</svg>
       <span class="ancap">${d.params.map(q => esc(q.label)).slice(0, 3).join(', ')}${d.params.length > 3 ? '…' : ''}</span>`); })();
   // 4. Who is moving: one square per person, up / steady / down (first to last rated month in the period)
-  const k4 = (() => { const c = 'anMove', ps = pool(c), ms = per(c), mv = ps.map(p => { const r = ms.filter(m => p.scores[m]); return r.length < 2 ? null : { p, d: p.scores[r[r.length - 1]].total - p.scores[r[0]].total }; }).filter(Boolean);
+  const k4 = (() => { const c = 'anMove', ps = now(c), ms = per(c), mv = ps.map(p => { const r = ms.filter(m => p.scores[m]); return r.length < 2 ? null : { p, d: p.scores[r[r.length - 1]].total - p.scores[r[0]].total }; }).filter(Boolean);
     if (!mv.length) return card(c, 'c3', 'Who is moving', span(ms), none('Needs two rated months per person in the period.'));
     const up = mv.filter(x => x.d >= 2).sort((a, b) => b.d - a.d), dn = mv.filter(x => x.d <= -2).sort((a, b) => a.d - b.d), flat = mv.filter(x => x.d > -2 && x.d < 2), all = [...up, ...flat, ...dn];
     const cols = 15, sz = 11, g = 4;
@@ -2100,7 +2119,7 @@ function anDraw(v) {
       <div class="anrows anleg">${ks.map(x => `<div ${hk(x)}><i style="background:var(${x.col})"></i><span>${x.l}</span><b>${x.v != null ? f1(x.v) + '%' : '–'}</b>${ms.length > 1 && x.a != null && x.b != null ? chip(x.b - x.a) : '<em></em>'}<u class="anpb"><s style="width:${x.v != null ? x.v.toFixed(1) : 0}%;background:var(${x.col})"></s></u></div>`).join('')}</div>`); })();
   // 7. Reviews held on time (finished months): on time / late / missed, stacked, round tops
   const time = (() => { const c = 'anTime', ps = pool(c), ms = per(c), rows = ms.map(m => { const t = ps.map(p => p.timing[m]).filter(Boolean); return { m, on: t.filter(x => x === 'on').length, late: t.filter(x => x === 'late').length, miss: t.filter(x => x === 'missed').length, n: t.length }; });
-    if (!rows.some(r => r.n)) return card(c, 'c5', 'Reviews held on time', span(ms), '<p class="anx-none">No finished review months in this period yet.</p>');
+    if (!rows.some(r => r.n)) return card(c, 'c5', 'Reviews held on time', span(ms), `<p class="anx-none">${d.sample || (d.tracked && d.tracked < d.current) ? 'No finished review months in this period yet.' : 'On-time tracking starts with the first reviews held in PMS. Reviews from the old portal have no review dates, so those months are not counted as missed.'}</p>`);
     const w = 400, h = 250, L = 28, B = 22, T = 8, pw = w - L - 4, ph = h - B - T, bw = pw / rows.length, mx = Math.max(...rows.map(r => r.n)), y = x => T + ph * (1 - x / mx);
     let s = [0, .5, 1].map(f => Math.round(mx * f)).map(x => `<line class="ax-gl" x1="${L}" x2="${w - 4}" y1="${y(x)}" y2="${y(x)}"/><text class="ax-tk" x="${L - 6}" y="${y(x) + 4}" text-anchor="end">${x}</text>`).join('');
     // Bklit bars: each month's stack springs up from the base, one after another; hover = month pill + the three numbers
@@ -2126,7 +2145,7 @@ function anDraw(v) {
     if (!q) return card(c, 'c4', 'Parameters', "Manager's rating", '<p class="anx-none">No rating parameters in the questionnaire.</p>');
     const rv = (pp, mm) => pp.flatMap(p => mm.map(m => p.scores[m]).filter(Boolean).map(z => z.params && z.params[q.id]).filter(x => x != null));
     const all5 = rv(ps, ms), v0 = mean(all5), sub = `Manager's rating · ${span(ms)}`;
-    if (v0 == null) return card(c, 'c4', esc(q.label), sub, tabs + none(noScores));
+    if (v0 == null) return card(c, 'c4', esc(q.label), sub, tabs + noPar(ps, ms));
     const first = mean(rv(ps, [ms[0]])), lastV = mean(rv(ps, [ms[ms.length - 1]])), cnt = [1, 2, 3, 4, 5].map(k => all5.filter(x => Math.round(x) === k).length), tot = all5.length;
     const tv = [...new Set(ps.map(p => p.team))].map(t => ({ t, v: mean(rv(ps.filter(p => p.team === t), ms)) })).filter(x => x.v != null).sort((x, y) => y.v - x.v)[0];
     const seg = [['1–2', cnt[0] + cnt[1], '--vr-anx-o1'], ['3', cnt[2], '--vr-anx-o2'], ['4', cnt[3], '--vr-anx-o3'], ['5 ★', cnt[4], '--vr-anx-yellow']];
@@ -2156,7 +2175,7 @@ function anDraw(v) {
     for (let k = 1; k <= days; k++) { const n = cnt[k] || 0, fut = today && k > today, pos = lead + k - 1; g += `<span class="dd ${fut ? (n ? 'f h' + lvl(n) : 'f') : 'h' + lvl(n)} ${k === today ? 't' : ''}" style="--i:${pos % 7 + Math.floor(pos / 7)}" tabindex="0" ${tp(`<b class="tt">${k} ${esc(d.currentLabel)}</b><span class="ts">${wdName(k)}${k === today ? ' · today' : ''}</span><span class="tf">${n} review meeting${n === 1 ? '' : 's'} ${fut ? 'booked' : 'held'}</span>`)}>${k}</span>`; }
     return card(c, 'c4', `Review meetings · ${esc(d.currentLabel)}`, `${ps.length} booked · darker = more meetings · outlined = today`, `<div class="ancal">${g}</div><div class="anscale"><span>Less</span>${[0, 1, 2, 3, 4, 5, 6].map(i => `<i class="h${i}"></i>`).join('')}<span>More</span></div>`); })();
   // 12. Needs attention: picked from the numbers above, each with a way in
-  const alert = (() => { const c = 'anAlert', ps = pool(c), ms = upto.slice(-3), cur = ps.filter(p => p.cycle), nf = cur.filter(p => !p.cycle.filled).length;
+  const alert = (() => { const c = 'anAlert', ps = now(c), ms = upto.slice(-3), cur = ps.filter(p => p.cycle), nf = cur.filter(p => !p.cycle.filled).length;
     const gap = ps.map(p => ({ p, g: mean(ms.map(m => p.scores[m]).filter(s => s && s.self != null && s.mgr != null).map(s => s.self - s.mgr)) })).filter(x => x.g != null && x.g >= 15);
     const ts = [...new Set(ps.map(p => p.team))].map(t => ({ t, av: mean(ps.filter(p => p.team === t).map(p => avgOf(p, ms)).filter(x => x != null)) })).filter(x => x.av != null).sort((a, b) => a.av - b.av);
     const rise = ps.map(p => { const r = ms.filter(m => p.scores[m]); return r.length < 2 ? null : { p, d: p.scores[r[r.length - 1]].total - p.scores[r[0]].total, from: r[0] }; }).filter(x => x && x.d > 0).sort((a, b) => b.d - a.d)[0];
@@ -2168,12 +2187,89 @@ function anDraw(v) {
     ].filter(Boolean);
     return card(c, 'c4', 'Needs attention', 'Picked out for you', items.length ? `<div class="analerts">${items.map(([k, ic, t, a]) => `<div class="anal ${k}"><span class="ic">${ic}</span><p>${t}</p>${a}</div>`).join('')}</div>` : '<p class="anx-none">Nothing needs attention for these filters.</p>'); })();
 
+  // ---- history cards (Harish 2026-11-20): the old portal's April-October reviews plus everything submitted in PMS ----
+  // 13. Rating trend: the average per month, overall (thick) and per KRA, with the number of submitted reviews under it
+  const trend = (() => { const c = 'anTrend', ps = pool(c), ms = per(c);
+    const pts = ms.map(m => ({ m, t: mean(sc(ps, m, 'total')), o: mean(sc(ps, m, 'operational')), p: mean(sc(ps, m, 'process')), e: mean(sc(ps, m, 'people')), n: sc(ps, m, 'total').length }));
+    const has = pts.filter(x => x.t != null);
+    if (!has.length) return card(c, 'c8', 'Rating trend', span(ms), none(noScores));
+    const ser = [['t', 'Overall', '--vr-anx-ink', 3], ['o', 'Operational', '--vr-anx-k1', 1.75], ['p', 'Process', '--vr-anx-k2', 1.75], ['e', 'People', '--vr-anx-k3', 1.75]];
+    const vals = has.flatMap(x => ser.map(([k]) => x[k])).filter(v => v != null);
+    const lo = Math.max(0, Math.floor((Math.min(...vals, 75) - 4) / 10) * 10), hi = Math.min(100, Math.ceil((Math.max(...vals, 75) + 2) / 10) * 10), step = hi - lo > 50 ? 20 : 10;
+    const W = 680, L = 34, R = 8, T = 10, PH = 180, BT = T + PH + 30, BH = 30, H = BT + BH + 24, cw = (W - L - R) / ms.length;
+    const X = i => L + cw * (i + .5), Y = v => T + (1 - (v - lo) / (hi - lo)) * PH, mxN = Math.max(1, ...pts.map(x => x.n));
+    let s = '';
+    for (let v = lo; v <= hi; v += step) s += `<line class="ax-gl" x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text class="ax-tk" x="${L - 6}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end">${v}</text>`;
+    if (75 > lo && 75 < hi) s += `<line x1="${L}" x2="${W - R}" y1="${Y(75).toFixed(1)}" y2="${Y(75).toFixed(1)}" style="stroke:var(--vr-anx-yellow)" stroke-width="1.5" stroke-dasharray="5 4"/><text class="ax-tk" x="${W - R}" y="${(Y(75) - 5).toFixed(1)}" text-anchor="end">goal 75</text>`;
+    // a line per series through the months that have a value (a month with none breaks the line)
+    ser.slice().reverse().forEach(([k, , col, sw]) => { const runs = [[]]; pts.forEach((x, i) => { if (x[k] == null) { if (runs[runs.length - 1].length) runs.push([]); } else runs[runs.length - 1].push([X(i), Y(x[k])]); });
+      runs.filter(r => r.length).forEach(r => { s += r.length > 1 ? `<path class="sp-l" d="${smooth(r)}" pathLength="100" style="stroke:var(${col});stroke-width:${sw}"/>` : `<circle cx="${r[0][0].toFixed(1)}" cy="${r[0][1].toFixed(1)}" r="${sw}" style="fill:var(${col})"/>`; }); });
+    s += pts.map((x, i) => x.t == null ? '' : `<circle class="sp-end" cx="${X(i).toFixed(1)}" cy="${Y(x.t).toFixed(1)}" r="3.5" style="fill:var(${i === pts.length - 1 ? '--vr-anx-yellow' : '--vr-anx-ink'})"/>`).join('');
+    // one hover column per month: crosshair, the four values and the review count; the review bar sits in the same column
+    s += pts.map((x, i) => { const bh = x.n ? Math.max(3, x.n / mxN * BH) : 0, bw = Math.min(18, cw * .3);
+      return `<g data-hk="${x.m}" tabindex="0" ${tp(tipH(mlab(x.m), ser.map(([k, l, col]) => [col, l, x[k] != null ? f1(x[k]) + '%' : '–']).concat([['--vr-anx-s2', 'Reviews', x.n]])))}><rect x="${(X(i) - cw / 2).toFixed(1)}" y="0" width="${cw.toFixed(1)}" height="${H - 18}" fill="transparent"/><line class="sp-x" x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${T}" y2="${T + PH}"/>`
+        + ser.map(([k, , col]) => x[k] == null ? '' : `<circle class="sp-x" cx="${X(i).toFixed(1)}" cy="${Y(x[k]).toFixed(1)}" r="4" style="fill:var(${col});stroke:var(--vr-anx-card);stroke-width:2"/>`).join('')
+        + (bh ? `<rect class="grow" x="${(X(i) - bw).toFixed(1)}" y="${(BT + BH - bh).toFixed(1)}" width="${(2 * bw).toFixed(1)}" height="${bh.toFixed(1)}" rx="3" style="--i:${i};fill:var(--vr-anx-s2)"/>` : '')
+        + `<text class="ax-tk" x="${X(i).toFixed(1)}" y="${(BT + BH - bh - 4).toFixed(1)}" text-anchor="middle">${x.n || ''}</text>${xlab(X(i), H - 4, mon(x.m))}</g>`; }).join('');
+    const tot = pts.reduce((a, x) => a + x.n, 0), first = has[0], last = has[has.length - 1];
+    return card(c, 'c8', 'Rating trend', `Average per month · ${span(ms)} · ${tot} review${tot === 1 ? '' : 's'} ${has.length > 1 ? chip(last.t - first.t) : ''}`,
+      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Average rating by month, ${mon(first.m)} ${f1(first.t)}% to ${mon(last.m)} ${f1(last.t)}%">${s}</svg>`
+      + `<div class="ankeys">${ser.map(([, l, col]) => `<i style="background:var(${col})"></i>${l}`).join(' ')} <i style="background:var(--vr-anx-s2)"></i>Reviews submitted</div>`); })();
+  // 14. Self vs manager: how far people rate themselves above (or below) their manager, month by month
+  const gapc = (() => { const c = 'anGap', ps = pool(c), ms = per(c), ok = s => s && s.self != null && s.mgr != null;
+    const pts = ms.map(m => { const z = ps.map(p => p.scores[m]).filter(ok); return { m, s: mean(z.map(x => x.self)), g: mean(z.map(x => x.mgr)), n: z.length }; });
+    const all = ms.flatMap(m => ps.map(p => p.scores[m]).filter(ok));
+    if (!all.length) return card(c, 'c4', 'Self vs manager', span(ms), none(noScores));
+    const sA = mean(all.map(x => x.self)), mA = mean(all.map(x => x.mgr)), gap = sA - mA;
+    const each = now(c).map(p => mean(ms.map(m => p.scores[m]).filter(ok).map(s => s.self - s.mgr))).filter(x => x != null);
+    const above = each.filter(x => x >= 15).length, below = each.filter(x => x <= -10).length;
+    const dvs = pts.filter(x => x.n).map(x => x.s - x.g), W = 300, H = 112, mid = dvs.every(x => x >= 0) ? 84 : dvs.every(x => x <= 0) ? 6 : 47, room = dvs.some(x => x > 0) && dvs.some(x => x < 0) ? 38 : 76, mx = Math.max(3, ...dvs.map(Math.abs)), bw = W / ms.length;
+    const bars = `<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" style="stroke:var(--vr-anx-line)" stroke-width="1"/>` + pts.map((x, i) => {
+      if (!x.n) return xlab(i * bw + bw / 2, H - 4, mon(x.m));
+      const dv = x.s - x.g, bh = Math.max(2, Math.abs(dv) / mx * room);
+      return `<g data-hk="${x.m}" tabindex="0" ${tp(tipH(mlab(x.m), [['--vr-anx-warn', 'Self', f1(x.s) + '%'], ['--vr-anx-series', 'Manager', f1(x.g) + '%']], `${dv >= 0 ? '+' : '−'}${f1(Math.abs(dv))} points self ${dv >= 0 ? 'above' : 'below'} manager · ${x.n} reviews`))}><rect x="${i * bw}" y="0" width="${bw}" height="${H - 18}" fill="transparent"/>`
+        + `<rect class="grow" x="${(i * bw + bw * .22).toFixed(1)}" y="${(dv >= 0 ? mid - bh : mid).toFixed(1)}" width="${(bw * .56).toFixed(1)}" height="${bh.toFixed(1)}" rx="3" style="--i:${i};fill:var(${dv >= 0 ? '--vr-anx-warn' : '--vr-anx-series'})"/>${xlab(i * bw + bw / 2, H - 4, mon(x.m))}</g>`; }).join('');
+    return card(c, 'c4', 'Self vs manager', `Self rating minus manager rating · ${span(ms)}`, `<div class="anbig"><span>${gap >= 0 ? '+' : '−'}${num(+f1(Math.abs(gap)), 1)}</span><small>points self ${gap >= 0 ? 'above' : 'below'} manager</small></div>`
+      + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Self minus manager rating by month">${bars}</svg>`
+      + `<div class="anrows"><div><i style="background:var(--vr-anx-warn)"></i><span>Self rating</span><b>${f1(sA)}%</b><em></em></div><div><i style="background:var(--vr-anx-series)"></i><span>Manager rating</span><b>${f1(mA)}%</b><em></em></div>`
+      + `<div><i style="background:var(--vr-anx-bad)"></i><span>People 15+ points above their manager</span><b>${above}</b><em>${pct(above, each.length)}%</em></div><div><i style="background:var(--vr-anx-line)"></i><span>People 10+ points below their manager</span><b>${below}</b><em>${pct(below, each.length)}%</em></div></div>`); })();
+  // 15. People: ranked by their average in the period (Top / Needs support) or by the change from their first to last rated
+  //     month (Most improved / Dropped most); a small line per person, the row opens their Team Report
+  const peopleC = (() => { const c = 'anPeople', ps = now(c), ms = per(c), tab = ['top', 'low', 'up', 'down'].includes(AF.rank) ? AF.rank : 'top';
+    const rows = ps.map(p => { const r = ms.filter(m => p.scores[m] && p.scores[m].total != null); if (!r.length) return null; const v = r.map(m => p.scores[m].total); return { p, r, v, av: mean(v), d: r.length > 1 ? v[v.length - 1] - v[0] : null }; }).filter(Boolean);
+    const TABS = [['top', 'Top'], ['low', 'Needs support'], ['up', 'Most improved'], ['down', 'Dropped most']];
+    const tabs = `<div class="antabs" role="tablist" aria-label="Show">${TABS.map(([k, l]) => `<button type="button" role="tab" class="antab ${k === tab ? 'on' : ''}" aria-selected="${k === tab}" data-anrank="${k}">${l}</button>`).join('')}</div>`;
+    if (!rows.length) return card(c, 'c6', 'People', span(ms), tabs + none(noScores));
+    const list = tab === 'low' ? rows.slice().sort((a, b) => a.av - b.av) : tab === 'up' ? rows.filter(x => x.d > 0).sort((a, b) => b.d - a.d) : tab === 'down' ? rows.filter(x => x.d < 0).sort((a, b) => a.d - b.d) : rows.slice().sort((a, b) => b.av - a.av);
+    const N = 8, lo = Math.min(40, ...rows.flatMap(x => x.v)), hi = Math.max(100, ...rows.flatMap(x => x.v)), step = 78 / Math.max(1, ms.length - 1);
+    const spark = x => { const P = ms.map((m, i) => [i, m]).filter(([, m]) => x.r.includes(m)).map(([i, m]) => [3 + i * step, 3 + (1 - (x.p.scores[m].total - lo) / (hi - lo)) * 18]), e = P[P.length - 1];
+      return `<svg viewBox="0 0 84 24" aria-hidden="true">${P.length > 1 ? `<path d="${smooth(P)}" fill="none" style="stroke:var(--vr-anx-series)" stroke-width="1.6" stroke-linecap="round"/>` : ''}<circle cx="${e[0].toFixed(1)}" cy="${e[1].toFixed(1)}" r="2.6" style="fill:var(--vr-anx-yellow)"/></svg>`; };
+    const row = (x, i) => `<a class="anpr" href="#/yearly/${x.p.id}" ${tp(tipH(esc(x.p.name), x.r.map(m => ['--vr-anx-series', mlab(m), f1(x.p.scores[m].total) + '%']), `${esc(tl(x.p.team))} · average ${f1(x.av)}%`))}>`
+      + `<span class="anrk ${i ? '' : 'g'}">${i + 1}</span><span class="nm"><b>${esc(x.p.name)}</b><small>${esc(tl(x.p.team))}${x.p.designation ? ' · ' + esc(x.p.designation) : ''}</small></span>${spark(x)}<span class="v">${f1(x.av)}</span>${(x.d != null && chip(x.d)) || '<em></em>'}</a>`;
+    const body = list.length ? `<div class="anpl">${list.slice(0, N).map(row).join('')}</div>${list.length > N ? `<span class="ancap">${list.length - N} more · the full list is in Team Report</span>` : ''}`
+      : `<p class="anx-none">${tab === 'up' ? 'Nobody went up' : 'Nobody went down'} between their first and last rated month in this period.</p>`;
+    return card(c, 'c6', 'People', `${tab === 'up' || tab === 'down' ? 'Change from first to last rated month' : 'Average rating'} · ${rows.length} people · ${span(ms)}`, tabs + body); })();
+  // 16. Ratings by reviewer: who did the review at the time (old reviewers too), how many, the manager rating they gave
+  //     against the average of all reviewers (the tick), and how far their people rate themselves above them
+  const revC = (() => { const c = 'anRev', ps = pool(c), ms = per(c), by = new Map();
+    ps.forEach(p => ms.forEach(m => { const s = p.scores[m]; if (!s || !s.by) return; if (!by.has(s.by)) by.set(s.by, { name: s.by, n: 0, ppl: new Set(), mgr: [], self: [], tot: [] }); const x = by.get(s.by);
+      x.n++; x.ppl.add(p.name); if (s.mgr != null) x.mgr.push(s.mgr); if (s.self != null) x.self.push(s.self); if (s.total != null) x.tot.push(s.total); }));
+    const list = [...by.values()].map(x => ({ ...x, m: mean(x.mgr), s: mean(x.self), t: mean(x.tot) })).filter(x => x.m != null).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    if (!list.length) return card(c, 'c6', 'Ratings by reviewer', span(ms), none(noScores));
+    const org = mean(list.flatMap(x => x.mgr));
+    const row = x => { const g = x.s != null ? x.s - x.m : null, dv = x.m - org;
+      return `<div class="anrv-r" tabindex="0" ${tp(tipH(esc(x.name), [['--vr-anx-series', 'Manager rating given', f1(x.m) + '%'], ['--vr-anx-warn', 'Self rating of their people', x.s != null ? f1(x.s) + '%' : '–'], ['--vr-anx-ink', 'Overall rating', x.t != null ? f1(x.t) + '%' : '–']], `${x.n} reviews of ${x.ppl.size} ${x.ppl.size === 1 ? 'person' : 'people'} · ${Math.abs(dv) < .05 ? 'same as' : f1(Math.abs(dv)) + ' points ' + (dv > 0 ? 'above' : 'below')} the average reviewer`))}>`
+        + `<b>${esc(x.name)}</b><span class="n">${x.n}<small> · ${x.ppl.size}</small></span><span class="anrv-bar"><u><s style="width:${Math.min(100, x.m).toFixed(1)}%"></s><i style="left:calc(${Math.min(100, org).toFixed(1)}% - 1px)"></i></u><em>${f1(x.m)}</em></span>`
+        + `<em class="g ${g != null && Math.abs(g) >= 10 ? 'w' : ''}">${g == null ? '–' : (g >= 0 ? '+' : '−') + f1(Math.abs(g))}</em></div>`; };
+    return card(c, 'c6', 'Ratings by reviewer', `Manager rating given · tick = average of all reviewers (${f1(org)}%) · ${span(ms)}`,
+      `<div class="anrv"><div class="anrv-h"><span>Reviewer</span><span title="Reviews done · people reviewed">Reviews · people</span><span>Manager rating given</span><span title="Average self rating minus manager rating of the people they reviewed">Self gap</span></div>${list.map(row).join('')}</div>`); })();
+
   const fySel = d.fys.length > 1 ? `<select id="afy" aria-label="Financial year">${d.fys.map(y => `<option value="${y}" ${y === d.fy ? 'selected' : ''}>FY ${y}-${y + 1}</option>`).join('')}</select>` : '';
   v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · ${d.sample ? 'SAMPLE DATA' : 'submitted reviews only'}`) + `
   <div class="row anbar">${fySel}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
   ${d.sample ? '<div class="asample" role="note"><b>Sample data.</b> These ratings are made up to show how the charts look. Names are placeholders, nothing is saved, and real reviews are not changed. Switch "Sample data" off to see the real reviews.</div>' : ''}
-  <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}</div></div>
-  <p class="small">Each card has its own Filter. Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA); parameters are the manager's rating out of 5. "On time" = the review was held inside the team's review window.</p>`;
+  <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${trend}${gapc}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}${peopleC}${revC}</div></div>
+  <p class="small">Each card has its own Filter. Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA, then by KRA); parameters are the manager's rating out of 5. April to October 2026 come from the old PMS portal, which had no parameter ratings or review dates. People who have left count in the months they were reviewed, but not in Who is moving, People or Needs attention. "On time" = the review was held inside the team's review window.</p>`;
   // entrance (Bklit-style motion, CSS under .anin): only for cards whose content changed since the last draw
   const prev = AN_LAST; AN_LAST = out;
   v.querySelectorAll('.anc[data-c]').forEach(s => {
@@ -2457,7 +2553,7 @@ pages.scheduling = async v => {
     && (SF.sinv === 'any' || (SF.sinv === 'sent') === !!r.invite) && anyOf(SF.sst, r.status));
   v.innerHTML = head('Review scheduling', d.adminView && !S.me.viewingAs ? 'Review windows, and a date and time for any review (for example when a manager is away). Rescheduling moves the calendar invite too.' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
   ${calCard}
-  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th></th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td style="text-align:right"><button class="btn sm" data-win="${esc(w.key)}">Edit</button></td>` : ''}</tr>`).join('')}</table></div>
+  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th class="tact">Action</th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td class="tact"><button class="btn sm" data-win="${esc(w.key)}" title="Change the ${esc(w.label)} review window">${ico('pencil')}Edit</button></td>` : ''}</tr>`).join('')}</table></div>
   <div class="row sechd"><h2>Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
   ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
   <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>

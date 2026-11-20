@@ -1108,6 +1108,7 @@ select.fssel{background-image:var(--vr-caret);background-repeat:no-repeat;backgr
   --vr-shadow:0 2px 10px rgba(35,64,139,0.06);--vr-shadow-lg:0 8px 28px rgba(35,64,139,0.14);
   --vr-orb:#2d4f9e;--vr-orb2:#3a5fb5;
   --vr-pms-blue:#cbdaff;--vr-pms-blue-50:#e8eeff;--vr-pms-line:#d9dada;--vr-pms-on:#ffffff;
+  --vr-tbl-line:#eceff4;--vr-tbl-vline:#f3f5f8;--vr-tbl-hline:rgba(255,255,255,.10);
 }
 .dark{
   --vr-navy-50:#1a2645;--vr-navy-100:#24325a;--vr-navy-600:#4a6fd1;--vr-navy-700:#2d4f9e;--vr-navy-800:#23408b;--vr-navy-900:#0a1730;
@@ -1119,6 +1120,7 @@ select.fssel{background-image:var(--vr-caret);background-repeat:no-repeat;backgr
   --vr-shadow:0 2px 12px rgba(0,0,0,0.4);--vr-shadow-lg:0 8px 28px rgba(0,0,0,0.5);
   --vr-orb:#1b3a7d;--vr-orb2:#2a4f9e;
   --vr-pms-blue:#24325a;--vr-pms-blue-50:#1a2645;--vr-pms-line:#2f3a55;--vr-pms-on:#ffffff;
+  --vr-tbl-line:#232d47;--vr-tbl-vline:#1d2640;--vr-tbl-hline:rgba(255,255,255,.08);
 }
 body{background-color:var(--vr-card)}
 /* fields: the portal's grey boxes (form-control / form-select #ececec, same border) */
@@ -1201,7 +1203,17 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--vr-n-300);border
 .pal-f kbd{margin-right:2px}
 @media (max-width:900px){.tb-search{min-width:0}.tb-search span,.tb-search kbd{display:none}}
 /* Scheduling › Calendar: Monday-to-Sunday grid of booked reviews; window days light blue, today outlined in navy */
-.vsw{display:inline-flex;gap:4px}
+/* Section header with a view switch and the Filter pill on the right (Scheduling › Team members, Review Report's
+   Employee-wise): space above like a normal h2; the switch is one segmented control, same height as the Filter pill */
+.row.sechd{align-items:center;margin:28px 0 12px}
+/* Action column (Review windows' Edit): named head, only as wide as its button, button centred */
+.tablewrap table th.tact,.tablewrap table td.tact{width:1%;padding-left:20px;padding-right:20px;white-space:nowrap;text-align:center}
+.row.sechd h2{margin:0}
+.vsw{display:inline-flex;align-items:center;gap:2px;padding:1px;border:1px solid var(--vr-n-200);border-radius:9999px;background:var(--vr-card)}
+.vsw .chip.vchip{gap:5px;padding:3px 11px;border:0;border-radius:9999px;background:none;font-size:12px;line-height:16px;font-weight:600;color:var(--vr-n-700)}
+.vsw .chip.vchip:hover{background:var(--vr-n-100)}
+.vsw .chip.vchip.on{background:var(--vr-navy-800);color:var(--vr-pms-on)}
+.vsw .chip.vchip svg{width:13px;height:13px}
 .scal{overflow:hidden;border:1px solid var(--vr-pms-line);border-radius:8px;background:var(--vr-card)}
 .scal-h,.scal-g{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
 .scal-h span{padding:8px 10px;background:var(--vr-thead);font-size:13px;font-weight:700;color:var(--vr-thead-text)}
@@ -1300,6 +1312,7 @@ h1{font-size:24px;line-height:30px;font-weight:500;letter-spacing:0}
 [data-locked]{cursor:not-allowed;background-color:var(--vr-n-50)}
 .opf-unsaved{align-self:center;margin-right:10px;font-size:13px;font-weight:500;color:var(--vr-warn-700)}
 .opf-qbtns{margin-top:6px}
+.opf-qsv{min-height:16px;margin-top:4px;color:var(--vr-n-500)}
 .opf-w input{width:70px;margin-left:4px;padding:2px 6px;font-size:13px;line-height:18px}
 .opf-pen{padding:3px;color:var(--vr-pms-y)}.opf-pen:hover{color:var(--vr-pms-y-hover)}.opf-pen svg{width:17px;height:17px}
 .opf td .opf-pen{vertical-align:middle}
@@ -1381,16 +1394,20 @@ select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-
    thin grid lines between all cells, light blue for the second head row and the average rows, light blue on hover.
    Yellow stays for buttons and the Team Report Total row (Fiza). Applies to every table, so they all look the same.
    ===================================================================== */
-.tablewrap table:not(.opf-t) th{border-right:1px solid rgba(255,255,255,.22)}
+/* Lines kept soft (Harish 2026-11-20: "too bright, should feel like information, not a sheet"): faint row lines, column
+   lines fainter still, a light outer border. The monthly form (.opf) keeps its own grid. */
+.tablewrap:not(.opf .tablewrap){border-color:var(--vr-tbl-line)}
+.tablewrap table:not(.opf-t) th{border-right:1px solid var(--vr-tbl-hline)}
 .tablewrap table:not(.opf-t) th:last-child{border-right:0}
-.tablewrap table:not(.opf-t) td{border-right:1px solid var(--vr-pms-line);border-bottom:1px solid var(--vr-pms-line);color:var(--vr-n-900)}
+.tablewrap table:not(.opf-t) td{border-right:1px solid var(--vr-tbl-vline);border-bottom:1px solid var(--vr-tbl-line);color:var(--vr-n-900)}
+.tablewrap table:not(.opf-t) tr:last-child>td{border-bottom:0}
 .tablewrap table:not(.opf-t) td:last-child{border-right:0}
 .rtab tr:nth-child(even)>td,.pmsfull tr:nth-child(even)>td.stk{background:var(--vr-card)}
 .tablewrap table:not(.opf-t) tr:hover>td{background:var(--vr-pms-blue-50)}
 .tablewrap table:not(.opf-t) .mut{color:var(--vr-n-900)}
 .pmsfull .stk3{box-shadow:none}
 /* Team Report (= the portal's Yearly Reporting): KRA head row light blue with dark bold names, averages light blue */
-.tablewrap table.ytab th{background:var(--vr-pms-blue);border-right:1px solid var(--vr-pms-line);border-bottom:1px solid var(--vr-pms-line);color:var(--vr-n-900);font-weight:700}
+.tablewrap table.ytab th{background:var(--vr-pms-blue);border-right:1px solid var(--vr-tbl-line);border-bottom:1px solid var(--vr-tbl-line);color:var(--vr-n-900);font-weight:700}
 .tablewrap table.ytab th.off{color:var(--vr-n-500)}
 .ytab tr.yavg>td,.ytab tr.yavg:hover>td{background:var(--vr-pms-blue);font-weight:700}
 .ytab tr.ytot>td,.ytab tr.ytot:hover>td{background:var(--vr-pms-y-50);font-weight:700}
@@ -1539,6 +1556,34 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 @keyframes an-lit{from{opacity:.15}}
 @keyframes an-pop{from{opacity:0;transform:scale(.4)}}
 @keyframes an-bar{from{transform:scaleX(0)}}
+/* Analytics history cards (Harish 2026-11-20): People ranking rows (rank, name + team, small line, average, change) and
+   Ratings by reviewer (reviews, manager rating bar with a tick at the average of all reviewers, self gap) */
+.anpl{display:grid;gap:2px}
+.anpr{display:grid;grid-template-columns:22px minmax(0,1fr) 84px 42px 70px;gap:10px;align-items:center;margin:0 -8px;padding:5px 8px;border-radius:10px;font-size:13px;color:inherit;text-decoration:none!important;transition:background-color .15s}
+.anpr:hover,.anpr:focus-visible{outline:none;background:var(--vr-anx-line2)}
+.anpr .nm{display:flex;flex-direction:column;min-width:0}
+.anpr .nm b{overflow:hidden;font-weight:600;white-space:nowrap;text-overflow:ellipsis;color:var(--vr-anx-ink)}
+.anpr .nm small{overflow:hidden;font-size:11.5px;white-space:nowrap;text-overflow:ellipsis;color:var(--vr-anx-muted)}
+.anpr svg{display:block;width:84px;height:24px;overflow:visible}
+.anpr .v{font-weight:800;text-align:right;font-variant-numeric:tabular-nums;color:var(--vr-anx-ink)}
+.anpr .anchip,.anpr em{justify-self:end}
+.anrv{max-height:360px;overflow:auto;margin:0 -4px;padding:0 4px;scrollbar-width:thin}
+.anrv-h,.anrv-r{display:grid;grid-template-columns:minmax(0,1.2fr) 92px minmax(0,1.5fr) 56px;gap:10px;align-items:center;font-size:13px}
+.anrv-h{position:sticky;top:0;z-index:1;padding:0 0 6px;background:var(--vr-anx-card);font-size:11.5px;font-weight:600;color:var(--vr-anx-muted)}
+.anrv-h span:nth-child(2),.anrv-h span:last-child{text-align:right}
+.anrv-r{padding:7px 0;border-top:1px solid var(--vr-anx-line2);outline:none}
+.anrv-r:hover,.anrv-r:focus-visible{background:var(--vr-anx-line2)}
+.anrv-r b{overflow:hidden;font-weight:600;white-space:nowrap;text-overflow:ellipsis;color:var(--vr-anx-ink)}
+.anrv-r .n{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:var(--vr-anx-ink)}
+.anrv-r .n small{font-weight:400;color:var(--vr-anx-muted)}
+.anrv-bar{display:flex;align-items:center;gap:8px;min-width:0}
+.anrv-bar u{position:relative;flex:1;height:6px;border-radius:3px;background:var(--vr-anx-line2);text-decoration:none}
+.anrv-bar s{position:absolute;top:0;bottom:0;left:0;border-radius:3px;background:var(--vr-anx-series);text-decoration:none}
+.anrv-bar i{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;background:var(--vr-anx-ink)}
+.anrv-bar em{min-width:34px;font-style:normal;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;color:var(--vr-anx-ink)}
+.anrv-r .g{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;color:var(--vr-anx-ink2)}
+.anrv-r .g.w{font-weight:700;color:var(--vr-anx-warn)}
+@media (max-width:640px){.anpr{grid-template-columns:22px minmax(0,1fr) 42px 64px}.anpr svg{display:none}.anrv-h,.anrv-r{grid-template-columns:minmax(0,1fr) 48px minmax(0,1fr) 48px}}
 @media (max-width:1100px){.anc.c3,.anc.c6{grid-column:span 6}.anc.c4,.anc.c5,.anc.c8,.anc.c12{grid-column:span 12}}
 @media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}}
 @media (prefers-reduced-motion:reduce){.anx [data-hk],.pslice,.anleg>div,.sp-x{transition:none}#antip{animation:none}}

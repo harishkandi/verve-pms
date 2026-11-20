@@ -1409,28 +1409,38 @@ route('GET', '/api/analytics', ({ user, q }) => {
   const fy = Math.min(Math.max(+q.fy || curFy, firstFy), curFy), months = D.fyMonths(fy).filter(m => m <= config.currentMonth);
   const pool = user.role === 'admin' ? employees : L.subordinates(user.id);
   const people = pool.filter(e => e.active && e.role !== 'admin' && e.managerId);
+  // people who have left still count in the months they were reviewed (Harish 2026-11-20: precise history); marked
+  // left: true, the page keeps them out of the cards about people now (who is moving, needs attention, this month)
+  const mine = new Set([user.id, ...people.map(e => e.id)]);
+  const gone = employees.filter(e => !e.active && e.role !== 'admin' && e.managerId && (user.role === 'admin' || mine.has(e.managerId))
+    && months.some(m => { const f = L.peek(e.id, m); return f && f.submitted; }));
+  // on time / late / missed only for months whose review dates were kept in PMS: the old portal's data (f.imported) has
+  // none, so the months before PMS was used are not counted as missed
+  const tracked = Object.values(D.forms).filter(f => !f.imported && (f.mgrRatedOn || f.reviewDate)).map(f => f.month).sort()[0] || null;
   const params = L.activeQuestions(config.currentMonth).filter(x => x.type === 'rating').map(x => ({ id: x.id, label: x.text }));
   const base = { fy, fyLabel: `FY ${fy}-${fy + 1}`, fys: Array.from({ length: curFy - firstFy + 1 }, (_, i) => firstFy + i),
     months: months.map(m => ({ key: m, label: D.monthLabel(m) })), current: config.currentMonth, currentLabel: D.monthLabel(config.currentMonth), today: config.today,
     params, groups: DESIG_GROUPS, scope: user.role === 'admin' ? 'Organisation' : 'Everyone under you' };
   const who = e => { const m = L.emp(e.managerId); return { team: e.team, designation: e.designation || '', group: desigGroup(e), managerId: e.managerId, manager: m ? m.name : '' }; };
   if (q.sample === '1') return { ...base, ...sampleAnalytics(people, months, params, who), sample: true };
-  const rows = people.map(e => {
+  const rows = [...people, ...gone].map(e => {
     const scores = {}, timing = {};
     for (const m of months) {
       const f = L.peek(e.id, m);
       if (!f) continue;
-      if (m < config.currentMonth) { const d = L.dueInfo(f).due; timing[m] = d === 'Within due date' ? 'on' : d === 'After due date' ? 'late' : 'missed'; }
+      if (m < config.currentMonth && tracked && m >= tracked && e.active) { const d = L.dueInfo(f).due; if (d !== 'Not recorded') timing[m] = d === 'Within due date' ? 'on' : d === 'After due date' ? 'late' : 'missed'; }
       if (!f.submitted || L.isNewJoiner(f)) continue;
       const sm = L.kraSummary(f), k = Object.fromEntries(sm.kras.map(x => [x.key, x.subKras ? round2(x.scoreRaw) : null]));
       const pr = {}; params.forEach(p => { const a = f.qa[p.id]; if (a && a.mgr != null && a.mgr !== '') pr[p.id] = +a.mgr; });
-      scores[m] = { total: sm.rating, operational: k.operational, process: k.process, people: k.people, self: sideScore(f, 'self'), mgr: sideScore(f, 'mgr'), params: pr };
+      const rb = f.reviewedBy || {}, rm = rb.managerId ? L.emp(rb.managerId) : null; // who reviewed it at the time
+      scores[m] = { total: sm.rating, operational: k.operational, process: k.process, people: k.people, self: sideScore(f, 'self'), mgr: sideScore(f, 'mgr'), params: pr,
+        by: rm ? rm.name : rb.manager || '', byId: rm ? rm.id : null, old: !!f.imported };
     }
-    const f = L.peek(e.id, config.currentMonth);
+    const f = e.active ? L.peek(e.id, config.currentMonth) : null;
     const cycle = f ? { scheduled: !!f.scheduledDate, meeting: f.scheduledDate || null, filled: L.formStatus(f) === 'Filled', rated: L.reviewStatus(f) === 'Review Completed', submitted: !!f.submitted } : null;
-    return { id: e.id, name: e.name, ...who(e), scores, timing, cycle };
+    return { id: e.id, name: e.name, ...who(e), left: !e.active, scores, timing, cycle };
   });
-  return { ...base, people: rows };
+  return { ...base, tracked, people: rows };
 });
 
 // Sample data for Performance Analytics (Harish 2026-11-19: to see the charts before real reviews are submitted).

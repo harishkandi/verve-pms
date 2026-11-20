@@ -219,6 +219,18 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   clears it): `L.FINAL_STATUSES` = Review Pending, Review Done, Questionnaire Pending, Questionnaire Done, PMS form
   incomplete/errors/queries, Employee on leave, Serving Notice, N/A ("Review not done" = Review Pending). Full details: first
   column "S.No" (also in the CSV), S.No / Employee Code / Name stick while scrolling sideways, even column spacing.
+  Past reviews April-October 2026 (Harish 2026-11-20) come from the old portal's export "t1" (CSV in Downloads, kept as
+  `pms/private/history-2026.csv`), written by `node private/import-history.js [--apply]` (git-ignored, same local /
+  staging switches as the codes script): one form per person-month, KRA weight = sum of its sub-KRA weights, the
+  sheet's Remark = self remark; every KRA with both ratings = submitted + locked, `reviewedBy` = the sheet's manager (old
+  reviewers not in PMS keep only the name), else unfinished; `f.imported` = {from, on, manager} shows a note on the
+  form; `qSnapshot` = that month's questions (shown "Not added"; the export has no answers; an empty list hid the
+  whole Question-Answers section, repaired by the script). For imported forms `logic.js` does not flag the missing review
+  date, question answers or manager remarks (not in the export), and `dueInfo` says "Not recorded" (Analytics skips
+  them in Reviews held on time); real gaps (SOP links, weights, rating gaps) are still flagged. People in the sheet not in PMS were added as inactive
+  (`src: 'history'`, kept by list imports); 6 spelling fixes in `ALIAS`. Never touches a form that has KRAs; the current
+  month is skipped. Applied to LOCAL data 2026-11-20 (backup `private/state.before-history-2026-11-20.json`); staging
+  not yet.
   Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
@@ -285,7 +297,15 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   (`.antab`, short names, navy = selected; Harish 2026-11-19: hidden in the Filter nobody finds it; he also rejected a
   radar and one card per parameter). The pick is kept in `CF.anPar.xpar`, hidden from the panel (`PF.hide.anPar`); pie of the
   manager's 1-2 / 3 / 4 / 5 ratings, full marks yellow, average in the middle. Team race (squares), Review meetings
-  calendar (this month, held up to `config.today`, booked after), Needs attention. EVERY card has its own Filter pill =
+  calendar (this month, held up to `config.today`, booked after), Needs attention. History cards (Harish 2026-11-20, on the old portal's
+  April-October data): Rating trend (overall + KRA lines per month, review count bars), Self vs manager (gap per month,
+  people 15+ above / 10+ below), People (tabs Top / Needs support / Most improved / Dropped most, `AF.rank`), Ratings by
+  reviewer (`scores[m].by` = `f.reviewedBy` at the time; manager rating given vs the average of all reviewers, self
+  gap). Card period defaults to the financial year (`xper: 'fy'`; saved "6" moved once, `pms.anPerV`). The API also
+  sends people who LEFT (`left: true`) for the months they were reviewed (aggregates count them; Who is moving, People,
+  Needs attention use `now()` = without them), and `tracked` = first month with a review date kept in PMS: on time /
+  late / missed only from then (old-portal months are not "missed"). Checked 2026-11-20 against the CSV: all 343
+  scores, monthly counts and averages identical. EVERY card has its own Filter pill =
   the shared card filter panel (`CF_CARDS` an*, local, keys `xper` period 3 / 6 / FY, `xteam`, `xdesig`, `xmgr`, `xpar`;
   `free: true` keeps a saved pick whose choices only load later); no other filters on the page. API rows per person:
   team, group, managerId / manager, `scores[month]` (submitted only: total, KRAs, self, mgr, params), `timing[month]`

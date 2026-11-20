@@ -132,7 +132,8 @@ function validate(f) {
   const e = emp(f.empId);
   const nj = isNewJoiner(f);
 
-  if (blank(f.reviewDate)) add('block', 'Form', 'REVIEW_DATE', 'Review Date is mandatory. Please enter the review date before submitting the form.', 'Review date missing');
+  // forms brought over from the old portal (f.imported) have no review date in the export: not flagged
+  if (blank(f.reviewDate) && !f.imported) add('block', 'Form', 'REVIEW_DATE', 'Review Date is mandatory. Please enter the review date before submitting the form.', 'Review date missing');
 
   if (!nj) {
     for (const [k, label] of KRAS) {
@@ -144,7 +145,8 @@ function validate(f) {
         if (has(r.mgr) && has(r.self) && +r.mgr !== +r.self && blank(r.mgrRemark)) noRemark.push(r.kpi);
       });
       if (miss.length) add('block', label, 'SELF_MISSING', `Self rating and self remark are mandatory. Missing in ${label}: ${miss.join(', ')}.`, `Self rating/remark missing in ${label}: ${miss.join(', ')}`);
-      if (noRemark.length) add('block', label, 'MGR_REMARK', `Manager remark is mandatory where the manager rating differs from the self rating. Missing in ${label}: ${noRemark.join(', ')}.`, `Manager remark missing in ${label}: ${noRemark.join(', ')}`);
+      // old-portal forms (f.imported): the export had one remark column (the employee's), so no manager remarks to check
+      if (noRemark.length && !f.imported) add('block', label, 'MGR_REMARK', `Manager remark is mandatory where the manager rating differs from the self rating. Missing in ${label}: ${noRemark.join(', ')}.`, `Manager remark missing in ${label}: ${noRemark.join(', ')}`);
       const sum = rows.reduce((a, r) => a + (+r.weight || 0), 0);
       if (rows.length && sum !== +weight) add('flag', label, 'SUBKRA_SUM', `The total weightage of Sub-KRAs under ${label} must be ${weight}%. The current total is ${sum}%.`);
       // the rating gap is flagged per sub-KRA, so the flag says which one
@@ -188,7 +190,8 @@ function validate(f) {
   }
 
   // questionnaire
-  const qs = activeQuestions(f.month, f);
+  // old-portal forms (f.imported): the export had no question answers, so blank answers there are not flagged
+  const qs = f.imported && !Object.keys(f.qa || {}).length ? [] : activeQuestions(f.month, f);
   let qComplete = true;
   const short = [];
   qs.filter(q => q.type === 'text').forEach((q, i) => { if (shortAnswer(f.qa[q.id], q.id)) short.push(i + 1); });
@@ -295,7 +298,7 @@ function trackReviewDay(f, today) {
 }
 function dueInfo(f) {
   const e = emp(f.empId), w = D.windowOf(e, f.month);
-  const actual = actualDate(f), due = actual ? (actual <= w.end ? 'Within due date' : 'After due date') : 'Pending';
+  const actual = actualDate(f), due = actual ? (actual <= w.end ? 'Within due date' : 'After due date') : f.imported ? 'Not recorded' : 'Pending'; // old-portal forms: no date in the export
   return { windowStart: w.start, dueDate: w.end, due };
 }
 
