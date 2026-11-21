@@ -233,7 +233,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   form; `qSnapshot` = that month's questions (shown "Not added"; the export has no answers; an empty list hid the
   whole Question-Answers section, repaired by the script). For imported forms `logic.js` does not flag the missing review
   date, question answers or manager remarks (not in the export), and `dueInfo` says "Not recorded" (Analytics skips
-  them in Reviews held on time); real gaps (SOP links, weights, rating gaps) are still flagged. People in the sheet not in PMS were added as inactive
+  them in Reviews held on time); an imported form counts as "Filled" when it has KRAs and every sub-KRA has a self
+  rating (`importedFilled` in `logic.js`, Harish 2026-11-21); real gaps (SOP links, weights, rating gaps) are still flagged. People in the sheet not in PMS were added as inactive
   (`src: 'history'`, kept by list imports); 6 spelling fixes in `ALIAS`. Never touches a form that has KRAs; the current
   month is skipped. Applied to LOCAL data 2026-11-20 (backup `private/state.before-history-2026-11-20.json`); staging
   not yet.

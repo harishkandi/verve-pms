@@ -279,7 +279,10 @@ function managerActivity(f) {
 // two separate facts about a review (2026-11-16):
 //  - the form: 'Filled' once the employee has completed their part (self ratings and remarks, questionnaire, KRAs), else 'Not Filled'
 //  - the review: 'Review Completed' once the manager has saved every rating, else 'Review Pending'
-function formStatus(f) { return f.month <= config.currentMonth && !todoItems(f).length ? 'Filled' : 'Not Filled'; }
+//    Old-portal forms (f.imported, Harish 2026-11-21): 'Filled' when there are KRAs and every sub-KRA has a self rating (the
+//    export has no question answers, and old remarks predate the SOP / learning link rule)
+const importedFilled = f => { const rows = KRAS.flatMap(([k]) => f.kras[k].rows); return rows.length > 0 && rows.every(r => has(r.self)); };
+function formStatus(f) { return f.month <= config.currentMonth && (f.imported ? importedFilled(f) : !todoItems(f).length) ? 'Filled' : 'Not Filled'; }
 function reviewStatus(f) {
   if (f.month > config.currentMonth) return 'Not started';
   return f.submitted || ratingsComplete(f) ? 'Review Completed' : 'Review Pending';
