@@ -307,7 +307,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   late / missed only from then (old-portal months are not "missed"). Checked 2026-11-20 against the CSV: all 343
   scores, monthly counts and averages identical. EVERY card has its own Filter pill =
   the shared card filter panel (`CF_CARDS` an*, local, keys `xper` period 3 / 6 / FY, `xteam`, `xdesig`, `xmgr`, `xpar`;
-  `free: true` keeps a saved pick whose choices only load later); no other filters on the page. API rows per person:
+  `free: true` keeps a saved pick whose choices only load later). Plus ONE page-wide "Filter all cards" pill above the
+  cards (Harish 2026-11-21, card `anAll`, same panel, `pill` label in `CF_CARDS`): Period / Team / Designation / Reporting
+  manager for every card (`G` in `anDraw`); a card's own team / designation / manager narrows it further (both must
+  match), a card's own Period wins over the page's; what is on is listed next to the pill with "Clear filters". Filter
+  panels of pills on the left half of the screen open to the right (`cfPlace`). API rows per person:
   team, group, managerId / manager, `scores[month]` (submitted only: total, KRAs, self, mgr, params), `timing[month]`
   (on / late / missed, finished months), `cycle` (this month). Scores end at the latest finished month with data. Hover
   numbers: `#antip` (`anTipWire`). FY + `sample` kept in `localStorage` `pms.analytics`.

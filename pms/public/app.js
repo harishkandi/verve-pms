@@ -1072,7 +1072,9 @@ const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'm
   anMeet: { title: 'Review meetings', keys: ['xteam', 'xmgr'], local: true }, anAlert: { title: 'Needs attention', keys: ['xteam', 'xdesig'], local: true },
   // history cards (Harish 2026-11-20, from the old portal's April-October reviews)
   anTrend: { title: 'Rating trend', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anGap: { title: 'Self vs manager', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true },
-  anPeople: { title: 'People', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anRev: { title: 'Ratings by reviewer', keys: ['xper', 'xteam', 'xdesig'], local: true } };
+  anPeople: { title: 'People', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anRev: { title: 'Ratings by reviewer', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  // one Filter for the whole page (Harish 2026-11-21): applies to every card; a card's own Filter narrows it further
+  anAll: { title: 'all cards', pill: 'Filter all cards', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true } };
 // choices of the page filters that depend on the data (each page sets its own as it draws); PF.hide[card] = fields not
 // shown on that page right now (e.g. Team on a manager's Team Report)
 const PF = { hide: {} };
@@ -1128,7 +1130,7 @@ let homeRedraw = null; // redraws the dashboard cards from the last /api/home an
 const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam) && !(PF.hide[c] || []).includes(k));
 const cfOn = (c, k) => Array.isArray(CF_DEF[k]) ? CF[c][k].length > 0 : CF[c][k] !== CF_DEF[k];
 const cfCount = c => cfKeys(c).filter(k => cfOn(c, k)).length;
-const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}Filter${n ? ` · ${n}` : ''}</button>`; };
+const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}${CF_CARDS[c].pill || 'Filter'}${n ? ` · ${n}` : ''}</button>`; };
 const cfTag = c => HC[c] && HC[c].tag ? ` <span class="cftag">${esc(HC[c].tag)}</span>` : '';
 const cfText = (c, k) => {
   const v = CF[c][k], o = CF_F[k].opts(c);
@@ -1151,7 +1153,8 @@ function cfClose() { if (!cfPop) return; cfPop.el.remove(); const b = document.q
 function cfPlace() {
   if (!cfPop) return; const b = document.querySelector(`[data-cf="${cfPop.card}"]`); if (!b) return cfClose();
   const r = b.getBoundingClientRect(), el = cfPop.el, w = el.offsetWidth, h = el.offsetHeight, W = document.documentElement.clientWidth;
-  el.style.left = `${Math.max(8, Math.min(r.right - w, W - w - 8))}px`;
+  // under its pill: right edges lined up, but a pill on the left half of the screen opens to the right (not over the side menu)
+  el.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 < W / 2 ? r.left : r.right - w, W - w - 8))}px`;
   el.style.top = `${r.bottom + 6 + h > innerHeight - 8 && r.top - 6 - h > 8 ? r.top - 6 - h : r.bottom + 6}px`;
 }
 function cfDraw() {
@@ -1967,13 +1970,14 @@ pages.analytics = async v => {
   PF.xdesig = optCount(ppl, p => p.group);
   PF.xmgr = optCount(ppl, p => String(p.managerId), mgrName);
   PF.xpar = AN.params.map((q, i) => [i ? q.id : '', q.label]); PF.hide.anPar = ['xpar'];
-  AN_CARDS.forEach(c => { cfLocalRedraw[c] = () => anDraw(v); });
+  [...AN_CARDS, 'anAll'].forEach(c => { cfLocalRedraw[c] = () => anDraw(v); });
   AN_LAST = {}; // every card plays its entrance on a new visit, FY or Sample data change
   anDraw(v);
   // page events (set once per visit): Sample data switch, FY, Remind, card filters, hover numbers
   v.onclick = e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     if (e.target.closest('#asample')) { AF.sample = !AN.sample; afSave(); return pages.analytics(v); }
+    const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     if (e.target.closest('[data-anremind]')) return remindAll();
     const rk = e.target.closest('[data-anrank]'); if (rk) { AF.rank = rk.dataset.anrank; afSave(); anDraw(v); const b = v.querySelector(`[data-anrank="${rk.dataset.anrank}"]`); if (b) b.focus(); return; }
     const pt = e.target.closest('[data-anpar]'); if (pt) { CF.anPar.xpar = pt.dataset.anpar; cfSave(); anDraw(v); const b = v.querySelector(`[data-anpar="${pt.dataset.anpar}"]`); if (b) b.focus(); }
@@ -2026,8 +2030,11 @@ function anDraw(v) {
   // months: finished months only (this month's reviews are still running), ending at the latest month with a submitted review
   const done = d.months.map(m => m.key).filter(m => m < d.current), had = done.filter(m => d.people.some(p => p.scores[m]));
   const upto = had.length ? done.filter(m => m <= had[had.length - 1]) : done;
-  const per = c => { const x = CF[c].xper; return x === 'fy' ? upto : upto.slice(-(+x || 6)); };
-  const pool = c => { const f = CF[c]; return d.people.filter(p => (!f.xteam || !f.xteam.length || f.xteam.includes(p.team)) && (!f.xdesig || !f.xdesig.length || f.xdesig.includes(p.group)) && (!f.xmgr || !f.xmgr.length || f.xmgr.includes(String(p.managerId)))); };
+  // "Filter all cards" (G) applies to every card, then the card's own Filter: both must match (team, designation,
+  // manager); for the period the card's own pick wins when it has one, else the page's
+  const G = CF.anAll, ok = (f, p) => (!f.xteam || !f.xteam.length || f.xteam.includes(p.team)) && (!f.xdesig || !f.xdesig.length || f.xdesig.includes(p.group)) && (!f.xmgr || !f.xmgr.length || f.xmgr.includes(String(p.managerId)));
+  const per = c => { const x = CF[c].xper !== CF_DEF.xper ? CF[c].xper : G.xper; return x === 'fy' ? upto : upto.slice(-(+x || 6)); };
+  const pool = c => d.people.filter(p => ok(G, p) && ok(CF[c], p));
   const sc = (ps, m, k) => ps.map(p => p.scores[m]).filter(Boolean).map(s => s[k]).filter(x => x != null);
   const avgOf = (p, ms, k = 'total') => mean(ms.map(m => p.scores[m]).filter(Boolean).map(s => s[k]).filter(x => x != null));
   const span = ms => ms.length ? (ms.length > 1 ? `${mon(ms[0])}–${mon(ms[ms.length - 1])}` : mon(ms[0])) : 'no months yet';
@@ -2159,7 +2166,7 @@ function anDraw(v) {
       <div class="anrows anleg">${seg.map((z, k) => [...z, k]).reverse().map(([l, n, col, k]) => `<div ${n ? `data-hk="p${k}"` : ''}><i style="background:var(${col})"></i><span>${l}</span><b>${n}</b><em>${pct(n, tot)}%</em></div>`).join('')}</div></div>
       <span class="ancap">${tot} rating${tot === 1 ? '' : 's'}, ${cnt[4]} at full marks (★)${tv ? ` · best team: <b class="anink">${esc(tl(tv.t))}</b> ${tv.v.toFixed(1)}` : ''}</span>`); })();
   // 10. Team race: one square = 2 points above 50%
-  const race = (() => { const c = 'anRace', ms = per(c), f = CF[c], base = d.people.filter(p => !f.xdesig.length || f.xdesig.includes(p.group));
+  const race = (() => { const c = 'anRace', ms = per(c), base = pool(c);
     const ts = [...new Set(base.map(p => p.team))].map(t => { const ps = base.filter(p => p.team === t), av = mean(ps.map(p => avgOf(p, ms)).filter(x => x != null)); return { t, n: ps.length, av }; }).filter(x => x.av != null).sort((a, b) => b.av - a.av);
     if (!ts.length) return card(c, 'c4', 'Team race', span(ms), none(noScores));
     return card(c, 'c4', 'Team race', `One square = 3 points above 50% · ${span(ms)}`, `<div class="ansq">${ts.map((x, i) => { const n = Math.max(0, Math.round((x.av - 50) / 3));
@@ -2266,10 +2273,10 @@ function anDraw(v) {
 
   const fySel = d.fys.length > 1 ? `<select id="afy" aria-label="Financial year">${d.fys.map(y => `<option value="${y}" ${y === d.fy ? 'selected' : ''}>FY ${y}-${y + 1}</option>`).join('')}</select>` : '';
   v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · ${d.sample ? 'SAMPLE DATA' : 'submitted reviews only'}`) + `
-  <div class="row anbar">${fySel}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
+  <div class="row anbar">${fySel}${cfPill('anAll')}${cfCount('anAll') ? `<span class="anfsum">${cfKeys('anAll').filter(k => cfOn('anAll', k)).map(k => `${CF_F[k].label}: <b>${esc(cfText('anAll', k))}</b>`).join(' · ')} · ${clearLink('anAll')}</span>` : ''}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
   ${d.sample ? '<div class="asample" role="note"><b>Sample data.</b> These ratings are made up to show how the charts look. Names are placeholders, nothing is saved, and real reviews are not changed. Switch "Sample data" off to see the real reviews.</div>' : ''}
   <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${trend}${gapc}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}${peopleC}${revC}</div></div>
-  <p class="small">Each card has its own Filter. Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA, then by KRA); parameters are the manager's rating out of 5. April to October 2026 come from the old PMS portal, which had no parameter ratings or review dates. People who have left count in the months they were reviewed, but not in Who is moving, People or Needs attention. "On time" = the review was held inside the team's review window.</p>`;
+  <p class="small">"Filter all cards" at the top applies to every card; each card's own Filter narrows it further (a card's own Period wins over the page's). Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA, then by KRA); parameters are the manager's rating out of 5. April to October 2026 come from the old PMS portal, which had no parameter ratings or review dates. People who have left count in the months they were reviewed, but not in Who is moving, People or Needs attention. "On time" = the review was held inside the team's review window.</p>`;
   // entrance (Bklit-style motion, CSS under .anin): only for cards whose content changed since the last draw
   const prev = AN_LAST; AN_LAST = out;
   v.querySelectorAll('.anc[data-c]').forEach(s => {
