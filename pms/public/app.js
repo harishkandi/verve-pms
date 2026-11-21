@@ -1939,12 +1939,12 @@ pages.kpi = async (v, id) => {
 // report tables (Summary and Full details): one line per row, a light dash for "nothing yet", colour only where it means something
 const NIL = '<span class="nil">–</span>';
 const rDate = d => d ? fmtD(d) : NIL;
-const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th class="nr">Rating</th><th>Flags</th></tr>
+const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th class="nr">Rating</th><th class="rflag">Flags</th></tr>
   ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.due)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${badge(r.form)} ${badge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || `<tr><td colspan="9">${cfCount('report') ? `Nothing matches these filters. ${clearLink('report')}` : `No reviews in your access for ${esc(monthLabel(S.month))}. Pick another month above.`}</td></tr>`}</table></div>`;
-// a review's flags: the first one, the rest behind "+N" (click to open), so one row stays one line tall; numbered 1, 2, 3
+// a review's flags: the first one, all of them behind "+N" (click opens a small pop-up over the table), so one row stays one line tall; numbered 1, 2, 3
 const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
   : flags.length === 1 ? `<td class="rflag">${esc(flags[0])}</td>`
-  : `<td class="rflag"><details class="flags"><summary title="Show all ${flags.length} flags">1. ${esc(flags[0])} <b class="more">+${flags.length - 1}</b></summary>${flags.slice(1).map((x, i) => `<div>${i + 2}. ${esc(x)}</div>`).join('')}</details></td>`;
+  : `<td class="rflag"><details class="flags"><summary title="Show all ${flags.length} flags"><span>1. ${esc(flags[0])}</span> <b class="more">+${flags.length - 1}</b></summary><div class="fl-pop">${flags.map((x, i) => `<div>${i + 1}. ${esc(x)}</div>`).join('')}</div></details></td>`;
 
 // ---------- Performance Analytics (Fiza 2026-11-19; layout "C2" picked by Harish 2026-11-19) ----------
 // Light cards (the dark "command centre" only in dark mode): four number cards (notched gauge, month bars, sparkline, dot
@@ -2847,9 +2847,9 @@ pages.employees = async (v, arg, grp) => {
   const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
   const inScope = all.filter(passF);
-  // top-level directors carry "Directors" as their team, but it is not a team: no chip for it (they are under All departments)
+  // top-level directors carry "Directors" as their team, but it is not a team: no chip for it (they are under All teams)
   const teamN = inScope.filter(e => e.team !== 'Directors').reduce((a, e) => (a[e.team] = (a[e.team] || 0) + 1, a), {});
-  const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by department"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All departments <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(tl(t))}: ${teamN[t]}">${teamIco(t)}${esc(tl(t))}</button>`).join('')}</div></div>`;
+  const teamChips = `<div class="chips"><div class="seg one" id="eteams" role="group" aria-label="Filter by team"><button type="button" class="chip ${fl ? '' : 'on'}" data-et="">All teams <span class="cnt">${inScope.length}</span></button>${Object.keys(teamN).sort((a, b) => teamN[b] - teamN[a] || a.localeCompare(b)).map(t => `<button type="button" class="chip ${t === fl ? 'on' : ''}" data-et="${esc(t)}" title="${esc(tl(t))}: ${teamN[t]}">${teamIco(t)}${esc(tl(t))}</button>`).join('')}</div></div>`;
   const opts = (list, cur, lab = x => x) => [...new Set([...list, cur])].filter(Boolean).map(x => `<option value="${esc(x)}" ${x === cur ? 'selected' : ''}>${esc(lab(x))}</option>`).join('');
   // anyone active can be picked: people who already lead first, then everyone else (picking one makes them a manager)
   const mgrOpts = e => {
