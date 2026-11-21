@@ -1053,7 +1053,9 @@ function qualityBody(h, c, p) {
 const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any',
   rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sinv: 'any', sst: [], aper: 'all', awho: [], aact: [],
   xper: 'fy', xteam: [], xdesig: [], xmgr: [], xpar: '' }; // Analytics: the financial year by default (Harish 2026-11-20, the history is in)
-const CF_CARDS = { status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review insights', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
+const CF_CARDS = { // one Filter for the whole dashboard (Harish 2026-11-21): the three cards below also follow it (all: no fetch of its own)
+  homeAll: { title: 'all cards', pill: 'Filter all cards', keys: ['period', 'team', 'mgr'], all: true },
+  status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review insights', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
   // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
   emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true },
   // the same pill on the report pages, Scheduling and the Audit log (Harish 2026-11-18: one filter look everywhere)
@@ -1131,6 +1133,8 @@ const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam) && !
 const cfOn = (c, k) => Array.isArray(CF_DEF[k]) ? CF[c][k].length > 0 : CF[c][k] !== CF_DEF[k];
 const cfCount = c => cfKeys(c).filter(k => cfOn(c, k)).length;
 const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}${CF_CARDS[c].pill || 'Filter'}${n ? ` · ${n}` : ''}</button>`; };
+// a page-wide pill's "what is on" line with a Clear link (Dashboard, Performance Analytics)
+const cfSum = c => cfCount(c) ? `<span class="anfsum">${cfKeys(c).filter(k => cfOn(c, k)).map(k => `${CF_F[k].label}: <b>${esc(cfText(c, k))}</b>`).join(' · ')} · ${clearLink(c)}</span>` : '';
 const cfTag = c => HC[c] && HC[c].tag ? ` <span class="cftag">${esc(HC[c].tag)}</span>` : '';
 const cfText = (c, k) => {
   const v = CF[c][k], o = CF_F[k].opts(c);
@@ -1139,13 +1143,17 @@ const cfText = (c, k) => {
   return !v.length ? 'All' : one ? one[1] : `${v.length} selected`;
 };
 let cfWarned = false;
+// a dashboard card asks the server when its own filter or the page's "Filter all cards" is on: teams and managers must
+// match both (none in common = nothing matches), the card's own Period wins over the page's
 async function cfFetch(c) {
-  if (CF_CARDS[c].local || !cfCount(c)) return null;
-  const f = CF[c], qs = new URLSearchParams({ card: c, month: S.month, period: f.period, team: (S.hteam ? [S.hteam] : f.team || []).join('|'), mgr: (f.mgr || []).join('|'), cmp: f.cmp || '', group: f.group || '', sort: f.sort || '' });
+  if (CF_CARDS[c].local || CF_CARDS[c].all || !(cfCount(c) || cfCount('homeAll'))) return null;
+  const f = CF[c], G = CF.homeAll, both = (a = [], b = []) => { if (!a.length || !b.length) return a.length ? a : b; const x = a.filter(y => b.includes(y)); return x.length ? x : ['-']; };
+  const period = cfOn(c, 'period') ? f.period : G.period;
+  const qs = new URLSearchParams({ card: c, month: S.month, period, team: (S.hteam ? [S.hteam] : both(f.team, G.team)).join('|'), mgr: both(f.mgr, G.mgr).join('|'), cmp: period === 'fy' ? '' : f.cmp || '', group: f.group || '', sort: f.sort || '' });
   try { const r = await apiCall('/home/card?' + qs, {}); if (r.opts) cfOptions = r.opts; return r; }
   catch (e) { if (!cfWarned) { cfWarned = true; toast(`Card filters could not be applied, so all data is shown. ${e.message}`, 'err'); } return null; }
 }
-const cfLoadAll = () => Promise.all(Object.keys(CF_CARDS).filter(c => !CF_CARDS[c].local).map(async c => { HC[c] = await cfFetch(c); }));
+const cfLoadAll = () => Promise.all(Object.keys(CF_CARDS).filter(c => !CF_CARDS[c].local && !CF_CARDS[c].all).map(async c => { HC[c] = await cfFetch(c); }));
 
 // the panel: one open at a time, fixed under its pill (above it when there is no room below)
 let cfPop = null;
@@ -1181,6 +1189,7 @@ function cfDraw() {
 async function cfChanged(c) {
   cfSave(); cfDraw();
   if (CF_CARDS[c].local) { if (cfLocalRedraw[c]) await cfLocalRedraw[c](); return cfPlace(); }
+  if (CF_CARDS[c].all) { const want = JSON.stringify(CF[c]); await cfLoadAll(); if (JSON.stringify(CF[c]) === want && homeRedraw) homeRedraw(); return; }
   const want = JSON.stringify(CF[c]), r = await cfFetch(c);
   if (JSON.stringify(CF[c]) !== want) return; // another choice came in meanwhile; its own fetch redraws
   HC[c] = r; if (homeRedraw) homeRedraw();
@@ -1188,7 +1197,9 @@ async function cfChanged(c) {
 // "Clear filters" in a list that the filters left empty
 function cfClear(c) {
   cfClose(); CF_CARDS[c].keys.forEach(k => { CF[c][k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); cfSave();
-  if (CF_CARDS[c].local) { if (cfLocalRedraw[c]) cfLocalRedraw[c](); } else { HC[c] = null; if (homeRedraw) homeRedraw(); }
+  if (CF_CARDS[c].local) { if (cfLocalRedraw[c]) cfLocalRedraw[c](); }
+  // the page filter may still be on (or was just cleared): ask again rather than falling back to the unfiltered numbers
+  else (CF_CARDS[c].all ? cfLoadAll() : cfFetch(c).then(r => { HC[c] = r; })).then(() => { if (homeRedraw) homeRedraw(); });
 }
 const clearLink = c => `<a href="#" data-cfclear="${c}">Clear filters</a>`;
 function cfOpen(btn) {
@@ -1273,7 +1284,8 @@ pages.home = async (v, opts = {}) => {
       const prog = hp ? hp.groups.map(g => bar(g, hp.group === 'mgr' ? g.label : tl(g.team))) : teams.map(t => bar(t, tl(t.team)));
       const remind = S.month === S.me.currentMonth && c.notFilled && !S.me.viewingAs
         ? `<button type="button" class="btn sm" id="remind" title="Send a reminder under the bell to everyone whose form is not filled yet">${ico('bell')}Remind not filled</button>` : '';
-      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
+      return `<div class="row anbar hgf">${cfPill('homeAll')}${cfSum('homeAll')}</div>
+    <div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
     <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
       ${widget('award', 'Review insights' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
@@ -1281,11 +1293,13 @@ pages.home = async (v, opts = {}) => {
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>`;
     };
-    homeRedraw = () => { const x = v.querySelector('#hCards'); if (x) { x.innerHTML = cards(); cfPlace(); } };
+    homeRedraw = () => { const x = v.querySelector('#hCards'), y = v.querySelector('#hAttn'); if (x) { x.innerHTML = cards(); cfPlace(); } if (y) y.innerHTML = attn(); };
+    // "Needs your attention" (this month) follows the page filter's Team and Reporting manager too (the Period does not apply)
+    const attn = () => { const G = CF.homeAll, gOn = (!S.hteam && G.team.length) || G.mgr.length;
+      const A = att.filter(a => (S.hteam || !G.team.length || G.team.includes(a.team)) && (!G.mgr.length || a.managerId == null || G.mgr.includes(String(a.managerId))));
+      return widget('alert', 'Needs your attention', `<span class="cnt">${A.length}</span>${A.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, A.length ? `<div class="mb flush attn-g">${A.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(tl(a.team))} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(tl(S.hteam)) : ''}${gOn ? ' for this filter' : ''}.</div></div>`, 'w12'); };
     const body = `<div id="hCards">${cards()}</div>
-    <div class="wgrid">
-      ${widget('alert', 'Needs your attention', `<span class="cnt">${att.length}</span>${att.length > SHOW ? '<a class="more" href="#/report">See all</a>' : ''}`, att.length ? `<div class="mb flush">${att.slice(0, SHOW).map(a => `<div class="lrow"><span class="avatar s">${initials(a.name)}</span><div class="t"><b>${esc(a.name)}</b><span>${esc(tl(a.team))} · ${esc(a.issue)}${a.more ? ` · +${a.more} more` : ''}${a.reschedules ? ` · rescheduled ${a.reschedules}×` : ''}</span></div>${badge(a.status)}<a class="btn sm" href="#/form/${a.empId}/${S.month}">Open form</a></div>`).join('')}</div>` : `<div class="mb"><div class="ok" style="margin:0">Nothing needs attention${S.hteam ? ' in ' + esc(S.hteam) : ''}.</div></div>`, 'w8')}
-    </div>`;
+    <div class="wgrid" id="hAttn">${attn()}</div>`;
     if (v.querySelector('#hShell') && opts.partial) {
       $('#hReq').innerHTML = kreq;
       $('#hBody').innerHTML = body;
@@ -2273,7 +2287,7 @@ function anDraw(v) {
 
   const fySel = d.fys.length > 1 ? `<select id="afy" aria-label="Financial year">${d.fys.map(y => `<option value="${y}" ${y === d.fy ? 'selected' : ''}>FY ${y}-${y + 1}</option>`).join('')}</select>` : '';
   v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · ${d.sample ? 'SAMPLE DATA' : 'submitted reviews only'}`) + `
-  <div class="row anbar">${fySel}${cfPill('anAll')}${cfCount('anAll') ? `<span class="anfsum">${cfKeys('anAll').filter(k => cfOn('anAll', k)).map(k => `${CF_F[k].label}: <b>${esc(cfText('anAll', k))}</b>`).join(' · ')} · ${clearLink('anAll')}</span>` : ''}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
+  <div class="row anbar">${fySel}${cfPill('anAll')}${cfSum('anAll')}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
   ${d.sample ? '<div class="asample" role="note"><b>Sample data.</b> These ratings are made up to show how the charts look. Names are placeholders, nothing is saved, and real reviews are not changed. Switch "Sample data" off to see the real reviews.</div>' : ''}
   <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${trend}${gapc}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}${peopleC}${revC}</div></div>
   <p class="small">"Filter all cards" at the top applies to every card; each card's own Filter narrows it further (a card's own Period wins over the page's). Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA, then by KRA); parameters are the manager's rating out of 5. April to October 2026 come from the old PMS portal, which had no parameter ratings or review dates. People who have left count in the months they were reviewed, but not in Who is moving, People or Needs attention. "On time" = the review was held inside the team's review window.</p>`;

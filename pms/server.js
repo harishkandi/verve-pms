@@ -366,7 +366,7 @@ route('GET', '/api/home', ({ user, q }) => {
   // review quality: facts the status cards do not show (timeliness, reschedules, flags, average rating)
   const health = healthOf(rows);
   const attention = rows.filter(r => r.status !== 'Review Completed' || r.form !== 'Filled' || r.flags.length)
-    .map(r => ({ empId: r.empId, name: r.name, team: r.team, scheduled: r.scheduled, issue: r.flags[0] || (r.form !== 'Filled' ? 'Form not filled' : 'Review pending'), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
+    .map(r => ({ empId: r.empId, name: r.name, team: r.team, managerId: r.managerId, scheduled: r.scheduled, issue: r.flags[0] || (r.form !== 'Filled' ? 'Form not filled' : 'Review pending'), more: Math.max(0, r.flags.length - 1), status: r.status, reschedules: r.reschedules }));
   const win = D.windowOf(user, month);
   const scoped = q.team ? teams.filter(t => t.team === q.team) : teams; // hero text and tips follow the team filter
   const out = { month, label: D.monthLabel(month), today: config.today, counts, health, teams, attention, canEditWindows: user.role === 'admin', window: { ...win, ...windowState(win) }, summary: homeSummary(scoped, counts), tips: [] };

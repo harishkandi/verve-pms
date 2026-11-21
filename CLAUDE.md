@@ -73,7 +73,13 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   "Jul-Sep 0" next to each number) and Group by / Sort (progress). Each card filters on its own; choices are kept in
   `localStorage` `pms.cardFilters`; a period other than this month adds a tag ("Q3", "Oct") to the card title. A card with
   no filter shows `/api/home`; a filtered one reads `GET /api/home/card` (read-only, `server.js`; managers and admins
-  only). If that call fails the card falls back to its unfiltered numbers with one toast. The Employees page uses the SAME pill and panel
+  only). If that call fails the card falls back to its unfiltered numbers with one toast.
+  Plus a page-wide "Filter all cards" pill above Review status (Harish 2026-11-21, card `homeAll`, `all: true` = no fetch of
+  its own): Period / Team / Reporting manager for the three cards AND "Needs your attention" (team / manager only, filtered
+  in the browser; `/api/home` attention rows carry `managerId`). `cfFetch` merges it with the card's own filter: teams and
+  managers must match both (none in common sends "-" = nothing), the card's own Period wins. "Needs your attention" runs
+  the full width in two columns (`.attn-g`; Harish: no empty space beside it). Same pill on Analytics (`anAll`); the
+  "what is on" line next to both = `cfSum`. The Employees page uses the SAME pill and panel
   (card `emp`, `local: true`: filters its list in the browser, no server call; Harish 2026-11-17): Designation (group from
   the master sheet), Role, Reporting manager, Work email, Work status; the dashboard's All stats tiles open it with only
   that Designation on (`empPreset`). While the admin's team tabs
