@@ -198,8 +198,10 @@ route('POST', '/api/password/set', ({ user, realUser, body }) => {
 const forbidMsg = msg => new HttpError(403, msg);
 // demo picker: dummy users, only when the server allows it (no Google sign-in set up, or DEMO_LOGIN=1)
 route('GET', '/api/users', () => {
-  // the id picker exists only on local runs; a deployed copy never lists people to someone who is not signed in
-  if (!A.demo || !A.pickById) throw notFound('Not found');
+  // the id picker exists only on local runs; a deployed copy never lists people to someone who is not signed in.
+  // It still answers 200 (an empty list) there: Render's health check was set to this address (use /api/health instead).
+  if (A.demo && !A.pickById) return [];
+  if (!A.demo) throw notFound('Not found');
   return employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation }));
 }, true);
 route('POST', '/api/auth/demo', ({ body, setCookie, secure }) => {
