@@ -14,7 +14,9 @@ const { config, employees, forms, annualForms, questions, paramsVersions, auditL
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.webp': 'image/webp' };
+// only these file types are served from public/ (anything else there, e.g. a reference .docx, stays private)
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.webp': 'image/webp', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
+const MAX_BODY = 2 * 1024 * 1024; // largest request body accepted (the biggest real one, a full form, is a few KB)
 
 class HttpError extends Error { constructor(code, msg, extra) { super(msg); this.code = code; this.extra = extra; } }
 const bad = (msg, extra) => new HttpError(400, msg, extra);
@@ -107,7 +109,7 @@ const firstActive = ok => employees.find(e => e.active && ok(e));
 const testAccounts = () => [
   // the old demo codes (E001, E006, E101) are gone since the real list came in: fall back to the first real person of that
   // kind, so manager@ signs in as a real reporting manager (Schedule buttons, team forms) and employee@ as a reviewed employee
-  ['admin', 'Admin', byCode('A900')], ['hr', 'HR', byCode('E001') || firstActive(e => /^hr/i.test(e.team || '') && e.managerId)],
+  ['admin', 'Admin', byCode('A900')], ['hr', 'HR', byCode('E001') || firstActive(e => /^hr\b/i.test(e.team || '') && e.managerId)],
   ['manager', 'Manager', byCode('E006') || firstActive(e => e.role === 'manager' && e.managerId)], ['employee', 'Employee', byCode('E101') || firstActive(e => e.role === 'employee' && e.managerId)],
   ...A.ADMIN_EMAILS.map(em => [em, 'Admin (you)', findByEmail(em)]),
 ].filter(([, , e]) => e && e.active).map(([login, label, emp]) => ({ email: login.includes('@') ? login : `${login}@${A.ORG_DOMAIN}`, label, emp }));
@@ -142,6 +144,7 @@ route('POST', '/api/auth/password', ({ body, setCookie, secure }) => {
 // closes it (/api/password/set). The answer is the same whether or not the email is known, so nobody can probe for
 // accounts, and each email can ask once every 10 minutes (in memory).
 const FORGOT = new Map();
+setInterval(() => { const old = Date.now() - 10 * 60e3; for (const [k, t] of FORGOT) if (t < old) FORGOT.delete(k); }, 5 * 60e3).unref();
 route('POST', '/api/auth/forgot', ({ body }) => {
   const email = String(body.email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Type your work email in the Email box first.');
@@ -195,7 +198,8 @@ route('POST', '/api/password/set', ({ user, realUser, body }) => {
 const forbidMsg = msg => new HttpError(403, msg);
 // demo picker: dummy users, only when the server allows it (no Google sign-in set up, or DEMO_LOGIN=1)
 route('GET', '/api/users', () => {
-  if (!A.demo) throw notFound('Not found');
+  // the id picker exists only on local runs; a deployed copy never lists people to someone who is not signed in
+  if (!A.demo || !A.pickById) throw notFound('Not found');
   return employees.filter(e => e.active).map(e => ({ id: e.id, name: e.name, role: e.role, designation: e.designation }));
 }, true);
 route('POST', '/api/auth/demo', ({ body, setCookie, secure }) => {
@@ -272,6 +276,15 @@ route('POST', '/api/auth/view-as', ({ realUser, body, setCookie, secure, session
 // the current month's form is open for everyone from the 1st, whether or not last month's review is complete
 const ensureMonthForms = () => employees.filter(e => e.active && e.managerId && e.role !== 'admin').forEach(e => L.getForm(e.id, config.currentMonth));
 ensureMonthForms();
+// The app's date follows the real date in India (PMS_TODAY overrides it for tests): "today" for review days, windows
+// and the meetings calendar, and on the 1st the new review month starts and its forms are made. It only moves forward.
+function syncClock() {
+  const t = N.realToday();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t) || config.today === t) return;
+  config.today = t;
+  const m = t.slice(0, 7);
+  if (m > config.currentMonth) { config.currentMonth = m; ensureMonthForms(); }
+}
 const calendarState = real => { const l = C.linked(real.id); return { google: A.google, connected: !!l, email: l ? l.email : '', canConnect: A.google && A.isOrgEmail(real.email) }; };
 // password: whether the signed-in person (the real one in View as) has a PMS password, and whether they signed in
 // with a temporary one and must pick their own now
@@ -483,11 +496,22 @@ route('PUT', '/api/form', ({ user, body }) => {
   if (f.selfSubmitted && !manage) throw bad(SENT_MSG);
   // managers often give ratings and remarks verbally, so the team member may enter those too
   const mgrFields = manage || selfEdit;
+  // shape and size checks before anything is read or changed (a half-applied save would be stored by the next request)
+  if (body.kras != null && typeof body.kras !== 'object') throw bad('KRAs must be sent as an object.');
+  for (const [k] of L.KRAS) { const rows = body.kras?.[k]?.rows; if (rows !== undefined && (!Array.isArray(rows) || rows.some(r => !r || typeof r !== 'object'))) throw bad('KRA rows must be a list.'); }
+  if (body.qa != null && (typeof body.qa !== 'object' || Array.isArray(body.qa))) throw bad('Answers must be sent as an object.');
   const kraR = L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r.self, r.mgr]));
   const qR = Object.values(body.qa || {}).filter(a => a && typeof a === 'object').flatMap(a => [a.self, a.mgr]);
   if (!kraR.every(okIn(L.KRA_SCALE))) throw bad('KRA ratings must be a whole percentage from 0 to 100.');
   if (!qR.every(okIn(L.Q_SCALE))) throw bad('Questionnaire ratings must be a whole number from 0 to 5.');
-  if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
+  const tooLong = [...L.KRAS.flatMap(([k]) => (body.kras?.[k]?.rows || []).flatMap(r => [r && r.selfRemark, r && r.mgrRemark])),
+    ...Object.values(body.qa || {}).flatMap(a => typeof a === 'string' ? [a] : a && typeof a === 'object' ? [a.remark] : [])]
+    .some(t => t != null && String(t).length > TEXT_MAX);
+  if (tooLong) throw bad(`A remark or answer can be at most ${TEXT_MAX.toLocaleString('en-IN')} characters.`);
+  if (body.reviewDate !== undefined && body.reviewDate !== null && body.reviewDate !== '' && !isDay(body.reviewDate)) throw bad('Review date must be a date (YYYY-MM-DD).');
+  // answers only for this form's questions (a removed question or a made-up id is ignored)
+  const qIds = new Set(L.activeQuestions(f.month, f).map(q => String(q.id)));
+  if (body.qa) body.qa = Object.fromEntries(Object.entries(body.qa).filter(([id]) => qIds.has(id)));
   // only the fields that are sent change: the employee and the manager can have the form open at the same time,
   // and one person's autosave must not wipe what the other entered meanwhile (the page sends just what was edited)
   const sent = (o, key) => o && Object.prototype.hasOwnProperty.call(o, key);
@@ -505,6 +529,7 @@ route('PUT', '/api/form', ({ user, body }) => {
     const cur = (f.qa[id] || {}).self, self = selfEdit && sent(a, 'self') ? num(a.self) : cur;
     if (self === null || self === undefined || self === '') throw bad(SELF_FIRST);
   }
+  if (body.reviewDate !== undefined) f.reviewDate = body.reviewDate;
   for (const [k] of L.KRAS) (body.kras?.[k]?.rows || []).forEach(br => {
     const r = f.kras[k].rows.find(x => x.id === br.id); if (!r) return;
     if (selfEdit) { if (sent(br, 'self')) r.self = num(br.self); if (sent(br, 'selfRemark')) r.selfRemark = br.selfRemark ?? ''; }
@@ -521,6 +546,8 @@ route('PUT', '/api/form', ({ user, body }) => {
   return formPayload(user, f);
 });
 const has = v => v;
+const TEXT_MAX = 5000; // longest remark / answer / KPI text accepted (real ones are a few hundred characters)
+const isDay = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
 const num = v => (v === '' || v === null || v === undefined) ? null : Number(v);
 const okIn = scale => v => num(v) === null || scale.includes(num(v));
 
@@ -606,6 +633,18 @@ route('PUT', '/api/kras', ({ user, body }) => {
   const f = mustForm(user, body.empId, body.month);
   if (f.locked && !L.canManage(user, f.empId)) throw bad(LOCKED_MSG);
   if (!canEditKras(user, f)) throw new HttpError(403, 'You cannot change KRA settings or weightage for this person.');
+  if (!body.kras || typeof body.kras !== 'object') throw bad('No KRAs sent.');
+  for (const [k] of L.KRAS) {
+    const nk = body.kras[k]; if (!nk) continue;
+    if (nk.rows !== undefined && (!Array.isArray(nk.rows) || nk.rows.length > 30)) throw bad('Each KRA can have at most 30 sub-KRAs.');
+    const w = [nk.weight, ...(nk.rows || []).map(r => r && r.weight)];
+    if (!w.every(x => x === undefined || x === '' || (Number.isInteger(Number(x)) && Number(x) >= 0 && Number(x) <= 100))) throw bad('Weightage must be a whole number from 0 to 100.');
+    for (const r of nk.rows || []) {
+      if (!r || typeof r !== 'object') throw bad('A sub-KRA row is not valid.');
+      if ([r.kpi, r.target, r.selfRemark, r.mgrRemark].some(t => t != null && String(t).length > TEXT_MAX)) throw bad(`A KPI, target or remark can be at most ${TEXT_MAX.toLocaleString('en-IN')} characters.`);
+      if (![r.self, r.mgr].every(okIn(L.KRA_SCALE))) throw bad('KRA ratings must be a whole percentage from 0 to 100.');
+    }
+  }
   const errors = [];
   for (const [k, label] of L.KRAS) {
     const nk = body.kras[k]; if (!nk || !nk.rows) continue; // weight-only entries are checked in the total below
@@ -786,8 +825,17 @@ const slotText = f => `${f.scheduledDate}${f.scheduledTime ? ' at ' + f.schedule
 const manageForm = (user, realUser, body) => {
   const f = mustForm(user, body.empId, body.month); if (!L.canManage(user, f.empId)) throw forbid(); return f;
 };
+// one scheduling change per review at a time: while Google answers, a double click or a second person booking the
+// same review would otherwise send two invites (and the first could no longer be cancelled from PMS)
+const scheduling = new Set();
+const oneAtATime = fn => async ctx => {
+  const key = `${+ctx.body.empId}|${ctx.body.month}`;
+  if (scheduling.has(key)) throw new HttpError(409, 'This review is being updated right now. Please wait a moment and try again.');
+  scheduling.add(key);
+  try { return await fn(ctx); } finally { scheduling.delete(key); }
+};
 
-route('POST', '/api/scheduling/schedule', async ({ user, realUser, body }) => {
+route('POST', '/api/scheduling/schedule', oneAtATime(async ({ user, realUser, body }) => {
   const f = manageForm(user, realUser, body);
   if (f.scheduledDate) throw bad('This review is already scheduled. Use Reschedule to change the date.');
   const slot = slotOf(body, f);
@@ -797,8 +845,8 @@ route('POST', '/api/scheduling/schedule', async ({ user, realUser, body }) => {
   audit(user.name, 'schedule', `${L.emp(f.empId).name} ${slot.date} ${slot.time}${f.invite ? ' (calendar invite sent)' : ''}`);
   meetingNote(user, f, who => `${who} ${meetOf(f)} is set for ${slotText(f)} by ${user.name}${f.invite ? ' (Google Calendar invite sent)' : ''}.`);
   return { ok: true, invite: inviteView(f) };
-});
-route('POST', '/api/scheduling/reschedule', async ({ user, realUser, body }) => {
+}));
+route('POST', '/api/scheduling/reschedule', oneAtATime(async ({ user, realUser, body }) => {
   const f = manageForm(user, realUser, body);
   const slot = slotOf(body, f);
   if (slot.date === f.scheduledDate && slot.time === f.scheduledTime && (!f.invite || slot.duration === f.invite.duration) && slot.zoom === (f.zoomLink || '')) throw bad('Pick a different date or time, or change the Zoom link.');
@@ -814,9 +862,9 @@ route('POST', '/api/scheduling/reschedule', async ({ user, realUser, body }) => 
   audit(user.name, 'reschedule', `${L.emp(f.empId).name} to ${slot.date} ${slot.time}${f.invite ? ' (calendar invite updated)' : ''}`);
   meetingNote(user, f, who => `${who} ${meetOf(f)} was moved to ${slotText(f)} by ${user.name}.`);
   return { ok: true, invite: inviteView(f) };
-});
+}));
 // send an invite for a review that already has a date
-route('POST', '/api/scheduling/invite', async ({ user, realUser, body }) => {
+route('POST', '/api/scheduling/invite', oneAtATime(async ({ user, realUser, body }) => {
   const f = manageForm(user, realUser, body);
   if (!f.scheduledDate) throw bad('Schedule the review first.');
   if (f.invite) throw bad('An invite was already sent. Use Reschedule to change it.');
@@ -825,8 +873,8 @@ route('POST', '/api/scheduling/invite', async ({ user, realUser, body }) => {
   f.scheduledTime = slot.time; f.zoomLink = slot.zoom;
   audit(user.name, 'calendar invite sent', `${L.emp(f.empId).name} ${slot.date} ${slot.time}`);
   return { ok: true, invite: inviteView(f) };
-});
-route('POST', '/api/scheduling/cancel-invite', async ({ user, realUser, body }) => {
+}));
+route('POST', '/api/scheduling/cancel-invite', oneAtATime(async ({ user, realUser, body }) => {
   const f = manageForm(user, realUser, body);
   if (!f.invite) throw bad('There is no invite to cancel.');
   if (!C.linked(f.invite.ownerId)) throw bad(`The invite is on ${f.invite.owner}'s Google Calendar, which is no longer connected. ${f.invite.owner} can delete it in Google Calendar.`);
@@ -835,7 +883,7 @@ route('POST', '/api/scheduling/cancel-invite', async ({ user, realUser, body }) 
   audit(user.name, 'calendar invite cancelled', `${L.emp(f.empId).name} ${f.month}`);
   meetingNote(user, f, who => `The Google Calendar invite for ${who === 'Your' ? 'your' : who} ${meetOf(f)} was cancelled by ${user.name}. The date (${slotText(f)}) stays in PMS.`);
   return { ok: true };
-});
+}));
 route('POST', '/api/calendar/disconnect', async ({ realUser }) => {
   await C.unlink(realUser.id);
   audit(realUser.name, 'Google Calendar disconnected', '');
@@ -1784,35 +1832,116 @@ route('POST', '/api/teams/delete', ({ user, body }) => {
 });
 
 // ---------- server ----------
+// Static files: read once, compressed once (brotli + gzip), kept in memory until the file changes.
+// index.html points at app.js?v=<content hash>, so app.js can be cached for a year and a new version is a new address;
+// index.html itself is checked every time (a quick 304), so after an update nobody keeps old page code.
+const zlib = require('zlib'), crypto = require('crypto');
+const staticCache = new Map(); // file -> { mtime, size, type, etag, hash, raw, br, gz }
+const sha = (buf, enc = 'hex') => crypto.createHash('sha256').update(buf).digest(enc);
+function compressed(raw, type) {
+  if (!/text|javascript|json|svg|manifest/.test(type) || raw.length < 1024) return {};
+  return { br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }), gz: zlib.gzipSync(raw, { level: 9 }) };
+}
+function staticFile(file) {
+  const st = fs.statSync(file, { throwIfNoEntry: false });
+  if (!st || !st.isFile()) return null;
+  const hit = staticCache.get(file);
+  if (hit && hit.mtime === st.mtimeMs && hit.size === st.size) return hit;
+  let raw = fs.readFileSync(file);
+  const type = MIME[path.extname(file)];
+  if (file === INDEX) {
+    const app = staticFile(path.join(PUBLIC, 'app.js'));
+    if (app) raw = Buffer.from(raw.toString('utf8').replace('<script src="app.js"></script>', `<script src="app.js?v=${app.hash}"></script>`));
+    // the one inline script (theme before first paint) is allowed by its hash, so no other inline script can run
+    const inline = [...raw.toString('utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${sha(m[1], 'base64')}'`);
+    pageCsp = cspFor(inline);
+  }
+  const hash = sha(raw).slice(0, 12);
+  const entry = { mtime: st.mtimeMs, size: st.size, type, hash, etag: `"${hash}"`, raw, ...compressed(raw, type) };
+  staticCache.set(file, entry);
+  return entry;
+}
+const INDEX = path.join(PUBLIC, 'index.html');
+// Content-Security-Policy: scripts only from this site, no plugins, no framing, calls only to this site
+const cspFor = inline => [`default-src 'self'`, `script-src 'self' ${inline.join(' ')}`, `style-src 'self' 'unsafe-inline'`,
+  `img-src 'self' data: blob:`, `font-src 'self' data:`, `connect-src 'self'`, `object-src 'none'`, `base-uri 'self'`,
+  `form-action 'self'`, `frame-ancestors 'none'`].join('; ');
+let pageCsp = cspFor([]);
+// sent with every answer (pages and API); HSTS only over HTTPS
+function securityHeaders(req, csp) {
+  return {
+    'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cross-Origin-Opener-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    // an internal tool: keep every page out of search engines
+    'X-Robots-Tag': 'noindex, nofollow',
+    ...(A.isSecure(req) && { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' }),
+  };
+}
+const API_CSP = `default-src 'none'; frame-ancestors 'none'`;
+// brotli / gzip a JSON answer when the browser accepts it and it is worth it (big reports are 100 KB+)
+function encodeFor(req, buf) {
+  const ae = req.headers['accept-encoding'] || '';
+  if (buf.length < 1400) return { buf };
+  if (/\bbr\b/.test(ae)) return { buf: zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }), enc: 'br' };
+  if (/\bgzip\b/.test(ae)) return { buf: zlib.gzipSync(buf, { level: 6 }), enc: 'gzip' };
+  return { buf };
+}
+function serveStatic(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
+  let rel; try { rel = decodeURIComponent(url.pathname); } catch { rel = null; }
+  const file = rel && path.join(PUBLIC, rel === '/' ? 'index.html' : rel);
+  // inside public/, no hidden files, only the listed file types
+  const ok = file && file.startsWith(PUBLIC + path.sep) && !/[\\/]\./.test(file.slice(PUBLIC.length)) && MIME[path.extname(file)];
+  const f = ok && staticFile(file);
+  const sec = securityHeaders(req, pageCsp);
+  if (!f) { res.writeHead(404, { ...sec, 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Not found'); }
+  const ae = req.headers['accept-encoding'] || '';
+  const enc = f.br && /\bbr\b/.test(ae) ? 'br' : f.gz && /\bgzip\b/.test(ae) ? 'gzip' : null;
+  const body = enc === 'br' ? f.br : enc === 'gzip' ? f.gz : f.raw;
+  // a versioned address (app.js?v=<hash>) never changes; everything else is checked each time
+  const forever = url.searchParams.get('v') === f.hash;
+  const headers = { ...sec, 'Content-Type': f.type, ETag: f.etag, Vary: 'Accept-Encoding',
+    'Cache-Control': forever ? 'public, max-age=31536000, immutable' : file === INDEX ? 'no-cache' : 'public, max-age=0, must-revalidate',
+    ...(enc && { 'Content-Encoding': enc }) };
+  if ((req.headers['if-none-match'] || '').split(/\s*,\s*/).some(t => t.replace(/^W\//, '') === f.etag)) { res.writeHead(304, headers); return res.end(); }
+  res.writeHead(200, { ...headers, 'Content-Length': body.length });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://x');
+  let url; try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); return res.end(); }
   if (!url.pathname.startsWith('/api/')) {
-    const file = path.join(PUBLIC, url.pathname === '/' ? 'index.html' : url.pathname);
-    const st = file.startsWith(PUBLIC) && fs.existsSync(file) && fs.statSync(file);
-    if (!st || !st.isFile()) { res.writeHead(404); return res.end('Not found'); }
-    // browsers must check for a newer copy every time (a quick 304 when unchanged), so after an update
-    // nobody keeps running old page code against the new server
-    const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
-    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: etag, 'Last-Modified': st.mtime.toUTCString() };
-    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
-    res.writeHead(200, headers);
-    return fs.createReadStream(file).pipe(res);
+    try { return serveStatic(req, res, url); } catch (e) { console.error('Static file failed:', e.message); res.writeHead(500); return res.end(); }
   }
   // keep-awake check for an uptime pinger: no sign-in, no database, no reminders
   if (url.pathname === '/api/health') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(req.method === 'HEAD' ? undefined : '{"ok":true}'); }
-  let raw = '';
-  req.on('data', c => raw += c);
+  const chunks = []; let size = 0, tooBig = false;
+  req.on('data', c => {
+    if (tooBig) return;
+    size += c.length;
+    if (size > MAX_BODY) { tooBig = true; res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' }); res.end('{"error":"Request is too large."}'); req.destroy(); return; }
+    chunks.push(c);
+  });
   req.on('end', async () => {
+    if (tooBig) return;
+    const raw = Buffer.concat(chunks).toString('utf8');
     const setCookies = [];
-    const send = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(setCookies.length && { 'Set-Cookie': setCookies }) }); res.end(JSON.stringify(data)); };
+    const send = (code, data) => {
+      const { buf, enc } = encodeFor(req, Buffer.from(JSON.stringify(data)));
+      res.writeHead(code, { ...securityHeaders(req, API_CSP), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding',
+        'Content-Length': buf.length, ...(enc && { 'Content-Encoding': enc }), ...(setCookies.length && { 'Set-Cookie': setCookies }) });
+      res.end(buf);
+    };
     try {
       const r = routes.find(x => x.method === req.method && x.re.test(url.pathname));
       // NO_ROUTE tells an out-of-date page that the server was updated (the page then reloads itself)
       if (!r) return send(404, { error: 'Not found', code: 'NO_ROUTE' });
+      syncClock();         // a new day / a new review month
       applyPendingMoves(); // reporting changes planned for a month that has now started
       N.checks();          // date reminders (window open, closing soon, overdue, meeting tomorrow): at most once a minute
       // changes must come from the app itself (JSON), which a form on another site cannot send with our cookie
-      if (req.method !== 'GET' && !/application\/json/.test(req.headers['content-type'] || '')) return send(415, { error: 'Send JSON.' });
+      if (req.method !== 'GET' && !/^application\/json\b/i.test(req.headers['content-type'] || '')) return send(415, { error: 'Send JSON.' });
       const cookies = A.parseCookies(req.headers.cookie), s0 = A.session(cookies);
       // a password sign-in ends when that password is changed or reset (the cookie carries the version it was made with)
       const s = s0 && s0.pv != null && (!D.passwords[s0.uid] || D.passwords[s0.uid].ver !== s0.pv) ? null : s0;
@@ -1831,17 +1960,35 @@ const server = http.createServer((req, res) => {
         return send(409, { error: 'You are signed in as someone else in another tab.', code: 'SESSION_CHANGED' });
       let body = {};
       if (raw) { try { body = JSON.parse(raw); } catch { return send(400, { error: 'Request body is not valid JSON.' }); } }
+      // routes read fields off an object: "null", a number or a list is a bad request, not a crash
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Request body must be a JSON object.' });
       const result = await r.fn({ user, realUser: signedIn, session: s, q: Object.fromEntries(url.searchParams), body, cookies, secure: A.isSecure(req), setCookie: c => setCookies.push(c) });
       // store any change before answering, so a saved form survives a restart
       try { await DB.save(); } catch (e) { console.error('Saving to Postgres failed:', e.message); return send(503, { error: 'Could not save to the database. Please try again.' }); }
-      if (result instanceof Redirect) { res.writeHead(302, { Location: result.url, 'Cache-Control': 'no-store', ...(setCookies.length && { 'Set-Cookie': setCookies }) }); return res.end(); }
+      if (result instanceof Redirect) { res.writeHead(302, { ...securityHeaders(req, API_CSP), Location: result.url, 'Cache-Control': 'no-store', ...(setCookies.length && { 'Set-Cookie': setCookies }) }); return res.end(); }
       send(200, result);
     } catch (e) {
       if (e instanceof HttpError) return send(e.code, { error: e.message, ...e.extra });
-      console.error(e); send(500, { error: 'Server error: ' + e.message });
+      // the details go to the server log only; people see a plain message
+      console.error(`${req.method} ${url.pathname} failed:`, e); send(500, { error: 'Something went wrong on the server. Please try again, and tell the PMS admin if it keeps happening.' });
     }
   });
 });
-DB.init().then(() => { D.migrate(); ensureAccounts(); moveOldNotices(); watchMaster(); return DB.save(); }).then(
+DB.init().then(() => { D.migrate(); syncClock(); ensureAccounts(); moveOldNotices(); watchMaster(); return DB.save(); }).then(
   () => server.listen(PORT, () => console.log(`Verve PMS running at http://localhost:${PORT} · sign-in: ${[A.google && `Google (@${A.ORG_DOMAIN})`, A.demo && 'demo users'].filter(Boolean).join(' + ') || 'none'}`)),
   e => { console.error('Could not connect to Postgres:', e.message); process.exit(1); });
+// keep idle connections open longer than the proxy in front (Render / Vercel) does, or it may reuse one we just
+// closed and answer 502; give up on clients that send their request too slowly
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+server.requestTimeout = 60000;
+// Render sends SIGTERM before stopping the old copy on a deploy: stop taking requests, finish the last save, then exit
+let stopping = false;
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => {
+  if (stopping) return; stopping = true;
+  console.log(`${sig}: finishing the last save, then stopping`);
+  server.close();
+  const done = () => process.exit(0);
+  DB.save().then(done, e => { console.error('Last save failed:', e.message); process.exit(1); });
+  setTimeout(done, 10000).unref();
+});

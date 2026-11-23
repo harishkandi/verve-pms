@@ -120,7 +120,9 @@ const appraisals = {};      // empId -> annual appraisal form (6 steps)
 const notifications = {};   // empId -> [notification] newest first (notify.js, the bell in the top bar)
 const calendarLinks = {};   // empId -> { email, token (encrypted Google refresh token), connectedAt }
 const passwords = {};       // empId -> { salt, hash, temp, ver, setAt, setBy }: personal PMS passwords (auth.js), never sent to the browser
-const audit = (who, action, detail) => auditLog.unshift({ at: new Date().toISOString(), who, action, detail });
+// newest first; only the latest AUDIT_KEEP entries are kept (every autosave adds one, and the Audit Log shows 200)
+const AUDIT_KEEP = 3000;
+const audit = (who, action, detail) => { auditLog.unshift({ at: new Date().toISOString(), who, action, detail }); if (auditLog.length > AUDIT_KEEP) auditLog.length = AUDIT_KEEP; };
 
 const defaultRows = () => ({
   operational: { weight: 60, rows: [

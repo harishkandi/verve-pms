@@ -1,6 +1,7 @@
 'use strict';
 const $ = s => document.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// escapes text for HTML and for attributes in either quote style
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // "a · b" without stray dots when a part is empty
 const dotJoin = (...parts) => parts.filter(x => x != null && x !== '').map(esc).join(' · ');
 const S = { user: null, me: null, month: null, page: null };
@@ -34,7 +35,8 @@ async function apiCall(path, opts) {
         body: get ? undefined : JSON.stringify(opts.body || {}),
       });
       data = await res.json().catch(() => null);
-      retry = !data && [502, 503, 504].includes(res.status);
+      // a 504 can come after the server already did the change (e.g. a slow calendar call), so changes are not sent again on it
+      retry = !data && (get ? [502, 503, 504] : [502, 503]).includes(res.status);
       if (!data) data = { error: `Server error (${res.status})` };
     } catch (e) {
       // no answer at all: repeat reads; a change might have reached the server, so it is not sent twice
@@ -47,7 +49,8 @@ async function apiCall(path, opts) {
   }
   if (res.status === 401 && S.me) { S.me = null; S.month = null; boot(); }
   // signed in with a temporary password: the server allows nothing else until the person picks their own
-  if (res.status === 403 && data.code === 'PASSWORD_CHANGE' && S.me) { start(); return new Promise(() => {}); }
+  // (the call never finishes, so the loading bar is switched off here)
+  if (res.status === 403 && data.code === 'PASSWORD_CHANGE' && S.me) { inflight = 1; loadEnd(); start(); return new Promise(() => {}); }
   if (res.status === 409 && data.code === 'SESSION_CHANGED') {
     // someone else signed in (or "View as" changed) in another tab: reload this tab for the current account
     try { sessionStorage.setItem('pmsSwitched', '1'); } catch {}
@@ -62,9 +65,12 @@ async function apiCall(path, opts) {
   if (!res.ok) { const e = new Error(data.error || 'Error'); e.data = data; throw e; }
   return data;
 }
+// safety net: an action whose error nobody handles still tells the person what went wrong (instead of nothing happening)
+addEventListener('unhandledrejection', e => { const m = e.reason && e.reason.message; if (m && S.me) toast(m, 'err'); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me && notePoll) loadNotes(); });
 // the last button clicked, so the call it starts can show its spinner
 let pressed = null;
-document.addEventListener('click', e => { const b = e.target.closest?.('button.btn, button.ac-submit, button.pill'); if (b && !b.disabled) pressed = { btn: b, at: Date.now() }; }, true);
+document.addEventListener('click', e => { const b = e.target.closest?.('button.btn, button.ac-submit, button.pill, button.opf-y'); if (b && !b.disabled) pressed = { btn: b, at: Date.now() }; }, true);
 const busyBtns = new Map(); // button -> { c: calls running, sp: spinner element, dis: disabled before }
 function btnBusy(b) {
   const n = busyBtns.get(b); if (n) { n.c++; return; }
@@ -85,7 +91,8 @@ function loadStart() {
   wakeT = setTimeout(() => loadMsg(WAKE_MSG), 4000); // the free server sleeps; its first answer can take a minute
 }
 function loadEnd() {
-  if (--inflight) return;
+  inflight = Math.max(0, inflight - 1);
+  if (inflight) return;
   clearTimeout(slowT); clearTimeout(wakeT);
   document.documentElement.classList.remove('is-loading'); loadMsg(LOAD_MSG);
 }
@@ -114,8 +121,40 @@ const rateSel = (val, attrs, enabled, cls = '', scale = RATINGS, title = '') => 
 // a percentage rating for display
 const pc = x => x == null ? 'N/A' : `${x}%`;
 const errBox = e => `<div class="warn">${(e.data?.errors || [e.message]).map(esc).join('<br>')}</div>`;
-function askNote(title, label, optional) { return new Promise(res => { const m = modal(`<h3>${title}</h3><label class="f">${label}</label><textarea id="nt" rows="4" style="width:100%"></textarea><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="nc">Cancel</button><button class="btn pri" id="no">Send</button></div>`); const done = v => { m.remove(); res(v); }; m.querySelector('#nc').onclick = () => done(null); m.querySelector('#no').onclick = () => { const v = m.querySelector('#nt').value.trim(); if (!v && !optional) return toast('Please write a short note', 'err'); done(v); }; m.querySelector('#nt').focus(); }); }
-function modal(html) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.addEventListener('mousedown', ev => { if (ev.target === m) m.remove(); }); const esc = ev => { if (ev.key === 'Escape') { m.remove(); document.removeEventListener('keydown', esc); } }; document.addEventListener('keydown', esc); document.body.appendChild(m); return m; }
+function askNote(title, label, optional) { return new Promise(res => { const m = modal(`<h3>${title}</h3><label class="f">${label}</label><textarea id="nt" rows="4" style="width:100%"></textarea><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="nc">Cancel</button><button class="btn pri" id="no">Send</button></div>`); const done = v => { res(v); m.remove(); }; m.onClose = () => res(null); m.querySelector('#nc').onclick = () => done(null); m.querySelector('#no').onclick = () => { const v = m.querySelector('#nt').value.trim(); if (!v && !optional) return toast('Please write a short note', 'err'); done(v); }; m.querySelector('#nt').focus(); }); }
+// The app's dialog: a real dialog for screen readers, focus moves in and stays inside (Tab wraps), Escape or a click
+// outside closes only the top one, and focus goes back to what was used before. m.onClose runs however it closes.
+function modal(html) {
+  const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box">${html}</div>`;
+  const box = m.firstChild, opener = document.activeElement, h = box.querySelector('h1,h2,h3');
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+  if (h) { h.id ||= 'dlg' + Date.now().toString(36); box.setAttribute('aria-labelledby', h.id); }
+  const top = () => [...document.querySelectorAll('.modal')].pop() === m;
+  const focusables = () => [...box.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent !== null);
+  const key = ev => {
+    if (!top()) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); m.remove(); }
+    else if (ev.key === 'Tab') {
+      const f = focusables(); if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { ev.preventDefault(); first.focus(); }
+    }
+  };
+  document.addEventListener('keydown', key);
+  m.addEventListener('mousedown', ev => { if (ev.target === m) m.remove(); });
+  const remove = m.remove.bind(m);
+  m.remove = () => {
+    if (!m.isConnected) return;
+    document.removeEventListener('keydown', key); remove();
+    if (m.onClose) m.onClose();
+    if (opener && opener.isConnected && opener.focus) opener.focus();
+  };
+  document.body.appendChild(m);
+  const f = focusables().find(x => x.matches('input,select,textarea')) || focusables()[0];
+  if (f) f.focus({ preventScroll: true });
+  return m;
+}
 // after a reporting change or a new member: the master employee list needs the same change
 function masterAlertBox(a) {
   const what = a.notListed ? `<p><b>${esc(a.name)}</b> is not on the master employee list yet. Add them there, so PMS and the list stay the same.</p>`
@@ -128,7 +167,10 @@ function confirmBox(title, text, { ok = 'OK', danger = false } = {}) {
   return new Promise(resolve => {
     const m = modal(`<div class="ask ${danger ? 'danger' : ''}"><i>${ico(danger ? 'alert' : 'question')}</i><div><h2>${esc(title)}</h2><p>${esc(text)}</p></div></div><div class="row"><button class="btn ${danger ? 'dng solid' : 'pri'}" id="askyes">${esc(ok)}</button><button class="btn" id="askno">Cancel</button></div>`);
     m.querySelector('.box').classList.add('sm');
-    const done = yes => { document.removeEventListener('keydown', key, true); m.remove(); resolve(yes); };
+    // after "OK" the call that follows shows its spinner on the button that opened this popup (and blocks a second click)
+    const was = pressed;
+    const done = yes => { document.removeEventListener('keydown', key, true); if (yes && was && was.btn.isConnected) pressed = { btn: was.btn, at: Date.now() }; resolve(yes); m.remove(); };
+    m.onClose = () => { document.removeEventListener('keydown', key, true); resolve(false); };
     const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
     document.addEventListener('keydown', key, true);
     m.addEventListener('mousedown', e => { if (e.target === m) done(false); });
@@ -324,6 +366,7 @@ function authBrandRun() {
   LV_TIMER = setInterval(() => { if (!document.body.contains(aside)) return clearInterval(LV_TIMER); show((k + 1) % ps.length); }, 4500);
 }
 function loginPage(st, err) {
+  document.title = 'Sign in · Verve PMS';
   const dom = '@' + st.domain;
   const alert = (msg, kind = 'err') => `<div class="ac-alert ${kind}" role="${kind === 'err' ? 'alert' : 'status'}">${ico(kind === 'err' ? 'alert' : 'info')}<span>${esc(msg)}</span></div>`;
   $('#root').innerHTML = `<div class="auth">
@@ -433,6 +476,7 @@ function pwWire(root, first, done) {
 }
 // first sign-in with the temporary password the admin gave: pick your own before anything else
 function passwordFirstPage() {
+  document.title = 'Choose your password · Verve PMS';
   $('#root').innerHTML = `<div class="auth">${authBrand()}<main class="auth-main">${themeBtn()}<div class="auth-form">
     <img class="auth-logo" src="verve-advisory-logo.png" alt="Verve Advisory"><h1>Choose your password</h1>
     <p class="auth-sub">Hi ${esc(S.me.name.split(' ')[0])}, you signed in with a temporary password from the PMS admin. Pick your own password to continue.</p>
@@ -547,7 +591,8 @@ async function start() {
   };
   window.onhashchange = navGuard;
   route();
-  loadNotes(); clearInterval(notePoll); notePoll = setInterval(loadNotes, 60000);
+  // the bell checks once a minute, but not in a tab nobody is looking at (it catches up when the tab is shown again)
+  loadNotes(); clearInterval(notePoll); notePoll = setInterval(() => { if (!document.hidden) loadNotes(); }, 60000);
 }
 
 // Leaving the monthly form with an answer typed but not stored (not yet saved), or a change still saving, asks
@@ -577,7 +622,15 @@ async function route() {
   try { await (pages[page] || pages.home)(v, ...args); } catch (e) { v.innerHTML = head('Something went wrong', 'The page could not be loaded.') + errBox(e); }
   v.classList.remove('routing'); SC().scrollTop = 0;
 }
-const head = (t, c) => `<div class="phd"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>`;
+// page heading; also names the browser tab after the page ("Review Report · Verve PMS"), for tabs, history and bookmarks
+const head = (t, c) => {
+  // (a month picker in the heading counts only with its chosen value, not its list of months)
+  const doc = new DOMParser().parseFromString(String(t), 'text/html').body;
+  doc.querySelectorAll('[role=listbox],[role=menu],select,ul,ol,[hidden],svg').forEach(x => x.remove());
+  const name = doc.textContent.replace(/\s+/g, ' ').trim();
+  document.title = name ? `${name} · Verve PMS` : 'Verve PMS';
+  return `<div class="phd"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>`;
+};
 // ---------- search (Ctrl+K) ----------
 // One box for pages (the side menu's links) and people in your access (the review status report's rows: managers see
 // their people, admins and directors everyone reviewed). Enter opens the page, or the person's form for this month;
@@ -1402,6 +1455,8 @@ const KRA_LABEL = { operational: 'Operational', process: 'Process', people: 'Peo
 pages.form = async (v, emp, month) => {
   for (const k in kraErr) delete kraErr[k];
   if (/^annual/.test(month || '')) return drawAppraisal(v, emp, month.split('-')[1]); // annual or annual-2026
+  // a mistyped or old link with a bad month must not become the month every page uses
+  if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) month = null;
   S.month = month || S.month;
   submitErrs = []; attempted = false; resultNoteOff = false; editingQ.clear(); editingW.clear(); folded.clear(); focusQ = null; formDirty.clear();
   try { FP = await api(`/form?emp=${emp}&month=${S.month}`); }
@@ -2703,11 +2758,12 @@ pages.annual = async (v, emp) => {
   v.innerHTML = head('One Pager Document', `${esc(d.employee.name)} · ${d.fy}`) +
     `${list.length ? `<div class="row"><select id="who"><option value="${S.me.id}">Myself</option>${list.map(r => `<option value="${r.empId}" ${r.empId === d.employee.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div>` : ''}
   <h2>One-page summary <span class="small">(${d.months.filter(m => m.filled).length} of 12 months filled; fills as each monthly review finishes)</span></h2>
-  <div class="row"><b>${esc(d.employee.name)}</b> (${esc(d.employee.designation)}) · ${d.fy} (April 2026 to March 2027)<span class="sp"></span><button class="btn pri" onclick="window.print()">Download PDF</button></div>
+  <div class="row"><b>${esc(d.employee.name)}</b> (${esc(d.employee.designation)}) · ${d.fy} (April 2026 to March 2027)<span class="sp"></span><button class="btn pri" data-print>Download PDF</button></div>
   <div class="tablewrap"><table><tr><th>Month</th><th>KRA weightage (Op / Pro / Peo)</th><th>Work summary</th><th>Self</th><th>Manager</th><th>Monthly rating</th><th>Learnings, SOPs</th><th>Highlights and gaps</th></tr>
   ${d.months.map(m => m.filled ? `<tr><td>${esc(m.label.split(' ')[0])}</td><td title="${esc(m.subKras.join(' | '))}">${m.weightage}</td><td>${esc(m.work)}<div class="small">${esc(m.selfRemarks[0] || '')}</div></td><td>${pc(m.self)}</td><td>${pc(m.mgr)}<div class="small">${esc(m.mgrRemarks[0] || '')}</div></td><td>${pc(m.rating)}</td><td class="small">${m.learn.length ? 'Learning: ' + esc(m.learn.join(', ')) + '<br>' : ''}${m.sop.length ? 'SOP: ' + esc(m.sop.join(', ')) : ''}</td><td class="flag">${m.highlights.map(esc).join('<br>') || 'N/A'}</td></tr>` : `<tr><td>${esc(m.label.split(' ')[0])}</td><td colspan="7" class="small">Fills in automatically as each monthly review finishes.</td></tr>`).join('')}</table></div>
   <p class="small">This page is the one-page summary only. The annual review itself is under My review › Annual review: <a href="#/form/${d.employee.id}/annual">open ${d.employee.id === S.me.id ? 'my' : esc(d.employee.name.split(' ')[0]) + "'s"} annual review</a>.</p>`;
   if ($('#who')) $('#who').onchange = e => { location.hash = '#/annual/' + e.target.value; };
+  const pr = v.querySelector('[data-print]'); if (pr) pr.onclick = () => window.print();
 };
 
 // ---------- parameters summary ----------
@@ -2731,7 +2787,8 @@ pages.params = async (v, arg) => {
   draw();
   const ask = (title, val, cb) => { const m = modal(`<h2>${title}</h2><textarea id="tv" style="min-height:80px">${esc(val)}</textarea><div class="row" style="margin-top:12px"><button class="btn pri" id="ok">OK</button><button class="btn" id="no">Cancel</button></div>`); m.querySelector('#no').onclick = () => m.remove(); m.querySelector('#ok').onclick = () => { const t = m.querySelector('#tv').value.trim(); if (t) { cb(t); m.remove(); draw(true); } }; };
   pb.onclick = async e => {
-    const t = e.target, a = t.dataset.a, s = +t.dataset.s, i = +t.dataset.i;
+    // (a click on the icon inside a button counts as a click on the button)
+    const t = e.target.closest('[data-a], button[id]') || e.target, a = t.dataset.a, s = +t.dataset.s, i = +t.dataset.i;
     if (a === 'addsec') ask('New section title', '', x => P.sections.push({ id: 's' + Date.now(), title: x, items: [] }));
     if (a === 'editsec') ask('Edit section title', P.sections[s].title, x => P.sections[s].title = x);
     if (a === 'delsec' && await confirmBox(`Delete "${P.sections[s].title}"?`, 'This section and all its items will be removed.', { ok: 'Delete section', danger: true })) { P.sections.splice(s, 1); draw(true); }
@@ -2743,7 +2800,7 @@ pages.params = async (v, arg) => {
     if (t.id === 'savep') {
       const m = modal(`<h2>Apply from which review month?</h2><select id="eff">${S.me.months.map(x => `<option value="${x.key}" ${x.key === S.me.currentMonth ? 'selected' : ''}>${x.label}</option>`).join('')}</select><p class="small">Forms from this month onward (including future months) use the new wording. Submitted forms keep the earlier wording.</p><div class="row"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
-      m.querySelector('#ok').onclick = async () => { await api('/params', { method: 'PUT', body: { from: m.querySelector('#eff').value, data: P } }); m.remove(); toast('Saved'); pages.params(v); };
+      m.querySelector('#ok').onclick = async () => { try { await api('/params', { method: 'PUT', body: { from: m.querySelector('#eff').value, data: P } }); m.remove(); toast('Saved'); pages.params(v); } catch (er) { toast(er.message, 'err'); } };
     }
   };
 };
@@ -2800,14 +2857,14 @@ async function questionsBox(v) {
     };
   };
   v.onclick = async e => {
-    const t = e.target, a = t.dataset.a;
+    const t = e.target.closest('[data-a]') || e.target, a = t.dataset.a;
     if (a === 'new') dialog('Add new question');
     if (a === 'edit') dialog('Edit question', qs.find(q => q.id === t.dataset.id));
     if (a === 'del') {
       const q = qs.find(x => x.id === t.dataset.id);
       const m = modal(`<h2>Delete question?</h2><p>${esc(q.text)}</p><div class="alert-w">New forms from the chosen month will no longer show this question. Answers already submitted are kept and stay visible in past forms.</div><label class="f">Delete from <i>*</i></label>${monthSelHtml(S.me.currentMonth)}<div class="row" style="margin-top:12px"><button class="btn dng solid" id="ok">Delete question</button><button class="btn" id="no">Cancel</button></div>`);
       m.querySelector('#no').onclick = () => m.remove();
-      m.querySelector('#ok').onclick = async () => { await api('/questions/delete', { method: 'POST', body: { id: q.id, from: m.querySelector('#eff').value } }); m.remove(); questionsBox(v); };
+      m.querySelector('#ok').onclick = async () => { try { await api('/questions/delete', { method: 'POST', body: { id: q.id, from: m.querySelector('#eff').value } }); m.remove(); questionsBox(v); } catch (er) { toast(er.message, 'err'); } };
     }
   };
 };
@@ -2845,10 +2902,15 @@ function allStats(st) {
 // ---------- employees (admin) ----------
 // set by the admin in Edit; shown as the Final Status in the review status report (Full details)
 const WORK_STATUS = [['', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']];
+// search, filters and team chips only redraw: they reuse the lists loaded last (empRedraw); anything that saves loads again
+let empData = null, empReuse = false, empSearchT = 0;
+const empRedraw = v => { empReuse = true; return pages.employees(v); };
 pages.employees = async (v, arg, grp) => {
   if (arg === 'pw') { S.etab = 'active'; S.eq = S.eteam = ''; pwFor = grp; } // #/employees/pw/<id>: a "forgot password" notification
   if (arg === 'active' || arg === 'inactive') { S.etab = arg; S.eq = S.eteam = ''; if (grp) empPreset(decodeURIComponent(grp)); } // the address carries the tile's group
-  const [d, md] = await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
+  const reuse = empReuse && empData; empReuse = false;
+  const [d, md] = reuse ? empData : await Promise.all([api('/employees'), api('/master').catch(() => ({ diffs: [] }))]);
+  empData = [d, md];
   // the stat tiles on top double as filters: active/inactive and, for active people, the kind of role
   const GROUPS = ['Director', 'Senior Manager', 'Manager', 'Senior Executive', 'Executive', 'Article/Intern', 'Other']; // designation groups from the master sheet
   const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '';
@@ -2863,7 +2925,7 @@ pages.employees = async (v, arg, grp) => {
     role: count(e => e.role, x => ROLE_LABEL[x] || x).sort((a, b) => a[1].localeCompare(b[1])),
     mgr: count(e => String(e.managerId ?? ''), x => x ? (all.find(e => String(e.managerId) === x) || {}).manager || x : 'No manager (top-level director)').sort((a, b) => a[1].localeCompare(b[1])),
   };
-  cfLocalRedraw.emp = () => pages.employees(v);
+  cfLocalRedraw.emp = () => empRedraw(v);
   if (pwFor) {
     const p = d.active.find(x => String(x.id) === String(pwFor)); pwFor = null; history.replaceState(null, '', '#/employees/active');
     if (p) passwordDialog(p, () => pages.employees(v)); else toast('That person is not active any more.', 'err');
@@ -2927,7 +2989,11 @@ pages.employees = async (v, arg, grp) => {
   <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
   <td><span class="acts col"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a>${tab === 'active' ? `<button class="btn sm" data-a="pw" data-id="${e.id}" title="${e.password ? 'Reset' : 'Set'} ${esc(e.name.split(' ')[0])}'s PMS password. ${esc(pwStateText(e.password))}">${ico('key')}Password</button>` : ''}</span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
   <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Roles follow the reporting line: someone who gets a first report becomes a manager by themselves. The employee sheet is the master copy: a reporting change made here is replaced at the next import of the sheet unless the sheet has it too. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
-  v.oninput = e => { if (e.target.id === 'eq') { S.eq = e.target.value; const p = e.target.selectionStart; pages.employees(v).then(() => { const i = $('#eq'); i.focus(); i.setSelectionRange(p, p); showResults(v, S.eq); }); } };
+  v.oninput = e => {
+    if (e.target.id !== 'eq') return;
+    S.eq = e.target.value; clearTimeout(empSearchT);
+    empSearchT = setTimeout(() => { const i0 = $('#eq'), p = i0 ? i0.selectionStart : S.eq.length; empRedraw(v).then(() => { const i = $('#eq'); if (!i) return; i.focus(); i.setSelectionRange(p, p); showResults(v, S.eq); }); }, 150);
+  };
   const emailOk = s => !s || s.toLowerCase().endsWith(dom.toLowerCase()) && /^[^@\s]+@[^@\s]+$/.test(s);
   const LABEL = { team: 'team', designation: 'designation', managerId: 'reporting manager' };
   // a new designation typed in when "Other…" is picked
@@ -2940,7 +3006,7 @@ pages.employees = async (v, arg, grp) => {
     m.querySelector('#tv').focus();
   });
   v.onchange = async e => {
-    if (e.target.id === 'et') { S.eteam = e.target.value; return pages.employees(v); }
+    if (e.target.id === 'et') { S.eteam = e.target.value; return empRedraw(v); }
     const sel = e.target.closest('select[data-f]'); if (!sel) return;
     const p = d.active.find(x => String(x.id) === sel.dataset.id), f = sel.dataset.f;
     let val = sel.value;
@@ -2953,7 +3019,7 @@ pages.employees = async (v, arg, grp) => {
     pages.employees(v);
   };
   v.onclick = async e => {
-    const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return pages.employees(v); }
+    const dep = e.target.closest('[data-et]'); if (dep) { S.eteam = dep.dataset.et; return empRedraw(v); }
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // the Filter pill
     if (e.target.closest('#empx')) return csvSave(`Employees_${tab}_${new Date().toISOString().slice(0, 10)}.csv`, [['Code', 'Name', 'Work email', 'Designation', 'Team', 'Role', 'Reporting manager', 'Joining date', 'Work status'],
       ...rows.map(r => [r.codeSet === false ? '' : r.code, r.name, r.email, r.designation, r.team === 'Directors' ? '' : tl(r.team), ROLE_LABEL[r.role] || r.role, r.manager, r.joinedSet === false ? '' : r.joined, r.workStatus ? (r.workStatus.type === 'leave' ? 'On leave' : 'Serving notice') : 'Working'])]);

@@ -69,7 +69,9 @@ const tempPassword = () => { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRST
 // 5 wrong passwords in a row lock that login for 15 minutes (in memory: a restart clears it)
 const FAILS = new Map(), MAX_FAILS = 5, LOCK_MS = 15 * 60e3;
 const lockedFor = key => { const f = FAILS.get(key); return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 60e3) : 0; };
-const failed = key => { const f = FAILS.get(key) || { n: 0, until: 0 }; f.n = f.until && f.until <= Date.now() ? 1 : f.n + 1; f.until = f.n >= MAX_FAILS ? Date.now() + LOCK_MS : 0; if (f.n >= MAX_FAILS) f.n = 0; FAILS.set(key, f); };
+const failed = key => { const f = FAILS.get(key) || { n: 0, until: 0 }; f.n = f.until && f.until <= Date.now() ? 1 : f.n + 1; f.until = f.n >= MAX_FAILS ? Date.now() + LOCK_MS : 0; if (f.n >= MAX_FAILS) f.n = 0; f.at = Date.now(); FAILS.set(key, f); };
+// forget wrong tries older than the lock time, so the list cannot grow without end
+setInterval(() => { const old = Date.now() - LOCK_MS; for (const [k, f] of FAILS) if (f.at < old && f.until < Date.now()) FAILS.delete(k); }, 5 * 60e3).unref();
 const succeeded = key => FAILS.delete(key);
 
 // ---------- test accounts (email + shared password), only while DEMO_LOGIN is on ----------

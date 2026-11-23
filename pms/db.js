@@ -24,8 +24,14 @@ function hydrate(data) {
   for (const k of KEYS) {
     if (data[k] === undefined) continue;
     const target = D[k];
-    if (Array.isArray(target)) target.splice(0, target.length, ...data[k]);
-    else { for (const key of Object.keys(target)) delete target[key]; Object.assign(target, data[k]); }
+    // (no spread: a very long list would overflow the call stack and stop the app from starting)
+    if (Array.isArray(target)) { target.length = 0; for (const x of data[k]) target.push(x); }
+    else {
+      // config: settings added to data.js after the state was saved keep their default (saved values win)
+      const defaults = k === 'config' ? { ...target } : {};
+      for (const key of Object.keys(target)) delete target[key];
+      Object.assign(target, defaults, data[k]);
+    }
   }
 }
 

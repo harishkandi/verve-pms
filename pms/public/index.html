@@ -4,7 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Verve PMS</title>
+<meta name="description" content="Verve Advisory's Performance Management System: monthly KRA reviews, review meetings and reports for the Verve team.">
+<!-- internal tool: never listed by search engines (robots.txt and the X-Robots-Tag header say the same) -->
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#234788" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a1730" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="application-name" content="Verve PMS">
+<!-- link previews (WhatsApp, Slack, Teams) when someone shares the address -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Verve PMS">
+<meta property="og:title" content="Verve PMS · Performance Management System">
+<meta property="og:description" content="Sign in with your Verve Advisory account to open your monthly review.">
 <link rel="icon" type="image/svg+xml" href="brand/verve-pms-mark.svg">
+<link rel="preload" as="image" href="verve-advisory-logo.png">
 <!-- theme before first paint: stored choice, else the system setting (class-driven dark mode) -->
 <script>try{var t=localStorage.getItem('pms.theme')||localStorage.getItem('pmsTheme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
 <style>
@@ -1665,6 +1678,26 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 .dd-btn:not(.h1-pick):not(.exp){border-color:var(--vr-pms-y);background:var(--vr-pms-y);color:var(--vr-pms-y-text)}
 .dd-btn:not(.h1-pick):not(.exp):hover,.dd-btn:not(.h1-pick):not(.exp)[aria-expanded=true]{border-color:var(--vr-pms-y-hover);background:var(--vr-pms-y-hover);color:var(--vr-pms-y-text)}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:1.6s}}
+/* Production check (2026-11-23): accessibility and phone fixes only, the look stays as it is.
+   - light theme = light browser controls, even when the computer itself is in dark mode */
+:root{color-scheme:light}
+/* - keyboard users can always see where they are (mouse clicks show no ring: :focus-visible). A navy ring on light
+     surfaces, a white one on the navy side panel. */
+.pick-i:focus-visible,.dd-item:focus-visible,.cfp-r:focus-visible,.cfp-o:focus-visible,[role=menuitem]:focus-visible,
+.legend .lg:focus-visible,.win.ed:focus-visible,.adm-row:focus-visible,.anpr:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--vr-navy-600)}
+select:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--vr-navy-600);outline-offset:1px}
+.dark select:focus-visible,.dark input:focus-visible,.dark textarea:focus-visible,.dark button:focus-visible,.dark a:focus-visible,.dark [tabindex]:focus-visible{outline-color:var(--vr-brand-text)}
+.side a:focus-visible,.side button:focus-visible{outline:2px solid #fff;outline-offset:-2px}
+/* - readable placeholders and side panel group names (were about 2:1 and 3.3:1 contrast) */
+input::placeholder,textarea::placeholder{color:var(--vr-n-500)}
+.eyebrow{color:rgba(255,255,255,.62)}
+/* - phones: the page fits the visible screen (not hidden behind the browser bar), more room for content, and the
+     notifications panel stays on screen */
+@media screen{#app{height:100dvh}}
+@media (max-width:640px){
+  #main{padding:12px}
+  .tb-notes{position:fixed;top:84px;left:8px;right:8px;width:auto;max-width:none}
+}
 </style>
 </head>
 <body>

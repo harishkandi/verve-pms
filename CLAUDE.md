@@ -266,6 +266,26 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   them from one jsonb row (`pms_state`, id 1) on boot (seeding it when empty) and saves after any request that changed
   state; the server answers only after the save. No `DATABASE_URL` → in memory, resets on restart.
   New state containers must be added to `KEYS` in `db.js` and mutated in place (never reassigned).
+  `hydrate` keeps `config` defaults from `data.js` that the saved copy lacks; the audit log keeps the latest 3000 entries.
+- Production check (Harish 2026-11-23, "check every component before production"):
+  - Serving (`serveStatic` in `server.js`): files are cached in memory and compressed once (brotli/gzip; first visit
+    ~120 KB instead of ~520 KB), JSON answers over 1.4 KB too. index.html loads `app.js?v=<hash>`, which is cached for a
+    year. Only the file types in `MIME` are served (no dotfiles, the .docx or vercel.json). Requests are capped at 2 MB,
+    a 500 shows a plain message (details only in the log), SIGTERM finishes the last save, keep-alive is 65 s (fewer proxy 502s).
+  - Security headers on every answer: CSP (scripts only from the site + the hash of the ONE inline theme script in
+    `<head>`, computed by the server; so NO inline `on*=` handlers and no new inline scripts), nosniff, DENY framing,
+    HSTS over https, `X-Robots-Tag: noindex`. The Vercel mirror sends the same from `vercel.json` / `public/vercel.json`,
+    where the theme-script hash is written out: change that script = update both files.
+  - "SEO" for an internal tool = stay out of search engines (`robots.txt` Disallow, meta robots noindex) + description,
+    theme-color and link-preview tags; `head()` in `app.js` names the browser tab after the page.
+  - The app's date follows the real date in India (`syncClock()` in `server.js`, each request + boot; `PMS_TODAY`
+    overrides it): `config.today` was stuck at 2026-11-04 and `currentMonth` would never have reached December.
+  - Input checks: `PUT /api/form` / `PUT /api/kras` refuse bad shapes, texts over 5000 characters, ratings off the scale,
+    weights outside 0-100, more than 30 sub-KRAs, a non-date review date; answers only for the form's own questions.
+    Scheduling routes run one at a time per review (`oneAtATime`), so a double click sends one calendar invite.
+  - `modal()` = a real dialog (role, focus in and back, Tab stays inside, Escape closes the top one, `m.onClose`); a
+    global `unhandledrejection` toast; non-GET calls are not repeated on a 504; keyboard focus rings and phone fixes in
+    the "Production check" block at the end of the styles.
 - Domain rules: KRA ratings are percentages, 10-100 in steps of 10 (`KRA_SCALE`; were 0-5 until 2026-11-12, `migrate()`
   converts old saved data x20 and marks `config.ratingScale = 100`); questionnaire ratings stay 0-5; thresholds
   `clickupMin`/`learningMin` are % and the gap flags are percentage points. Employees' "What is left on my form" lists
