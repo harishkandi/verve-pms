@@ -32,7 +32,13 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   Password dialog; `/api/password/set` resolves it (Harish 2026-11-18).
 - Calendar: a reviewer connects their own Google Calendar (scope `calendar.events`, refresh token AES-GCM encrypted in
   `calendarLinks`). Schedule/Reschedule/Cancel on the Scheduling page create/move/delete the event with `sendUpdates=all`;
-  Google emails the guests (employee + their manager when someone else schedules).
+  Google emails the guests (employee + their manager when someone else schedules). Invite format (Harish 2026-11-23):
+  title "Verve Advisory · Monthly Review: <name> (<month>)", description = simple HTML (`reviewNote` in `server.js`:
+  logo from the Vercel address because sleeping Render made Gmail drop it, employee / reviewer / Zoom, a "before the
+  meeting" list, form link); Google writes the rest (When, Organizer, Yes/No/Maybe, the green CHANGED marks on updates).
+  Local testing only: `INVITE_TEST_GUEST=<any email>` in `pms/.env` (+ optional `INVITE_TEST_FOR=<employee name>`: that
+  person's invites go to the test address instead) lets you receive the invite yourself; ignored on Render. Tested end
+  to end locally 2026-11-23, then the test invites were cancelled and the test email swaps undone.
 - Employees = the REAL company list (2026-11-12, from the "employee list" sheet: Name, Reporting Manager, Designation,
   Department (= team), Director; 76 rows + 4 top-level directors). Teams and reporting managers were replaced on
   2026-11-12 by Harish's team sheet ("Sheet4", the master for teams): 72 rows + 4 directors, 9 teams grouped by director

@@ -795,11 +795,41 @@ function slotOf(body, f) {
 const inviteView = f => f.invite ? { link: f.invite.link, owner: f.invite.owner, guests: f.invite.guests, date: f.invite.date, time: f.invite.time, duration: f.invite.duration, sentAt: f.invite.sentAt } : null;
 // Google errors are shown to the user as they are (expired access, calendar not connected, ...)
 const viaGoogle = async fn => { try { return await fn(); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(502, e.message); } };
-// the text of the calendar event, including the manager's Zoom link
+// the calendar event: title and description (Google allows simple HTML there: bold, italic, links, lists, line breaks;
+// Google writes the rest of the invite email itself, e.g. When, Organizer, Guests and the Yes / No / Maybe buttons)
+const inviteTitle = (e, f) => `Verve Advisory · Monthly Review: ${e.name} (${D.monthLabel(f.month)})`;
+const htmlEsc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function reviewNote(f, body, senderName, zoom) {
   const origin = A.okOrigin(body.origin) || A.ORIGINS.find(o => !o.includes('localhost')) || A.ORIGINS[0];
-  return `Monthly performance review for ${D.monthLabel(f.month)}.\n\n${zoom ? `Join the Zoom meeting: ${zoom}\n\n` : ''}Review form: ${origin}/#/form/${f.empId}/${f.month}\n\nPlease fill in your self ratings and remarks before the meeting.\n\nSent from Verve PMS by ${senderName}.`;
+  // the logo must come from an address Gmail can always reach: Vercel's CDN first (Render's free tier sleeps, and
+  // Gmail gives up on a picture that takes a minute to load)
+  const pub = A.ORIGINS.find(o => o.includes('vercel.app')) || A.ORIGINS.find(o => !o.includes('localhost'));
+  const e = L.emp(f.empId), m = mgrOf(f.empId), who = [e.designation, teamLabel(e.team)].filter(Boolean).join(' · ');
+  const form = `${origin}/#/form/${f.empId}/${f.month}`;
+  return [
+    pub ? `<img src="${pub}/verve-advisory-logo.png" alt="Verve Advisory" width="140" height="55">` : null,
+    '<b>VERVE ADVISORY</b> · Performance Management System',
+    '',
+    `<b>Monthly performance review · ${htmlEsc(D.monthLabel(f.month))}</b>`,
+    `<b>Employee:</b> ${htmlEsc(e.name)}${who ? ` (${htmlEsc(who)})` : ''}`,
+    `<b>Reviewer:</b> ${htmlEsc(m ? m.name : senderName)}`,
+    zoom ? `<b>Join on Zoom:</b> <a href="${htmlEsc(zoom)}">${htmlEsc(zoom)}</a>` : null,
+    '',
+    '<b>Before the meeting, please:</b>',
+    '<ul><li>Give your self rating and remark on every sub-KRA</li><li>Add your SOP and learning document links</li>' +
+      '<li>Answer the review questions</li><li>Click <b>Submit to manager</b></li></ul>',
+    `<b><a href="${htmlEsc(form)}">Open your review form</a></b>`,
+    '',
+    `<i>Please reply Yes so your manager knows you can attend. Sent from Verve PMS by ${htmlEsc(senderName)}.</i>`,
+  ].filter(x => x !== null).join('<br>'); // null = a line that does not apply
 }
+// local testing only: INVITE_TEST_GUEST (any address, e.g. a personal Gmail) gets the invite so the tester sees the
+// email the employee gets. With INVITE_TEST_FOR (an employee's name) it stands in for that one person: their invites go
+// to the test address instead of their real one, other invites are unchanged. Without it, it is an extra guest on every
+// invite. Ignored on Render, so staging never invites an outside address.
+const TEST_GUEST = (() => { const g = String(process.env.INVITE_TEST_GUEST || '').trim().toLowerCase(); return !process.env.RENDER && /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(g) ? g : ''; })();
+const TEST_FOR = TEST_GUEST ? String(process.env.INVITE_TEST_FOR || '').trim().toLowerCase() : '';
+if (TEST_GUEST) console.log(`INVITE_TEST_GUEST: ${TEST_GUEST} ${TEST_FOR ? `gets ${process.env.INVITE_TEST_FOR.trim()}'s calendar invites instead of their real email` : 'is added to every calendar invite'} (local testing)`);
 // the invite comes from the signed-in person's own calendar; guests are the employee and, if someone else schedules, their manager
 async function sendInvite(sender, f, slot, body) {
   const e = L.emp(f.empId), mgr = e.managerId ? L.emp(e.managerId) : null;
@@ -808,8 +838,10 @@ async function sendInvite(sender, f, slot, body) {
   if (!C.linked(sender.id)) throw bad('Connect your Google Calendar first (top of this page).');
   const guests = [e.email.toLowerCase()];
   if (mgr && mgr.id !== sender.id && A.isOrgEmail(mgr.email)) guests.push(mgr.email.toLowerCase());
+  if (TEST_GUEST && TEST_FOR && e.name.trim().toLowerCase() === TEST_FOR) guests[0] = TEST_GUEST;
+  else if (TEST_GUEST && !TEST_FOR && !guests.includes(TEST_GUEST)) guests.push(TEST_GUEST);
   const ev = await viaGoogle(() => C.create(sender.id, { ...slot, guests,
-    summary: `PMS review: ${e.name} (${D.monthLabel(f.month)})`,
+    summary: inviteTitle(e, f),
     description: reviewNote(f, body, sender.name, slot.zoom) }));
   f.invite = { eventId: ev.id, ownerId: sender.id, owner: sender.name, link: ev.link, guests, date: slot.date, time: slot.time, duration: slot.duration, sentAt: new Date().toISOString() };
 }
