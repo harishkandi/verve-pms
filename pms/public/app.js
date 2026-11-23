@@ -1407,7 +1407,7 @@ pages.home = async (v, opts = {}) => {
           ${g.items.slice(0, SHOWN).map(t => `<a class="ed-item" href="#/form/${S.me.id}/${S.month}" title="${esc(t.full)}"><i></i><span>${esc(t.text)}</span>${ico('right')}</a>`).join('')}
           ${g.items.length > SHOWN ? `<a class="ed-more" href="#/form/${S.me.id}/${S.month}">+${g.items.length - SHOWN} more in your review</a>` : ''}</div>`).join('')}</div>`;
     // recent monthly ratings (submitted months), newest first
-    const RATE_NOTE = '<p class="ed-note">Monthly rating = 30% your rating + 70% your manager’s, weighted by sub-KRA and then by KRA.</p>';
+    const RATE_NOTE = ''; // footer notes removed everywhere (Harish 2026-11-23)
     const recent = yr && yr.people[0] ? yr.months.map((m, i) => ({ m, t: yr.people[0].cells[i] && yr.people[0].cells[i].total })).filter(x => x.t != null).slice(-5).reverse() : [];
     const recentBody = recent.length ? `<div class="mb">${recent.map(x => `<div class="ed-rate"><span>${esc(x.m.label.split(' ')[0].slice(0, 3))} ${x.m.label.split(' ')[1].slice(2)}</span><div class="ed-bar"><i class="${rateCls(x.t)}" style="width:${x.t}%"></i></div><b class="rt ${rateCls(x.t)}">${x.t.toFixed(1)}%</b></div>`).join('')}
       <a class="more ed-link" href="#/yearly">${ico('chart')}See my full report</a>${RATE_NOTE}</div>` : `<div class="mb"><div class="empty">No ratings yet this year. They show here once your manager submits your first review.${o ? ` <a href="#/form/${S.me.id}/${S.month}">Open my ${esc(monthLabel(S.month).split(' ')[0])} form</a>` : ''}</div>${RATE_NOTE}</div>`;
@@ -1914,7 +1914,7 @@ pages.team = async (v, arg) => {
   ${countTiles(c)}
   <h2>${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})</h2>
   <div class="tablewrap"><table>${table}<tr id="tnone" hidden><td colspan="9" class="small">No one here matches your search.</td></tr></table></div>
-  <p class="small">Click a name or review status to open that person's form; click the Employees count to open their team.</p>`;
+  `;
   onMonth(() => pages.team(v, arg));
   const filter = () => {
     const s = (S.tq || '').trim().toLowerCase(); let n = 0;
@@ -1942,7 +1942,7 @@ pages.mis = async (v, id) => {
   <h2>Monthly rating by person</h2>
   <div class="tablewrap"><table><tr><th>Employee</th><th>Reports to</th>${d.months.map(m => `<th>${short(m)}</th>`).join('')}<th>Average</th><th></th></tr>
   ${d.grid.map(r => `<tr><td><b>${esc(r.name)}</b><div class="small">${esc(r.designation)}</div></td><td>${esc(r.manager)}</td>${r.cells.map(x => `<td>${cell(x)}</td>`).join('')}<td>${r.avg != null ? `<b class="rt ${rateCls(r.avg)}">${pc(r.avg)}</b>` : 'N/A'}</td><td><a class="btn sm" href="#/kpi/${r.id}">${ico('award')}KPI</a></td></tr>`).join('') || `<tr><td colspan="${d.months.length + 4}" class="small">Nobody reports to ${d.me ? 'you' : esc(d.person.name)}.</td></tr>`}</table></div>
-  <p class="small">Ratings appear once a review is submitted. "Not sub." = completed but not submitted, "Open" = review not completed yet, – = no form that month. Ratings are percentages: blue is 80% and above, orange 60% to 79%, red below 60%.</p>`;
+  `;
   misGraph($('#mgraph'), id).catch(er => { $('#mgraph').innerHTML = errBox(er); });
   $('#misx').onclick = () => {
     csvSave(`MIS_${fileName(d.person.name)}.csv`, [['Employee', 'Designation', 'Reports to', ...d.months.map(m => m.label), 'Average'],
@@ -2005,7 +2005,7 @@ pages.kpi = async (v, id) => {
   <div class="tablewrap"><table><tr><th>Month</th><th>Operational</th><th>Process</th><th>People</th><th>Monthly rating</th><th>Status</th><th>Review date</th><th>Form</th></tr>
   ${d.rows.map(r => r.none ? `<tr><td><b>${esc(r.label)}</b></td><td colspan="6" class="small">No form for this month.</td><td><a class="btn sm" href="#/form/${d.person.id}/${r.month}">Open</a></td></tr>`
     : `<tr><td><b>${esc(r.label)}</b></td><td>${kra(r.kra.operational)}</td><td>${kra(r.kra.process)}</td><td>${kra(r.kra.people)}</td><td>${r.rating != null ? `<b class="rt ${rateCls(r.rating)}" style="font-size:16px">${pc(r.rating)}</b>` : '<span class="small">After submit</span>'}</td><td>${badge(r.status)}</td><td>${fmtD(r.reviewDate)}</td><td><a class="btn sm" href="#/form/${d.person.id}/${r.month}">Open</a></td></tr>`).join('') || '<tr><td colspan="8" class="small">No months yet.</td></tr>'}</table></div>
-  <p class="small">Each KRA score is 30% self + 70% manager rating, weighted by sub-KRA. The monthly rating combines the three KRAs by their weight and shows once the review is submitted.</p>`;
+  `;
 };
 // report tables (Summary and Full details): one line per row, a light dash for "nothing yet", colour only where it means something
 const NIL = '<span class="nil">–</span>';
@@ -2344,7 +2344,7 @@ function anDraw(v) {
   <div class="row anbar">${fySel}${cfPill('anAll')}${cfSum('anAll')}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
   ${d.sample ? '<div class="asample" role="note"><b>Sample data.</b> These ratings are made up to show how the charts look. Names are placeholders, nothing is saved, and real reviews are not changed. Switch "Sample data" off to see the real reviews.</div>' : ''}
   <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${trend}${gapc}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}${peopleC}${revC}</div></div>
-  <p class="small">"Filter all cards" at the top applies to every card; each card's own Filter narrows it further (a card's own Period wins over the page's). Scores are percentages from submitted reviews (30% self + 70% manager, weighted by sub-KRA, then by KRA); parameters are the manager's rating out of 5. April to October 2026 come from the old PMS portal, which had no parameter ratings or review dates. People who have left count in the months they were reviewed, but not in Who is moving, People or Needs attention. "On time" = the review was held inside the team's review window.</p>`;
+  `;
   // entrance (Bklit-style motion, CSS under .anin): only for cards whose content changed since the last draw
   const prev = AN_LAST; AN_LAST = out;
   v.querySelectorAll('.anc[data-c]').forEach(s => {
@@ -2400,7 +2400,7 @@ pages.yearly = async (v, id) => {
     <span class="sp"></span>${list.length ? exportMenu() : ''}${id && !self ? `<a class="btn" href="#/yearly">← Team Report</a>` : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
     ${list.map(block).join('') || `<div class="empty card">No one to show for this filter. ${clearLink('yearly')}</div>`}
-    <p class="small">Scores are percentages from submitted reviews: each KRA is 30% self + 70% manager rating, weighted by sub-KRA; Total weighs the three KRAs by their weightage. Empty months have no submitted review yet. Quarter and year averages use the months that have a Total.</p>`;
+    `;
   v.onclick = e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
@@ -2528,8 +2528,8 @@ pages.report = async v => {
       <div class="vsw" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
     ${noDetail ? '<div class="alert-w">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
     ${RF.full ? fullTable(d) : reportTable(d.rows)}
-    ${RF.full ? `<p class="small">Scheduled Date is the first date picked; No. of times rescheduled counts new dates only (a time change on the same day is not counted). Operational KRA properly set = weightage ${d.rules.opWeight}, at least ${d.rules.opMinSubKras} sub-KRAs, each with a target, sub-KRA weightages adding up to ${d.rules.opWeight}. Learning properly done = manager rating of ${d.rules.learningMin}% or more on every learning sub-KRA. Questionnaire properly filled = every answer has at least ${d.rules.qMinWords} words. The remark columns put each sub-KRA's self and manager remark together. Export › CSV downloads these columns.</p>` : ''}`}
-    <p class="small">Directors see the whole organisation. Managers see their own team and everyone under them at every level. Employees do not see this report.</p>`;
+    `}
+    `;
   // search (Harish 2026-11-19, right of the toolbar): hides the rows of the table on screen that do not match; the
   // counts and Export stay for the whole month
   const rsearch = () => { const t = (RF.q || '').trim().toLowerCase();
@@ -2637,7 +2637,7 @@ pages.scheduling = async v => {
   <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="badge b-amber" style="cursor:help" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">${r.reschedules} ${r.reschedules === 1 ? 'time' : 'times'}</span>` : '<span class="small">–</span>'}</td>
   <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>`}
-  <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
+  `;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
   const win = r => d.windows.find(w => w.key === r.winKey);
@@ -2719,8 +2719,7 @@ pages.profile = async v => {
     : `<div class="pf-none" style="padding:4px 0">Top level: ${me ? 'you report' : 'they report'} to no one in PMS, so there is no monthly review.</div>`;
   const rep = widget('sitemap', 'Reporting line', '', `<div class="mb">${line}</div>`);
   v.innerHTML = head('Profile information', me ? '' : esc(p.name)) + hero
-    + `<div class="wgrid">${work}${rep}</div>`
-    + `<div class="info pf-note">${ico('info')}<span>These details are kept by the admin. If something is wrong or missing, ask HR to update it.</span></div>`;
+    + `<div class="wgrid">${work}${rep}</div>`;
   v.onclick = null;
 };
 
@@ -2755,10 +2754,10 @@ pages.annual = async (v, emp) => {
   v.innerHTML = head('One Pager Document', `${esc(d.employee.name)} · ${d.fy}`) +
     `${list.length ? `<div class="row"><select id="who"><option value="${S.me.id}">Myself</option>${list.map(r => `<option value="${r.empId}" ${r.empId === d.employee.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div>` : ''}
   <h2>One-page summary <span class="small">(${d.months.filter(m => m.filled).length} of 12 months filled; fills as each monthly review finishes)</span></h2>
-  <div class="row"><b>${esc(d.employee.name)}</b> (${esc(d.employee.designation)}) · ${d.fy} (April 2026 to March 2027)<span class="sp"></span><button class="btn pri" data-print>Download PDF</button></div>
+  <div class="row"><b>${esc(d.employee.name)}</b> (${esc(d.employee.designation)}) · ${d.fy} (April 2026 to March 2027)<span class="sp"></span><a class="btn" href="#/form/${d.employee.id}/annual">${ico('award')}Annual review</a><button class="btn pri" data-print>Download PDF</button></div>
   <div class="tablewrap"><table><tr><th>Month</th><th>KRA weightage (Op / Pro / Peo)</th><th>Work summary</th><th>Self</th><th>Manager</th><th>Monthly rating</th><th>Learnings, SOPs</th><th>Highlights and gaps</th></tr>
   ${d.months.map(m => m.filled ? `<tr><td>${esc(m.label.split(' ')[0])}</td><td title="${esc(m.subKras.join(' | '))}">${m.weightage}</td><td>${esc(m.work)}<div class="small">${esc(m.selfRemarks[0] || '')}</div></td><td>${pc(m.self)}</td><td>${pc(m.mgr)}<div class="small">${esc(m.mgrRemarks[0] || '')}</div></td><td>${pc(m.rating)}</td><td class="small">${m.learn.length ? 'Learning: ' + esc(m.learn.join(', ')) + '<br>' : ''}${m.sop.length ? 'SOP: ' + esc(m.sop.join(', ')) : ''}</td><td class="flag">${m.highlights.map(esc).join('<br>') || 'N/A'}</td></tr>` : `<tr><td>${esc(m.label.split(' ')[0])}</td><td colspan="7" class="small">Fills in automatically as each monthly review finishes.</td></tr>`).join('')}</table></div>
-  <p class="small">This page is the one-page summary only. The annual review itself is under My review › Annual review: <a href="#/form/${d.employee.id}/annual">open ${d.employee.id === S.me.id ? 'my' : esc(d.employee.name.split(' ')[0]) + "'s"} annual review</a>.</p>`;
+  `;
   if ($('#who')) $('#who').onchange = e => { location.hash = '#/annual/' + e.target.value; };
   const pr = v.querySelector('[data-print]'); if (pr) pr.onclick = () => window.print();
 };
@@ -2779,7 +2778,7 @@ pages.params = async (v, arg) => {
       ${admin ? `<div style="padding-top:10px"><button class="btn sm pri" data-a="add" data-s="${si}">${ico('plus')}Add item</button></div>` : ''}</div>`).join('')}
     <div class="card pcard"><div class="phead"><b class="ptitle"><i class="pico">${ico('star')}</i>Rating scale (applies to the parameters above):</b>${admin ? '<span class="acts"><button class="btn sm" data-a="scale">Edit scale</button></span>' : ''}</div>${P.scale.map(x => `<div class="pitem"><span class="pt">${esc(x)}</span></div>`).join('')}</div>
     ${admin && dirty ? `<div class="row" style="justify-content:flex-end;align-items:center"><span class="small" style="color:var(--vr-warn-700);font-weight:600">You have unsaved changes</span><button class="btn" id="discp">Discard</button><button class="btn pri" id="savep">Save changes</button></div>` : ''}
-    ${admin ? `<p class="small">Soft parameters here are not part of the monthly rating calculation. Changes apply from the month you choose and are written to the audit log.</p>` : ''}`;
+    `;
   };
   draw();
   const ask = (title, val, cb) => { const m = modal(`<h2>${title}</h2><textarea id="tv" style="min-height:80px">${esc(val)}</textarea><div class="row" style="margin-top:12px"><button class="btn pri" id="ok">OK</button><button class="btn" id="no">Cancel</button></div>`); m.querySelector('#no').onclick = () => m.remove(); m.querySelector('#ok').onclick = () => { const t = m.querySelector('#tv').value.trim(); if (t) { cb(t); m.remove(); draw(true); } }; };
@@ -2815,7 +2814,7 @@ async function questionsBox(v) {
   const list = qs.filter(q => q.type === tab && !q.to).sort((a, b) => a.order - b.order);
   v.innerHTML = `<div class="card pcard"><div class="phead"><span class="acts" style="margin-left:auto"><button class="btn sm pri" data-a="new">${ico('plus')}Add new question</button></span></div>
   <div class="tablewrap"><table class="qtab"><tr><th>S.No</th><th>Question</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
-  <p class="small">Changes apply from the review month you choose. Forms already submitted keep the question and answers as they were. No limit on the number of questions.</p></div>`;
+  </div>`;
   // reorder by drag-and-drop (the row moves live under the mouse) or, on the grip, with the arrow keys; saved when dropped
   const tbl = v.querySelector('table.qtab'), order = () => [...tbl.querySelectorAll('tr[data-q]')].map(r => r.dataset.q), start = order();
   const renum = () => tbl.querySelectorAll('tr[data-q] .qno span').forEach((x, i) => { x.textContent = i + 1; });
@@ -2985,7 +2984,7 @@ pages.employees = async (v, arg, grp) => {
   ${tab === 'active' ? '' : `<td><span style="white-space:nowrap">${fmtY(e.inactiveFrom)}</span><div class="small">${esc(e.reason || '')}</div></td>`}
   <td><button class="sw ${e.active ? 'on' : ''}" role="switch" aria-checked="${e.active}" aria-label="${esc(e.name)} active" data-a="${e.active ? 'off' : 'on'}" data-id="${e.id}" data-n="${esc(e.name)}" title="${e.active ? 'Active. Click to move to inactive.' : 'Inactive. Click to reactivate.'}"><i></i></button></td>
   <td><span class="acts col"><a class="btn sm" href="#/empforms/${e.id}">${tab === 'active' ? 'Monthly report' : 'Past forms'}</a>${tab === 'active' ? `<button class="btn sm" data-a="pw" data-id="${e.id}" title="${e.password ? 'Reset' : 'Set'} ${esc(e.name.split(' ')[0])}'s PMS password. ${esc(pwStateText(e.password))}">${ico('key')}Password</button>` : ''}</span></td></tr>`).join('') || `<tr><td colspan="${tab === 'active' ? 7 : 8}">No one matches.</td></tr>`}</table></div>
-  <p class="small">Changes in the Team, Designation and Reporting manager columns save straight away and are written to the audit log. Roles follow the reporting line: someone who gets a first report becomes a manager by themselves. The employee sheet is the master copy: a reporting change made here is replaced at the next import of the sheet unless the sheet has it too. Only people listed here with a ${esc(dom)} email can sign in. Inactive employees cannot sign in and are left out of schedules, counts, reports and emails; their past forms stay viewable.</p>`;
+  `;
   v.oninput = e => {
     if (e.target.id !== 'eq') return;
     S.eq = e.target.value; clearTimeout(empSearchT);
@@ -3175,7 +3174,7 @@ pages.reporting = async (v, arg) => {
   ${d.rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.designation} ${r.team} ${r.email} ${r.manager ? r.manager.name : ''} ${r.director ? r.director.name : ''}`.toLowerCase())}">${COLS.map(([, cell, c]) => `<td class="${c || ''}">${cell(r, i)}</td>`).join('')}</tr>`).join('')
     || `<tr><td colspan="${COLS.length}" class="small">${p ? `Nobody reports to ${esc(p.name)}.` : 'No one at this level.'}</td></tr>`}
   <tr id="orgnone" hidden><td colspan="${COLS.length}" class="small">No one here matches your search.</td></tr></table></div>
-  <p class="small">Flow: Directors → click a director to see their managers → click a manager to see their employees. The path at the top takes you back up. Team progress counts everyone under that person, at every level.</p>`;
+  `;
   const filter = () => {
     const s = (S.orgq || '').trim().toLowerCase(); let n = 0;
     v.querySelectorAll('tr[data-s]').forEach(tr => { const hit = !s || tr.dataset.s.includes(s); tr.hidden = !hit; n += hit; });
@@ -3197,7 +3196,7 @@ pages.teams = async v => {
     <td data-name="${i}"><span style="display:inline-flex;align-items:center;gap:6px">${teamIco(t.name)}<b>${esc(t.label || t.name)}</b></span>${[t.sheetName.length && `Called ${t.sheetName.map(esc).join(', ')} in the sheet`, t.added && 'Added in the app'].filter(Boolean).map(x => `<div class="small">${x}</div>`).join('')}</td>
     <td>${t.members ? `<a href="#/employees/active" data-t="people" data-i="${i}" title="Show them on the Employees page">${t.members}</a>` : 0}</td><td style="white-space:nowrap">${days(t.window)}</td>
     <td><span class="acts"><button class="btn sm" data-t="win" data-i="${i}">Window</button>${t.fixed ? '<span class="small" title="Holds the top-level directors">Fixed</span>' : `<button class="btn sm" data-t="ren" data-i="${i}">Rename</button><button class="btn sm dng" data-t="del" data-i="${i}" ${t.members ? `disabled title="Move its ${t.members} active ${t.members === 1 ? 'person' : 'people'} to another team first"` : ''}>Delete</button>`}</span></td></tr>`).join('')}</table></div>
-  <p class="small">Teams come from the employee sheet. A rename here is remembered, so the next import of the sheet keeps the new name. To move people between teams, change the Team column on the Employees page.</p>`;
+  `;
   const er = x => { v.querySelector('#er').innerHTML = x ? errBox(x) : ''; };
   const redraw = () => pages.teams(v);
   const rename = async (t, to) => {
