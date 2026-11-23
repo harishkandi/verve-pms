@@ -269,7 +269,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
 - Domain rules: KRA ratings are percentages, 10-100 in steps of 10 (`KRA_SCALE`; were 0-5 until 2026-11-12, `migrate()`
   converts old saved data x20 and marks `config.ratingScale = 100`); questionnaire ratings stay 0-5; thresholds
   `clickupMin`/`learningMin` are % and the gap flags are percentage points. Employees' "What is left on my form" lists
-  only what they fill in (`employeeTodo` in `logic.js`); the employee dashboard is one navy bar (what to do now, days left in the window, the four review steps incl. meeting, review date and rating) above that list and My recent ratings (2026-11-13: ring, facts, four cards and the Review steps box removed as repeats); KRA set-up and review-date alerts are for managers only. The
+  only what they fill in (`employeeTodo` in `logic.js`); the employee dashboard is one navy bar (what to do now, days left in the window, the four review steps incl. meeting, review date and rating; since 2026-11-23 a slim segmented track `.eh-seg`: Self review / Submit to manager / Review meeting / Manager review, no numbered circles) above that list and My recent ratings (2026-11-13: ring, facts, four cards and the Review steps box removed as repeats); KRA set-up and review-date alerts are for managers only. The
   form shows a Review summary (`kraSummary` / `formSummary`), also in a dialog after Save draft / Submit; hidden from
   employees (`showSummary()` in `app.js`, Harish's call 2026-11-12), reviewers and admins see it.
   Monthly form is two steps: the employee clicks "Submit to manager" (`POST /api/form/self-submit`, blocked until

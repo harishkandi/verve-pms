@@ -606,22 +606,17 @@ select.fssel{background-image:var(--vr-caret);background-repeat:no-repeat;backgr
 .eh-cd.g b{background-image:linear-gradient(180deg,#fff 30%,var(--vr-success-500))}
 .eh-cd span{font-size:12px;line-height:16px;color:rgba(255,255,255,.55)}
 .eh .acts{margin-left:0}
-.eh-steps{flex:1 1 100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0 -28px;padding:18px 28px 20px;list-style:none;background:rgba(9,22,54,.45);border-top:1px solid rgba(255,255,255,.08)}
-.eh-steps li{position:relative;min-width:0;padding-right:20px}
-.eh-steps li:not(:last-child)::after{content:'';position:absolute;top:13px;left:40px;right:12px;height:2px;border-radius:2px;background:rgba(255,255,255,.12)}
-.eh-steps li.done:not(:last-child)::after{background:var(--vr-success-500)}
-.eh-steps li>i{display:grid;place-items:center;flex:none;width:28px;height:28px;border:2px solid rgba(255,255,255,.25);border-radius:9999px;background:var(--vr-sidebar);font-style:normal;font-size:12px;font-weight:700;color:rgba(255,255,255,.6)}
-.eh-steps li>i svg{width:14px;height:14px}
-.eh-steps li.done>i{border-color:var(--vr-success-500);background:var(--vr-success-500);color:#fff}
-.eh-steps li.now>i{border-color:#fff;background:#fff;color:var(--vr-navy-800);box-shadow:0 0 0 4px rgba(255,255,255,.14)}
-.eh-steps li>div{min-width:0;margin-top:10px}
-.eh-steps b{display:block;font-size:13px;line-height:18px;color:#fff}
-.eh-steps li:not(.done):not(.now) b{color:rgba(255,255,255,.6)}
-.eh-steps span{display:block;margin-top:2px;font-size:12px;line-height:16px;color:rgba(255,255,255,.55)}
-.eh-steps li.now span{color:rgba(255,255,255,.8)}
-.eh-pg{display:block;width:120px;max-width:100%;height:4px;margin-top:6px;overflow:hidden;border-radius:9999px;background:rgba(255,255,255,.14)}
-.eh-pg u{display:block;height:100%;border-radius:9999px;background:var(--vr-success-500)}
-@media(max-width:900px){.eh-steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 0}.eh-steps li::after{display:none}.eh-cd{align-items:flex-start;text-align:left}}
+.eh-steps{flex:1 1 100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 14px;margin:0 -28px;padding:16px 28px 18px;list-style:none;background:rgba(9,22,54,.45);border-top:1px solid rgba(255,255,255,.08)}
+.eh-steps li{min-width:0}
+.eh-seg{display:block;height:4px;overflow:hidden;border-radius:9999px;background:rgba(255,255,255,.14)}
+.eh-seg u{display:block;height:100%;border-radius:9999px;background:var(--vr-success-500)}
+.eh-steps li.now .eh-seg u{background:var(--vr-pms-y)}
+.eh-steps b{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;line-height:18px;font-weight:600;color:rgba(255,255,255,.6)}
+.eh-steps b svg{flex:none;width:14px;height:14px;color:var(--vr-success-500)}
+.eh-steps li.done b,.eh-steps li.now b{color:#fff}
+.eh-steps span{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:16px;color:rgba(255,255,255,.55)}
+.eh-steps li.now span{color:rgba(255,255,255,.85)}
+@media(max-width:900px){.eh-steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 14px}.eh-cd{align-items:flex-start;text-align:left}}
 @media(max-width:520px){.eh-steps{grid-template-columns:1fr}}
 /* each employee card has its own colour: meeting purple, review date blue (status and rating follow their state) */
 .ed-bar{display:block;height:4px;margin-top:12px;overflow:hidden;border-radius:9999px;background:var(--vr-n-100)}

@@ -1327,18 +1327,19 @@ pages.home = async (v, opts = {}) => {
       : w.state === 'upcoming' ? ['Window opens in', w.days, `${w.days === 1 ? 'day' : 'days'} · ${fmtD(w.start)}`, '']
       : w.state === 'open' ? (w.days ? ['Time left', w.days, `${w.days === 1 ? 'day' : 'days'} · closes ${fmtD(w.end)}`, w.days <= 2 ? 'a' : ''] : ['Time left', 'Today', `last day · ${fmtD(w.end)}`, 'a'])
       : ['Window closed', w.days, `${w.days === 1 ? 'day' : 'days'} ago · ${fmtD(w.end)}`, 'r'];
+    // review steps = a slim segmented track (Harish 2026-11-23: the numbered circles + connector lines looked unprofessional)
     const st = [
-      ['Fill in your part', !o ? 'No form this month' : finished ? 'Done' : pr ? `${done} of ${total} filled in` : 'Self ratings, remarks and answers', !!finished, !finished && pr ? partPct : null],
-      ['Submit to manager', o && o.selfSubmitted ? `Sent${o.selfSubmittedAt ? ` on ${fmtD(o.selfSubmittedAt.slice(0, 10))}` : ''}` : o && !issues.length ? 'Ready to send' : 'Once your part is filled in', !!finished],
-      ['Review meeting', o && o.reviewDate ? `Held on ${fmtD(o.reviewDate)}${o.due === 'After due date' ? ' · after the window' : ''}` : o && o.scheduled ? `${meeting}${o.invite ? ' · in your calendar' : ''}` : `${boss} sets the date`, !!(o && (o.reviewDate || o.submitted))],
-      [`${o && o.manager ? boss : 'Manager'} submits`, o && o.submitted ? 'Done · locked for the employee' : rv != null ? `Rating preview ${pc(rv)}` : 'Their ratings count 70%, yours 30%', !!(o && o.submitted)],
+      ['Self review', !o ? 'No form this month' : finished ? 'Completed' : pr ? `${done} of ${total} filled in` : 'Ratings, remarks and answers', !!finished, finished ? 100 : pr ? partPct : 0],
+      ['Submit to manager', o && o.selfSubmitted ? `Sent${o.selfSubmittedAt ? ` ${fmtD(o.selfSubmittedAt.slice(0, 10))}` : ''}` : o && !issues.length ? 'Ready to send' : 'Not sent yet', !!finished],
+      ['Review meeting', o && o.reviewDate ? `Held ${fmtD(o.reviewDate)}${o.due === 'After due date' ? ' · after the window' : ''}` : o && o.scheduled ? `${meeting}${o.invite ? ' · in your calendar' : ''}` : `To be booked by ${boss}`, !!(o && (o.reviewDate || o.submitted))],
+      ['Manager review', o && o.submitted ? 'Completed' : rv != null ? `Rating preview ${pc(rv)}` : `Pending with ${boss}`, !!(o && o.submitted)],
     ];
     const cur = st.findIndex(x => !x[2]);
     const hero = `<div class="hero eh">${ORBS}${HALO}
       <div class="ed-hx"><div class="hm">My review · ${esc(d.label)}</div><div class="ht">${headline}</div><p>${sub}</p></div>
       ${cd ? `<div class="eh-cd ${cd[3]}"><small>${cd[0]}</small><b>${cd[1]}</b><span>${cd[2]}</span></div>` : ''}
       <div class="acts">${o ? `<a class="btn yel" href="#/form/${S.me.id}/${S.month}">${o.submitted ? 'View my review' : 'Open my review'}</a>` : ''}</div>
-      <ol class="eh-steps">${st.map(([t, s2, ok, pg], i) => `<li class="${ok ? 'done' : i === cur ? 'now' : ''}"><i>${ok ? ico('tick') : i + 1}</i><div><b>${esc(t)}</b><span>${esc(s2)}</span>${pg != null ? `<em class="eh-pg"><u style="width:${pg}%"></u></em>` : ''}</div></li>`).join('')}</ol></div>`;
+      <ol class="eh-steps" aria-label="Review steps">${st.map(([t, s2, ok, pg], i) => `<li class="${ok ? 'done' : i === cur ? 'now' : ''}"${i === cur ? ' aria-current="step"' : ''}><em class="eh-seg"><u style="width:${ok ? 100 : pg || 0}%"></u></em><b>${ok ? ico('tick') : ''}${esc(t)}</b><span>${esc(s2)}</span></li>`).join('')}</ol></div>`;
     // what is left: the server's list, grouped by the part of the form it belongs to
     const groups = groupTodo(issues), SHOWN = 4;
     const todoBody = !o ? `<div class="mb"><div class="empty">No review form for this month yet. It appears here by itself${w && w.start ? ` when your review window opens on ${fmtD(w.start)}` : ' when your review window opens'}.</div></div>`
