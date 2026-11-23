@@ -2580,9 +2580,11 @@ const calStart = () => { location.href = `/api/auth/google/start?calendar=1&orig
 const slotCell = r => {
   const d = new Date(r.scheduled + 'T00:00:00'), day = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '');
   const len = r.invite && r.invite.duration ? ` · ${r.invite.duration} min` : '';
-  const pen = r.canManage ? `<button type="button" data-resch="${r.empId}" title="Reschedule" aria-label="Reschedule ${esc(r.name)}'s review">${ico('pencil')}</button>`
-    : r.managerOnly ? `<button type="button" disabled title="${esc(S.me.name)} reschedules from their own sign-in" aria-label="Reschedule (manager only)">${ico('pencil')}</button>` : '';
-  return `<span class="slot ${pen ? '' : 'np'}">${ico('calendar')}${esc(day)}<i>·</i><em>${r.time ? fmtT(r.time) : 'Time not set'}${len}</em>${pen}</span>`;
+  // date + time as text, then the same yellow button as "Schedule" on unbooked rows (Harish 2026-11-23: the blue pill with a
+  // round pencil, the boxed "Invite sent" and the coloured pills did not look like the rest of PMS)
+  const pen = r.canManage ? `<button type="button" class="btn sm" data-resch="${r.empId}" aria-label="Reschedule ${esc(r.name)}'s review">${ico('pencil')}Reschedule</button>`
+    : r.managerOnly ? `<button type="button" class="btn sm" disabled title="${esc(S.me.name)} reschedules from their own sign-in">${ico('pencil')}Reschedule</button>` : '';
+  return `<div class="slotc"><span><b>${esc(day)}</b><small>${r.time ? fmtT(r.time) : 'Time not set'}${len}</small></span>${pen}</div>`;
 };
 const reschedDates = r => { const out = []; [r.history[0] && r.history[0].from, ...r.history.map(h => h.to)].forEach(x => { if (x && !out.includes(x)) out.push(x); }); return out; };
 // Scheduling › Team members as a calendar (Harish 2026-11-18): the same rows (and Filter) as the list, Monday to Sunday
@@ -2621,10 +2623,10 @@ pages.scheduling = async v => {
     : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
     : `<div class="info">To send calendar invites, sign in with your @${esc(S.me.domain)} Google account${S.me.viewingAs ? ' (invites always come from your own calendar, not the person you are viewing as)' : ''}.</div>`;
   const inviteCell = r => r.invite
-    ? `<span class="st ok" title="Sent by ${esc(r.invite.owner)} to ${esc(r.invite.guests.join(', '))}">${ico('tick')}Invite sent</span><div class="small">${r.invite.link ? `<a href="${esc(r.invite.link)}" target="_blank" rel="noopener">Event</a>` : ''}${r.canManage ? ` · <a href="#" data-cancel="${r.empId}">Cancel</a>` : ''}</div>`
-    : !r.hasEmail ? `<span class="st no" title="Add a @${esc(S.me.domain)} email on the Employees page">No work email</span>`
+    ? `<div class="invc"><span class="badge b-green" title="Sent by ${esc(r.invite.owner)} to ${esc(r.invite.guests.join(', '))}">${ico('tick')}Invite sent</span><span class="invl">${[r.invite.link && `<a href="${esc(r.invite.link)}" target="_blank" rel="noopener">Open event</a>`, r.canManage && `<a href="#" data-cancel="${r.empId}">Cancel</a>`].filter(Boolean).join('<i>·</i>')}</span></div>`
+    : !r.hasEmail ? `<span class="badge b-grey" title="Add a @${esc(S.me.domain)} email on the Employees page">No work email</span>`
     : r.scheduled && r.canManage && cal.connected ? `<button class="btn sm" data-inv="${r.empId}">${ico('send')}Send invite</button>`
-    : r.scheduled ? `<span class="st no" title="${r.canManage && !cal.connected ? 'Connect Google Calendar at the top of this page to send invites' : 'No Google Calendar invite for this review'}">Not sent</span>` : '<span class="small">–</span>';
+    : r.scheduled ? `<span class="badge b-grey" title="${r.canManage && !cal.connected ? 'Connect Google Calendar at the top of this page to send invites' : 'No Google Calendar invite for this review'}">Not sent</span>` : '<span class="small">–</span>';
   // Team members: the same Filter pill as the dashboard (team, booked or not, invite, status), filtered in the browser
   PF.steam = optCount(d.rows, r => r.team, tl); PF.sst = optCount(d.rows, r => r.status);
   cfLocalRedraw.sched = () => pages.scheduling(v);
@@ -2636,9 +2638,9 @@ pages.scheduling = async v => {
   <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th class="tact">Action</th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td class="tact"><button class="btn sm" data-win="${esc(w.key)}" title="Change the ${esc(w.label)} review window">${ico('pencil')}Edit</button></td>` : ''}</tr>`).join('')}</table></div>
   <div class="row sechd"><h2>Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
   ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
-  <td>${r.scheduled ? slotCell(r) : r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : r.managerOnly ? `<button class="btn sm pri" disabled title="${esc(S.me.name)} schedules this review from their own sign-in">${ico('calendar')}Schedule</button>` : '<span class="small">Not scheduled</span>'}</td>
+  <td>${r.scheduled ? slotCell(r) : r.canManage || r.managerOnly ? `<div class="slotc"><span><small>Not booked yet</small></span><button class="btn sm pri" data-sch="${r.empId}"${r.canManage ? '' : ` disabled title="${esc(S.me.name)} schedules this review from their own sign-in"`}>${ico('calendar')}Schedule</button></div>` : '<span class="small">Not scheduled</span>'}</td>
   <td>${inviteCell(r)}</td>
-  <td>${r.reschedules ? `<span class="st mv" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">Moved ${r.reschedules}×</span>` : '<span class="small">–</span>'}</td>
+  <td>${r.reschedules ? `<span class="badge b-amber" style="cursor:help" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">Moved ${r.reschedules}×</span>` : '<span class="small">–</span>'}</td>
   <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>`}
   <p class="small">The actual date is the Review Date entered on the employee's monthly form. Reports use the scheduled (or rescheduled) date from this page and the actual date from the form. Rescheduled counts each new date once: moving a review twice to the same day, or changing only the time, counts as one.</p>`;
   onMonth(() => pages.scheduling(v));

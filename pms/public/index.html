@@ -367,21 +367,7 @@ label.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px
 .sqbtn:focus-visible{outline:2px solid var(--vr-navy-600);outline-offset:2px}
 .sqbtn svg{width:16px;height:16px}
 /* Scheduling: how many times a review moved */
-.slot{display:inline-flex;align-items:center;gap:7px;padding:3px 3px 3px 10px;border:1px solid var(--vr-pms-blue);border-radius:9999px;background:var(--vr-pms-blue-50);font-size:13px;line-height:20px;font-weight:600;color:var(--vr-navy-800);white-space:nowrap}
-.slot.np{padding-right:12px}
-.slot>svg{width:14px;height:14px}
-.slot i{font-style:normal;font-weight:400;color:var(--vr-n-500)}
-.slot em{font-style:normal;font-weight:400;color:var(--vr-n-600)}
-.slot button{display:grid;place-items:center;width:26px;height:26px;padding:0;border:0;border-radius:9999px;background:var(--vr-card);color:var(--vr-navy-800);cursor:pointer;transition:background-color .15s}
-.slot button:hover:not(:disabled){background:var(--vr-pms-blue)}
-.slot button:disabled{opacity:.5;cursor:default}
-.slot button svg{width:13px;height:13px}
 .calnote{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}.calnote>svg{width:16px;height:16px;flex:none}.calnote>span{flex:1;min-width:220px}
-.st{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:9999px;font-size:12px;line-height:18px;font-weight:600;white-space:nowrap}
-.st svg{width:12px;height:12px}
-.st.no{background:var(--vr-pms-field);color:var(--vr-n-600)}
-.st.ok{background:var(--vr-green-50);color:var(--vr-green-700)}
-.st.mv{background:var(--vr-warn-50);color:var(--vr-warn-700);cursor:help}
 .dd-head{position:sticky;top:-4px;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:6px;margin:-4px -4px 4px;padding:8px;border-bottom:1px solid var(--vr-n-200);background:var(--vr-card);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--vr-n-500)}
 .dd-nav{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--vr-n-300);border-radius:6px;background:none;color:var(--vr-n-600);cursor:pointer}
 .dd-nav svg{width:12px;height:12px}.dd-nav:hover:not(:disabled){background:var(--vr-n-50)}.dd-nav:disabled{opacity:.35;cursor:default}
@@ -478,6 +464,15 @@ td table tr:hover>td{background:transparent}
    Badges, alerts, avatars, switch
    ===================================================================== */
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:9999px;font-size:10px;line-height:14px;font-weight:600;white-space:nowrap;background:var(--vr-n-100);color:var(--vr-n-600)}
+/* Scheduling cells (Harish 2026-11-23): date as text + the yellow button; invite / moved / no email = the app's badges */
+.slotc{display:flex;align-items:center;gap:12px}
+.slotc>span{display:flex;flex-direction:column;min-width:0;white-space:nowrap}
+.slotc b{font-size:13px;line-height:18px;font-weight:600;color:var(--vr-n-900)}
+.slotc small{font-size:12px;line-height:16px;color:var(--vr-n-700)}
+.slotc .btn{margin-left:auto;min-width:108px;justify-content:center}
+.invc{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.invc .badge svg{width:11px;height:11px}
+.invl{font-size:12px;line-height:16px;white-space:nowrap}.invl i{margin:0 6px;font-style:normal;color:var(--vr-n-600)}
 .b-green{background:var(--vr-success-50);color:var(--vr-success-700)}
 .b-amber{background:var(--vr-warn-50);color:var(--vr-warn-800)}
 .b-red{background:var(--vr-danger-50);color:var(--vr-danger-700)}
