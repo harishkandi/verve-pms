@@ -1505,7 +1505,6 @@ route('GET', '/api/analytics', ({ user, q }) => {
     months: months.map(m => ({ key: m, label: D.monthLabel(m) })), current: config.currentMonth, currentLabel: D.monthLabel(config.currentMonth), today: config.today,
     params, groups: DESIG_GROUPS, scope: user.role === 'admin' ? 'Organisation' : 'Everyone under you' };
   const who = e => { const m = L.emp(e.managerId); return { team: e.team, designation: e.designation || '', group: desigGroup(e), managerId: e.managerId, manager: m ? m.name : '' }; };
-  if (q.sample === '1') return { ...base, ...sampleAnalytics(people, months, params, who), sample: true };
   const rows = [...people, ...gone].map(e => {
     const scores = {}, timing = {};
     for (const m of months) {
@@ -1525,33 +1524,6 @@ route('GET', '/api/analytics', ({ user, q }) => {
   });
   return { ...base, tracked, people: rows };
 });
-
-// Sample data for Performance Analytics (Harish 2026-11-19: to see the charts before real reviews are submitted).
-// Made up on each request, never saved. Real teams, designation groups and managers, but placeholder names ("Sample
-// person 07"), so invented scores are never shown next to a real colleague. Fixed seed: the same sample every time.
-function sampleAnalytics(people, months, params, who) {
-  let s = 20261119;
-  const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
-  const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-  const done = months.filter(m => m < config.currentMonth); // completed months only, like real submitted reviews
-  const [cy, cm] = config.currentMonth.split('-').map(Number), last = new Date(cy, cm, 0).getDate();
-  const rows = people.map((e, n) => {
-    const level = 52 + rnd() * 38, slope = (rnd() - 0.35) * 4, kraLean = [rnd() * 12 - 6, rnd() * 12 - 6, rnd() * 12 - 6], bias = rnd() < 0.12 ? 15 + rnd() * 9 : rnd() * 9 - 3;
-    const scores = {}, timing = {};
-    done.forEach((m, i) => {
-      const r = rnd(); timing[m] = r < 0.62 + i * 0.04 ? 'on' : r < 0.9 ? 'late' : 'missed';
-      if (timing[m] === 'missed' || rnd() < 0.04) return;
-      const total = round2(clamp(level + slope * i + (rnd() - 0.5) * 8, 28, 98));
-      const [operational, process, peopleK] = kraLean.map(d => round2(clamp(total + d + (rnd() - 0.5) * 8, 10, 100)));
-      const pr = {}; params.forEach(p => { pr[p.id] = clamp(Math.round(1.2 + total / 100 * 3.6 + (rnd() - 0.5) * 1.6), 1, 5); });
-      scores[m] = { total, operational, process, people: peopleK, self: round2(clamp(total + 0.7 * bias, 10, 100)), mgr: round2(clamp(total - 0.3 * bias, 10, 100)), params: pr };
-    });
-    const st = rnd(), day = Math.min(last, 20 + Math.floor(rnd() * (last - 19)));
-    const cycle = { scheduled: st < 0.9, meeting: st < 0.9 ? `${config.currentMonth}-${String(day).padStart(2, '0')}` : null, filled: st < 0.82, rated: st < 0.63, submitted: st < 0.47 };
-    return { id: null, name: `Sample person ${String(n + 1).padStart(2, '0')}`, ...who(e), scores, timing, cycle };
-  });
-  return { people: rows };
-}
 
 route('GET', '/api/kpi', ({ user, q }) => {
   adminOnly(user);

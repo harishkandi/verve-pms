@@ -351,7 +351,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   panels of pills on the left half of the screen open to the right (`cfPlace`). API rows per person:
   team, group, managerId / manager, `scores[month]` (submitted only: total, KRAs, self, mgr, params), `timing[month]`
   (on / late / missed, finished months), `cycle` (this month). Scores end at the latest finished month with data. Hover
-  numbers: `#antip` (`anTipWire`). FY + `sample` kept in `localStorage` `pms.analytics`.
+  numbers: `#antip` (`anTipWire`). FY kept in `localStorage` `pms.analytics`.
   Bklit UI look and motion (Harish 2026-11-20, screen recording of bklit.com charts; Bklit is React/shadcn, so it is
   rebuilt by hand in vanilla SVG/CSS, never installed): he wants Bar, Funnel, Pie, Ring, Sparkline, Heatmap and the
   tooltip; NOT radar, scatter, sunburst, background patterns / grid, choropleth map. Entrance plays only on cards whose
@@ -361,9 +361,10 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   is a sparkline (`.sp-l`, crosshair on hover), heatmap days pop in as a diagonal wave. Hover sync: marks and legend rows
   sharing `data-hk` light up together, the rest of the card dims (`.hot`, `[data-hot]`); month labels turn into a pill
   (`xlab`); pie slices pop out (`.pslice`); ring centre shows the hovered KRA (`.an-ctr`, `data-cv` / `data-cl`).
-  Tooltip = Bklit card (`tipH(title, [[colourVar, label, value]], footer)`). A "Sample data" switch (Harish 2026-11-19, `?sample=1`, `sampleAnalytics()` in
-  `server.js`) shows made-up ratings for the same people pool with placeholder names ("Sample person 07"), real teams,
-  managers and designation groups, fixed seed, never saved, with a warning banner and no Team Report links. Team Report: Export menu
+  Tooltip = Bklit card (`tipH(title, [[colourVar, label, value]], footer)`). The "Sample data" switch (made-up ratings) was REMOVED
+  2026-11-23 (Harish: the real April-October data is in); the page shows real submitted reviews only, and an old saved
+  `sample` choice in `pms.analytics` is dropped. Checked that day: all 343 scores (total, KRAs, self, manager, reviewer)
+  identical to the old portal's CSV, card numbers recomputed by hand for admin / manager / director. Team Report: Export menu
   with CSV and PDF like Review Report (`exportMenu`, `yearlyPdf` / `printHtml`), Total row soft yellow.
 - Admin-only (menu, pages and API, Harish 2026-11-12): Manager emails, MIS report, KPI report. Managers' "Reports" group =
   Team report (`#/yearly`: only the people under them, with the month's status cards on top; the old "My team report"

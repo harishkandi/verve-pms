@@ -2023,28 +2023,26 @@ const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
 // team race (squares), review meetings calendar and "Needs attention". Every card has its own Filter pill (the same
 // panel as the dashboard cards, CF_CARDS an*), filtering in the browser on one /api/analytics answer.
 // Scores come from submitted reviews only; this month's reviews are still running, so the period ends at the latest
-// finished month. The Sample data switch shows made-up ratings with placeholder names (nothing saved).
-const AF = (() => { try { return { fy: 0, sample: false, ...JSON.parse(localStorage.getItem('pms.analytics') || '{}') }; } catch { return { fy: 0, sample: false }; } })();
+// finished month. Real submitted reviews only (the Sample data switch was removed 2026-11-23, Harish: real data is in).
+const AF = (() => { try { const x = { fy: 0, ...JSON.parse(localStorage.getItem('pms.analytics') || '{}') }; delete x.sample; return x; } catch { return { fy: 0 }; } })();
 const afSave = () => { try { localStorage.setItem('pms.analytics', JSON.stringify(AF)); } catch {} };
 const AN_CARDS = ['anAvg', 'anStrong', 'anParam', 'anMove', 'anTrend', 'anGap', 'anFunnel', 'anKra', 'anTime', 'anBands', 'anPar', 'anRace', 'anMeet', 'anAlert', 'anPeople', 'anRev'];
 const AN_KRAS = [['operational', 'Operational', '--vr-anx-k1'], ['process', 'Process', '--vr-anx-k2'], ['people', 'People', '--vr-anx-k3']];
 let AN = null; // the last /api/analytics answer; the cards redraw from it when a card filter changes
 let AN_LAST = {}; // card -> its last HTML: only a card that changed plays its entrance again (a filter on one card leaves the rest still)
 pages.analytics = async v => {
-  const qs = [AF.fy && `fy=${AF.fy}`, AF.sample && 'sample=1'].filter(Boolean).join('&');
-  AN = await api('/analytics' + (qs ? '?' + qs : ''));
+  AN = await api('/analytics' + (AF.fy ? `?fy=${AF.fy}` : ''));
   const ppl = AN.people, mgrName = k => (ppl.find(p => String(p.managerId) === k) || {}).manager || k;
   PF.xteam = optCount(ppl, p => p.team, tl);
   PF.xdesig = optCount(ppl, p => p.group);
   PF.xmgr = optCount(ppl, p => String(p.managerId), mgrName);
   PF.xpar = AN.params.map((q, i) => [i ? q.id : '', q.label]); PF.hide.anPar = ['xpar'];
   [...AN_CARDS, 'anAll'].forEach(c => { cfLocalRedraw[c] = () => anDraw(v); });
-  AN_LAST = {}; // every card plays its entrance on a new visit, FY or Sample data change
+  AN_LAST = {}; // every card plays its entrance on a new visit or FY change
   anDraw(v);
-  // page events (set once per visit): Sample data switch, FY, Remind, card filters, hover numbers
+  // page events (set once per visit): FY, Remind, card filters, hover numbers
   v.onclick = e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
-    if (e.target.closest('#asample')) { AF.sample = !AN.sample; afSave(); return pages.analytics(v); }
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     if (e.target.closest('[data-anremind]')) return remindAll();
     const rk = e.target.closest('[data-anrank]'); if (rk) { AF.rank = rk.dataset.anrank; afSave(); anDraw(v); const b = v.querySelector(`[data-anrank="${rk.dataset.anrank}"]`); if (b) b.focus(); return; }
@@ -2107,7 +2105,7 @@ function anDraw(v) {
   const avgOf = (p, ms, k = 'total') => mean(ms.map(m => p.scores[m]).filter(Boolean).map(s => s[k]).filter(x => x != null));
   const span = ms => ms.length ? (ms.length > 1 ? `${mon(ms[0])}–${mon(ms[ms.length - 1])}` : mon(ms[0])) : 'no months yet';
   const chip = (x, unit = ' pts', inv = false) => { if (x == null || isNaN(x) || Math.abs(x) < .05) return ''; const up = x > .05, dn = x < -.05, good = inv ? dn : up; return `<span class="anchip ${up || dn ? (good ? 'up' : 'dn') : 'nt'}">${up ? '▲' : dn ? '▼' : '•'} ${Number.isInteger(x) ? Math.abs(x) : f1(Math.abs(x))}${unit}</span>`; };
-  const none = t => `<p class="anx-none">${t}${d.sample ? '' : ' Switch on <b>Sample data</b> above to see how it looks.'}</p>`;
+  const none = t => `<p class="anx-none">${t}</p>`;
   const noScores = 'No submitted reviews in this period yet.';
   // the old portal's reviews (April-October 2026) carry no parameter ratings and no review dates
   const noPar = (ps, ms) => ms.some(m => sc(ps, m, 'total').length) ? '<p class="anx-none">No parameter ratings in this period. Reviews from the old portal have none; they start with reviews submitted in PMS.</p>' : none(noScores);
@@ -2128,7 +2126,7 @@ function anDraw(v) {
   const pt = (cx, cy, r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   const arcP = (cx, cy, r0, r1, a0, a1) => { const big = a1 - a0 > PI ? 1 : 0, [x1, y1] = pt(cx, cy, r1, a0), [x2, y2] = pt(cx, cy, r1, a1), [x3, y3] = pt(cx, cy, r0, a1), [x4, y4] = pt(cx, cy, r0, a0);
     return `M${x1.toFixed(2)},${y1.toFixed(2)} A${r1},${r1} 0 ${big} 1 ${x2.toFixed(2)},${y2.toFixed(2)} L${x3.toFixed(2)},${y3.toFixed(2)} A${r0},${r0} 0 ${big} 0 ${x4.toFixed(2)},${y4.toFixed(2)} Z`; };
-  const canRemind = !S.me.viewingAs && d.current === S.me.currentMonth && !d.sample;
+  const canRemind = !S.me.viewingAs && d.current === S.me.currentMonth;
 
   // 1. Average rating: notched gauge, lit notches glow, mark at the 75% goal
   const k1 = (() => { const c = 'anAvg', ps = pool(c), ms = per(c), all = ms.flatMap(m => sc(ps, m, 'total')), v0 = mean(all);
@@ -2194,7 +2192,7 @@ function anDraw(v) {
       <div class="anrows anleg">${ks.map(x => `<div ${hk(x)}><i style="background:var(${x.col})"></i><span>${x.l}</span><b>${x.v != null ? f1(x.v) + '%' : '–'}</b>${ms.length > 1 && x.a != null && x.b != null ? chip(x.b - x.a) : '<em></em>'}<u class="anpb"><s style="width:${x.v != null ? x.v.toFixed(1) : 0}%;background:var(${x.col})"></s></u></div>`).join('')}</div>`); })();
   // 7. Reviews held on time (finished months): on time / late / missed, stacked, round tops
   const time = (() => { const c = 'anTime', ps = pool(c), ms = per(c), rows = ms.map(m => { const t = ps.map(p => p.timing[m]).filter(Boolean); return { m, on: t.filter(x => x === 'on').length, late: t.filter(x => x === 'late').length, miss: t.filter(x => x === 'missed').length, n: t.length }; });
-    if (!rows.some(r => r.n)) return card(c, 'c5', 'Reviews held on time', span(ms), `<p class="anx-none">${d.sample || (d.tracked && d.tracked < d.current) ? 'No finished review months in this period yet.' : 'On-time tracking starts with the first reviews held in PMS. Reviews from the old portal have no review dates, so those months are not counted as missed.'}</p>`);
+    if (!rows.some(r => r.n)) return card(c, 'c5', 'Reviews held on time', span(ms), `<p class="anx-none">${d.tracked && d.tracked < d.current ? 'No finished review months in this period yet.' : 'On-time tracking starts with the first reviews held in PMS. Reviews from the old portal have no review dates, so those months are not counted as missed.'}</p>`);
     const w = 400, h = 250, L = 28, B = 22, T = 8, pw = w - L - 4, ph = h - B - T, bw = pw / rows.length, mx = Math.max(...rows.map(r => r.n)), y = x => T + ph * (1 - x / mx);
     let s = [0, .5, 1].map(f => Math.round(mx * f)).map(x => `<line class="ax-gl" x1="${L}" x2="${w - 4}" y1="${y(x)}" y2="${y(x)}"/><text class="ax-tk" x="${L - 6}" y="${y(x) + 4}" text-anchor="end">${x}</text>`).join('');
     // Bklit bars: each month's stack springs up from the base, one after another; hover = month pill + the three numbers
@@ -2340,9 +2338,8 @@ function anDraw(v) {
       `<div class="anrv"><div class="anrv-h"><span>Reviewer</span><span title="Reviews done · people reviewed">Reviews · people</span><span>Manager rating given</span><span title="Average self rating minus manager rating of the people they reviewed">Self gap</span></div>${list.map(row).join('')}</div>`); })();
 
   const fySel = d.fys.length > 1 ? `<select id="afy" aria-label="Financial year">${d.fys.map(y => `<option value="${y}" ${y === d.fy ? 'selected' : ''}>FY ${y}-${y + 1}</option>`).join('')}</select>` : '';
-  v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · ${d.sample ? 'SAMPLE DATA' : 'submitted reviews only'}`) + `
-  <div class="row anbar">${fySel}${cfPill('anAll')}${cfSum('anAll')}<span class="sp"></span><span class="asw" title="Show the charts with made-up ratings, to see how they look"><button type="button" class="sw ${d.sample ? 'on' : ''}" role="switch" aria-checked="${!!d.sample}" id="asample" aria-label="Sample data"><i></i></button>Sample data</span></div>
-  ${d.sample ? '<div class="asample" role="note"><b>Sample data.</b> These ratings are made up to show how the charts look. Names are placeholders, nothing is saved, and real reviews are not changed. Switch "Sample data" off to see the real reviews.</div>' : ''}
+  v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · submitted reviews only`) + `
+  <div class="row anbar">${fySel}${cfPill('anAll')}${cfSum('anAll')}</div>
   <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${trend}${gapc}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}${peopleC}${revC}</div></div>
   `;
   // entrance (Bklit-style motion, CSS under .anin): only for cards whose content changed since the last draw
