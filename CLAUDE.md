@@ -254,7 +254,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   and STAGING (2026-11-19, 76 people incl. 5 inactive; Render redeployed with an empty commit right after so its
   in-memory copy did not save over it). No department in the PDF: the 4 directors and one consultant. DOJ and April-October
   history: Fiza / Vidya still to share. Escalations: new joiner KRA due since <month> (month after 2 complete questionnaires),
-  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running. Rules
+  KRAs / SOP / learning missing 2+ months, same SOP / learning topic (same link or remark) 2+ months running (the employee is warned first: orange note at the top of "What is left on my form", `L.topicRepeats` -> `/api/home` `own.repeats`, a warning not a blocker; Harish 2026-11-23 picked this over three new dashboard cards he judged repeats). Rules
   (fixed, `RULES` in `data.js`): `learningMin` 60, `qMinWords` 15, `opMinSubKras` 3.
 - Only people with a reporting manager are reviewed: top-level directors get no form and are left out of counts
   (`ensureMonthForms`, `/api/scheduling`, `reportRows`).

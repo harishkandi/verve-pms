@@ -373,6 +373,15 @@ function topicRun(f, pick) {
   }
   return n;
 }
+// for the employee (Harish 2026-11-23): warn BEFORE they send the form when this month's SOP / learning topic repeats
+// last month's, since 2+ months running becomes an escalation their manager sees. A warning, never a blocker.
+function topicRepeats(f) {
+  if (isNewJoiner(f) || f.selfSubmitted || f.submitted) return [];
+  return [['SOP', sopRows], ['learning', learnRows]].map(([what, pick]) => {
+    const n = topicRun(f, pick);
+    return n >= 2 ? `Your ${what} topic is the same as last month's (${n} months in a row). Your manager sees this as an escalation, so pick a new one before you submit.` : null;
+  }).filter(Boolean);
+}
 function escalations(f) {
   const out = [], since = n => D.monthLabel(monthsBack(f.month, n - 1));
   const due = kraDueMonth(f);
@@ -486,4 +495,4 @@ function buildEmail(managerId, month) {
   return { to: m.name, subject: `PMS review summary, ${m.team}, ${D.monthLabel(month)}`, team: m.team, managerId, month, counts: counts(rows.map(r => ({ status: r.st }))), sections: sec, attachment: `PMS_${m.team}_${D.monthLabel(month).replace(' ', '')}.csv` };
 }
 
-module.exports = { FINAL_STATUSES, trackReviewDay, statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };
+module.exports = { FINAL_STATUSES, trackReviewDay, statusOf, formStatus, emp, KRAS, deriveRole, refreshRoles, managerActivity, subordinates, isAncestor, canView, canManage, canSelfEdit, visibleEmployees, peek, getForm, activeQuestions, paramsFor, isNewJoiner, monthlyRating, kraSummary, employeeTodo, topicRepeats, managerGaps, KRA_SCALE, Q_SCALE, validate, reviewStatus, dueInfo, rescheduleCount, firstScheduled, WORK_STATUS, pmsDetail, reportRows, counts, buildEmail, kraAvg, has, blank, prevMonth, ratingsComplete };

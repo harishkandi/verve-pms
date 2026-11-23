@@ -396,6 +396,7 @@ route('GET', '/api/home', ({ user, q }) => {
       issues: L.employeeTodo(ownForm), // only what the person fills in; KRA set-up alerts go to their manager
       kraAccess: ownForm.kraRequest ? { status: ownForm.kraRequest.status, manager: (L.emp(user.managerId) || {}).name || '', decidedBy: ownForm.kraRequest.decidedBy || '' } : null };
   }
+      repeats: L.topicRepeats(ownForm), // same SOP / learning topic as last month: a warning, not a blocker
   return out;
 });
 

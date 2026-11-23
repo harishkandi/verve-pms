@@ -1342,11 +1342,14 @@ pages.home = async (v, opts = {}) => {
       <ol class="eh-steps" aria-label="Review steps">${st.map(([t, s2, ok, pg], i) => `<li class="${ok ? 'done' : i === cur ? 'now' : ''}"${i === cur ? ' aria-current="step"' : ''}><em class="eh-seg"><u style="width:${ok ? 100 : pg || 0}%"></u></em><b>${ok ? ico('tick') : ''}${esc(t)}</b><span>${esc(s2)}</span></li>`).join('')}</ol></div>`;
     // what is left: the server's list, grouped by the part of the form it belongs to
     const groups = groupTodo(issues), SHOWN = 4;
-    const todoBody = !o ? `<div class="mb"><div class="empty">No review form for this month yet. It appears here by itself${w && w.start ? ` when your review window opens on ${fmtD(w.start)}` : ' when your review window opens'}.</div></div>`
+    // same SOP / learning topic as last month (Harish 2026-11-23): a warning at the top of this card, before they submit
+    const rep = o && !finished && (o.repeats || []).length ? `<div class="alert-w" style="margin:0 0 12px">${o.repeats.map(esc).join('<br>')}</div>` : '';
+    const todoBody = rep && !issues.length ? `<div class="mb">${rep}<div class="ok" style="margin:0">Everything else is filled in. Open your review, change the topic, then click <b>Submit to manager</b>.</div></div>`
+      : !o ?`<div class="mb"><div class="empty">No review form for this month yet. It appears here by itself${w && w.start ? ` when your review window opens on ${fmtD(w.start)}` : ' when your review window opens'}.</div></div>`
       : o.submitted ? `<div class="mb"><div class="ok" style="margin:0">Your manager has submitted this review. Nothing left to do.</div></div>`
       : o.selfSubmitted ? `<div class="mb"><div class="ok" style="margin:0">You have sent your part to your manager. Nothing left for you unless they send it back.</div></div>`
       : !issues.length ? `<div class="mb"><div class="ok" style="margin:0">Everything is filled in. Open your review and click <b>Submit to manager</b>.</div></div>`
-      : `<div class="mb">
+      : `<div class="mb">${rep}
         ${groups.map(g => `<div class="ed-grp"><h3>${ico(g.icon)}${g.label}<span class="cnt">${g.items.length}</span></h3>
           ${g.items.slice(0, SHOWN).map(t => `<a class="ed-item" href="#/form/${S.me.id}/${S.month}" title="${esc(t.full)}"><i></i><span>${esc(t.text)}</span>${ico('right')}</a>`).join('')}
           ${g.items.length > SHOWN ? `<a class="ed-more" href="#/form/${S.me.id}/${S.month}">+${g.items.length - SHOWN} more in your review</a>` : ''}</div>`).join('')}</div>`;
