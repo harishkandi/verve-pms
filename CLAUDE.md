@@ -152,7 +152,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   duplicated the dashboard's All stats cards, which count by role = reporting line, and the Employees role filter). Who
   reports to whom is the "Reporting flow" (`#/reporting`, `pages.reporting`, `GET /api/org`): directors (no manager) →
   click to drill down; opened from the Employees page button and names, highlights Employees › Active in the menu (Employees is a menu group with Active / Inactive, 2026-11-16);
-  old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate).
+  old `#/reporting/<level>` links open the directors. Managers' "My team" is the same drill-down (a later merge candidate);
+  it has no tabs since 2026-11-23 (Harish: the "My team" / "Reporting Manager" buttons repeated the heading, and the
+  managers under you are already rows with their team one click away; `/api/myteam` no longer sends `managers`).
   Login page = split: navy left panel (dot grid, a floating sample monthly-review card with example numbers, rotating
   captions; `authBrand()` / `authBrandRun()` in `app.js`, Harish picked this design 2026-11-12), sign-in form on the right.
   There is no Settings page: review windows are on the Scheduling page (admin); admins can also edit a window from the

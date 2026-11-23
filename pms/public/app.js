@@ -1577,7 +1577,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     ${sec('people', 'People', 'Self updating of skills')}
     ${ratingBox(f)}
     <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
-    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>Serial No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved automatically">${esc(f.qa[q.id] || '')}</textarea><div class="small opf-qsv" data-qsv="${q.id}" aria-live="polite">${qSavedAt[q.id] ? 'Saved automatically' : ''}</div>`
+    ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>S.No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved automatically">${esc(f.qa[q.id] || '')}</textarea><div class="small opf-qsv" data-qsv="${q.id}" aria-live="polite">${qSavedAt[q.id] ? 'Saved automatically' : ''}</div>`
       : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${(p.editSelf || p.editManager) && !f.locked ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id]) ? `<div class="flag">A single word is not enough. Please write a short answer in a few words.</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim();
       // the Self Rating / Manager Rating / Remark heading only above the first rated question
@@ -1644,12 +1644,12 @@ const fileName = s => String(s).trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, 
 function exportKpi() {
   const { form: f, employee: e, manager: m } = FP, sum = formSummary(f);
   const lines = [['Employee', e.name], ['Designation', e.designation], ['Reporting manager', m ? m.name : ''], ['Month', monthLabel(f.month)], ['Review date', f.reviewDate || ''],
-    ['Status', STATUS_TEXT[FP.status] || FP.status], ['Monthly rating (%)', sum.rating ?? ''], [], ['KRA', 'KRA weightage', 'Sr. no', 'Key performance indicator', 'Target', 'Weightage', 'Self rating (30%)', 'Manager rating (70%)', 'Remark', 'Manager remark']];
+    ['Status', STATUS_TEXT[FP.status] || FP.status], ['Monthly rating (%)', sum.rating ?? ''], [], ['KRA', 'KRA weightage', 'S.No', 'Key performance indicator', 'Target', 'Weightage', 'Self rating (30%)', 'Manager rating (70%)', 'Remark', 'Manager remark']];
   sum.kras.forEach(k => {
     f.kras[k.key].rows.forEach((r, i) => lines.push([k.label, k.weight, i + 1, r.kpi, r.target, r.weight, r.self != null ? r.self + '%' : '', r.mgr != null ? r.mgr + '%' : '', r.selfRemark, r.mgrRemark]));
     lines.push([`${k.label} total`, k.weight, '', '', '', '', k.self != null ? k.self + '%' : '', k.mgr != null ? k.mgr + '%' : '', `KRA score ${k.score != null ? k.score + '%' : '-'}`, `Points ${k.points ?? '-'}`]);
   });
-  lines.push([], ['Questionnaire'], ['Sr. no', 'Question', 'Answer', 'Self rating (of 5)', 'Manager rating (of 5)', 'Manager remark']);
+  lines.push([], ['Questionnaire'], ['S.No', 'Question', 'Answer', 'Self rating (of 5)', 'Manager rating (of 5)', 'Manager remark']);
   (FP.questions || []).forEach((x, i) => { const a = f.qa[x.id]; lines.push(x.type === 'text' ? [i + 1, x.text, a || ''] : [i + 1, x.text, '', a && a.self != null ? a.self : '', a && a.mgr != null ? a.mgr : '', a ? a.remark || '' : '']); });
   csvSave(`KPI_${fileName(e.name)}_${f.month}.csv`, lines);
 }
@@ -1892,34 +1892,29 @@ const reportLinks = (r, opts = {}) => `<span class="acts">${r.direct ? `<a class
 const reportHead = (d, title, crumbLabel) => head(d.me ? `My ${title}` : `${title[0].toUpperCase() + title.slice(1)}: ${esc(d.person.name)}`,
   d.me ? '' : `<a href="${personHref(d.person.id)}">${esc(d.person.name)}</a> › ${crumbLabel || title}`); // no "PMS" crumbs (Harish, 2026-11-17)
 
-// My Team: my people (drill into anyone who has a team), and the list of every manager under me
+// My Team: my people (drill into anyone who has a team). No tabs (Harish 2026-11-23): the "My team" / "Reporting
+// Manager" buttons repeated the heading, and the managers under me are already rows here with their team one click away.
 pages.team = async (v, arg) => {
   arg = String(arg || '').toLowerCase();
-  const id = /^\d+$/.test(arg) ? arg : '', list = arg === 'managers';
+  const id = /^\d+$/.test(arg) ? arg : ''; // old #/team/managers links open My team
   const d = await api(`/myteam?month=${S.month}${id ? '&id=' + id : ''}`), p = d.person, c = d.counts, mon = monShort();
   const crumbs = d.me ? ''
     : ['<a href="#/team">My team</a>', ...d.path.filter(x => x.id !== S.me.id).map(x => `<a href="#/team/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ');
   const up = d.path.filter(x => x.id !== S.me.id), back = up.length ? `#/team/${up[up.length - 1].id}` : '#/team';
   const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}</span>`;
   const count = r => r.direct ? `<a class="btn sm" href="#/team/${r.id}" title="Open ${esc(r.name)}'s team">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
-  const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div>${list ? (r.direct ? `<a class="nm" href="#/team/${r.id}">${esc(r.name)}</a>` : `<b>${esc(r.name)}</b>`) : `<a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${esc(r.name)}</a>`}<div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
-  const rows = list ? d.managers : d.members;
-  const table = list
-    ? `<tr><th>Sr. no</th><th>Name</th><th>Email</th><th>Designation</th><th>Reports to</th><th>Employees</th><th>Team Report</th></tr>
-      ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td class="small">${esc(r.email) || 'N/A'}</td><td>${esc(r.designation)}</td><td>${r.manager ? esc(r.manager.name) : 'N/A'}</td><td>${count(r)}</td>
-        <td><a class="btn sm" href="#/yearly/${r.id}" title="Team Report: everyone under ${esc(r.name)}">${ico('check')}Open</a></td></tr>`).join('')
-        || '<tr><td colspan="7" class="small">No managers under you. Everyone in your team reports to you directly.</td></tr>'}`
-    : `<tr><th>Sr. no</th><th>Name</th><th>Employees</th><th>${mon} review</th><th>Rating</th><th>Reports</th></tr>
+  const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div><a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${esc(r.name)}</a><div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
+  const rows = d.members;
+  const table = `<tr><th>S.No</th><th>Name</th><th>Employees</th><th>${mon} review</th><th>Rating</th><th>Reports</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td>${count(r)}</td><td>${review(r)}</td><td>${r.review && r.review.rating != null ? `<b class="rt ${rateCls(r.review.rating)}">${pc(r.review.rating)}</b>` : 'N/A'}</td><td>${reportLinks(r)}</td></tr>`).join('')
         || `<tr><td colspan="6" class="small">Nobody reports to ${d.me ? 'you' : esc(p.name)}.</td></tr>`}`;
-  v.innerHTML = head('My team', crumbs) + `<div class="seg" role="tablist"><a role="tab" href="#/team" class="${d.me && !list ? 'on' : ''}">My team <span class="cnt">${d.members.length}</span></a><a role="tab" href="#/team/managers" class="${list ? 'on' : ''}">Reporting Manager <span class="cnt">${d.managers.length}</span></a></div>
-  <div class="row">${monthSel()}${searchBox('tq', 'Search name, team or email', S.tq)}<span class="sp"></span>${d.me ? '' : `<a class="btn" href="${back}">← Back</a>`}</div>
+  v.innerHTML = head('My team', crumbs) + `<div class="row">${monthSel()}${searchBox('tq', 'Search name, team or email', S.tq)}<span class="sp"></span>${d.me ? '' : `<a class="btn" href="${back}">← Back</a>`}</div>
   ${d.me ? '' : `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? esc(p.manager.name) : 'nobody'} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span>${reportLinks(p)}</div>`}
   <div class="small" style="margin:0 0 12px">${mon} reviews of everyone under ${d.me ? 'you' : esc(p.name)} (all levels)</div>
   ${countTiles(c)}
-  <h2>${list ? `Reporting Manager (${rows.length})` : `${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})`}</h2>
+  <h2>${d.me ? 'My team' : `${esc(p.name)}'s team`} (${rows.length})</h2>
   <div class="tablewrap"><table>${table}<tr id="tnone" hidden><td colspan="9" class="small">No one here matches your search.</td></tr></table></div>
-  <p class="small">${list ? 'Every manager and team lead under you, at every level. Click the Employees count to open their team.' : 'Click a name or review status to open that person\'s form; click the Employees count to open their team.'}</p>`;
+  <p class="small">Click a name or review status to open that person's form; click the Employees count to open their team.</p>`;
   onMonth(() => pages.team(v, arg));
   const filter = () => {
     const s = (S.tq || '').trim().toLowerCase(); let n = 0;
@@ -2819,7 +2814,7 @@ async function questionsBox(v) {
   const tab = 'text';
   const list = qs.filter(q => q.type === tab && !q.to).sort((a, b) => a.order - b.order);
   v.innerHTML = `<div class="card pcard"><div class="phead"><span class="acts" style="margin-left:auto"><button class="btn sm pri" data-a="new">${ico('plus')}Add new question</button></span></div>
-  <div class="tablewrap"><table class="qtab"><tr><th>No.</th><th>Question</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
+  <div class="tablewrap"><table class="qtab"><tr><th>S.No</th><th>Question</th><th>Mandatory</th><th>Applies from</th><th>Actions</th></tr>${list.map((q, i) => `<tr data-q="${q.id}" draggable="true"><td class="qno"><button type="button" class="grip" data-grip="${q.id}" title="Drag to reorder (or focus and use the arrow keys)" aria-label="Reorder question ${i + 1}: drag, or press the up and down arrow keys">${ico('grip')}</button><span>${i + 1}</span></td><td>${esc(q.text)}</td><td>${q.mandatory ? 'Yes' : 'No'}</td><td>${esc(monthLabel(q.from) || q.from)}</td><td><span class="acts"><button class="btn sm" data-a="edit" data-id="${q.id}">Edit</button><button class="btn sm dng" data-a="del" data-id="${q.id}">Delete</button></span></td></tr>`).join('')}</table></div>
   <p class="small">Changes apply from the review month you choose. Forms already submitted keep the question and answers as they were. No limit on the number of questions.</p></div>`;
   // reorder by drag-and-drop (the row moves live under the mouse) or, on the grip, with the arrow keys; saved when dropped
   const tbl = v.querySelector('table.qtab'), order = () => [...tbl.querySelectorAll('tr[data-q]')].map(r => r.dataset.q), start = order();
@@ -3159,8 +3154,8 @@ pages.reporting = async (v, arg) => {
   // the name opens this month's form, like My team; the count button opens the people under them (Harish, 2026-11-17: no View report column)
   const nameCell = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div><a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} review form">${esc(r.name)}</a><div class="small">${esc(r.team)}</div></div></div>`;
   const emailCell = r => r.email ? `<span class="small em">${esc(r.email)}</span>` : '<span class="small">N/A</span>';
-  // the columns depend on what is listed: [header, cell, class]; every list starts Sr. no, Name, Email, Designation and ends Monthly report
-  const lead = [['Sr. no', (r, i) => i + 1, 'sr'], ['Name', nameCell], ['Email', emailCell], ['Designation', r => esc(r.designation)]];
+  // the columns depend on what is listed: [header, cell, class]; every list starts S.No, Name, Email, Designation and ends Monthly report
+  const lead = [['S.No', (r, i) => i + 1, 'sr'], ['Name', nameCell], ['Email', emailCell], ['Designation', r => esc(r.designation)]];
   const tail = [['Monthly report', monthBtn, 'c']];
   const COLS = [...lead, ...{
     director: [['Managers', team], [`Team progress (${mon})`, progCell], [`Own review (${mon})`, r => own(r.review)]],
@@ -3297,7 +3292,7 @@ function paintAppraisal(v) {
   const recapRows = () => f.recap.map((r, i) => `<tr><td>${i + 1}</td>${['expectation', 'achievements', 'improvement'].map(k => `<td><textarea rows="3" data-aprow="recap:${i}:${k}" ${dis}>${esc(r[k])}</textarea></td>`).join('')}<td>${ed ? `<button class="xdel" data-apdel="recap:${i}" title="Remove row" aria-label="Remove row">${ico('trash')}</button>` : ''}</td></tr>`).join('');
   const nl = t => esc(t).replace(/\n/g, '<br>') || 'Not added';
   const sections = [
-    ['Yearly Recap', `<table class="aptbl"><tr><th>#</th><th>KRA</th><th>Achievements During the Year</th><th>Improvement</th></tr>${f.recap.map((r, i) => `<tr><td>${i + 1}</td><td>${nl(r.expectation)}</td><td>${nl(r.achievements)}</td><td>${nl(r.improvement)}</td></tr>`).join('')}</table>`],
+    ['Yearly Recap', `<table class="aptbl"><tr><th>S.No</th><th>KRA</th><th>Achievements During the Year</th><th>Improvement</th></tr>${f.recap.map((r, i) => `<tr><td>${i + 1}</td><td>${nl(r.expectation)}</td><td>${nl(r.achievements)}</td><td>${nl(r.improvement)}</td></tr>`).join('')}</table>`],
     ['Key Strengths', `<div class="apbox">${nl(f.strengths)}</div>`], ['Area of Improvement', `<div class="apbox">${nl(f.improvements)}</div>`],
     ['Operational KRA', `<div class="apbox">${nl(f.operational)}</div>`], ['Process KRA', `<div class="apbox">${nl(f.process)}</div>`], ['People KRA', `<div class="apbox">${nl(f.people)}</div>`],
   ];
@@ -3353,7 +3348,7 @@ function wireAppraisal(v) {
 function apExcel() {
   const { employee: e, form: f } = AP, c = s => esc(s).replace(/\n/g, '<br>');
   const html = `<html><head><meta charset="utf-8"></head><body><h2>Appraisal ${AP.fy}</h2><table border="1"><tr><td>Employee</td><td>${c(e.name)}</td><td>Designation</td><td>${c(e.designation)}</td></tr><tr><td>Department</td><td>${c(e.department)}</td><td>Reviewer</td><td>${c(e.reviewer)}</td></tr></table>
-  <h3>Yearly Recap</h3><table border="1"><tr><th>#</th><th>KRA</th><th>Achievements During the Year</th><th>Improvement</th></tr>${f.recap.map((r, i) => `<tr><td>${i + 1}</td><td>${c(r.expectation)}</td><td>${c(r.achievements)}</td><td>${c(r.improvement)}</td></tr>`).join('')}</table>
+  <h3>Yearly Recap</h3><table border="1"><tr><th>S.No</th><th>KRA</th><th>Achievements During the Year</th><th>Improvement</th></tr>${f.recap.map((r, i) => `<tr><td>${i + 1}</td><td>${c(r.expectation)}</td><td>${c(r.achievements)}</td><td>${c(r.improvement)}</td></tr>`).join('')}</table>
   <h3>Key Strengths</h3><p>${c(f.strengths)}</p><h3>Area of Improvement</h3><p>${c(f.improvements)}</p><h3>Operational KRA</h3><p>${c(f.operational)}</p><h3>Process KRA</h3><p>${c(f.process)}</p><h3>People KRA</h3><p>${c(f.people)}</p></body></html>`;
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' })); a.download = `Appraisal-${AP.fy}-${e.name.replace(/\s+/g, '-')}.xls`; a.click();
 }

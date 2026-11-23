@@ -1380,13 +1380,13 @@ const round1 = x => x == null ? null : Math.round(x * 10) / 10;
 const avgOf = list => list.length ? round1(list.reduce((a, b) => a + b, 0) / list.length) : null;
 const reportMonths = () => D.fyMonths().filter(m => m <= config.currentMonth);
 
-// My Team: the people who report to the root, and every manager anywhere under them
+// My Team: the people who report to the root (the counts cover everyone under them)
 route('GET', '/api/myteam', ({ user, q }) => {
   const month = q.month || config.currentMonth, H = orgHelpers(month), root = scopeRoot(user, q.id);
   const chain = [...H.above(root), root], from = chain.findIndex(c => c.id === user.id);
   const under = L.subordinates(root.id);
   return { month, me: root.id === user.id, person: H.rowFor(root), path: chain.slice(Math.max(from, 0), -1).map(c => ({ id: c.id, name: c.name })),
-    counts: H.countsOf(under), members: H.direct(root.id).sort(leadsFirst).map(H.rowFor), managers: under.filter(e => H.direct(e.id).length).sort(byName).map(H.rowFor) };
+    counts: H.countsOf(under), members: H.direct(root.id).sort(leadsFirst).map(H.rowFor) };
 });
 
 // MIS report: month by month for the root's whole team, and each person's monthly rating
