@@ -394,9 +394,9 @@ route('GET', '/api/home', ({ user, q }) => {
       rating: ownForm.submitted ? L.monthlyRating(ownForm) : null, preview: !ownForm.submitted && L.ratingsComplete(ownForm) ? L.monthlyRating(ownForm) : null,
       manager: (L.emp(user.managerId) || {}).name || '',
       issues: L.employeeTodo(ownForm), // only what the person fills in; KRA set-up alerts go to their manager
+      repeats: L.topicRepeats(ownForm), // same SOP / learning topic as last month: a warning, not a blocker
       kraAccess: ownForm.kraRequest ? { status: ownForm.kraRequest.status, manager: (L.emp(user.managerId) || {}).name || '', decidedBy: ownForm.kraRequest.decidedBy || '' } : null };
   }
-      repeats: L.topicRepeats(ownForm), // same SOP / learning topic as last month: a warning, not a blocker
   return out;
 });
 
