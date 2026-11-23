@@ -1,34 +1,27 @@
-# Verve PMS (local demo)
+# Verve PMS (Performance Management System)
 
-Performance Management System built from the PMS review spec. Dummy data, in-memory, no dependencies.
+Monthly KRA reviews, review meetings and reports for Verve Advisory. Plain Node (20+), no framework, one
+dependency (`pg`). The full notes for developers are in [`../CLAUDE.md`](../CLAUDE.md).
 
     cd pms
-    node server.js        # or: npm start
-    open http://localhost:3000
-
-Pick a user on the login screen (no passwords in the demo). Data resets on restart.
-
-Good users to try: Anita Verma (Director), Rohan Shah (Manager), Aarav Mehta / Neha Rao (Employee), Priya Menon (Admin).
-
-Assumptions where the spec was open: monthly rating = per sub-KRA 30% self + 70% manager, weighted by sub-KRA weight, then by KRA weight;
-rating questions (6-12) use a 0-5 scale; "Pending" = due date (end of the team window) has passed and the review is not completed; emails are drafted then sent manually (logged only).
-
-## Database (Neon Postgres)
-
-When `DATABASE_URL` is set, all PMS data is stored in Postgres (`db.js`, one `pms_state` row) and survives restarts and deploys.
-The first start against an empty database saves the seeded demo data. Without `DATABASE_URL` it runs in memory as before.
-
     npm install
-    npm run dev           # reads DATABASE_URL from ../.env.local (created by `neon init`)
-    npm run db:reset      # wipe the stored state; the next start seeds fresh demo data
+    npm run local     # http://localhost:3000, keeps its data in private/state.json
+    npm start         # in memory (resets on restart) unless DATABASE_URL is set
 
-## Staging
+Settings are environment variables, listed in `.env.example` (copy it to `.env` for local runs).
+Sign-in is Google (the verveadvisory.com Workspace) or the person's own PMS password; local runs without
+Google also offer the test accounts.
 
-One staging environment per HRMS module, each deploying from its own branch of `adminsoftware-alt/verve-hrms`.
-For PMS: branch `feature/pms`, Neon project `verve-pms` (Singapore).
+| File | What it does |
+|---|---|
+| `server.js` | HTTP server, every `/api` route, static files from `public/` (compressed, with security headers) |
+| `logic.js` | review rules: status, ratings, validation, reports |
+| `data.js` | the app state (config, employees, forms, ...) and `migrate()` for older saved data |
+| `db.js` | stores the whole state as one row in Postgres (`DATABASE_URL`) |
+| `auth.js` | Google sign-in, passwords, the session cookie |
+| `calendar.js` | Google Calendar invites for review meetings |
+| `notify.js` | the bell's notifications and date reminders |
+| `employees.js` | imports the employee list (`private/employees.tsv`, never in git) |
+| `public/` | the whole page: `index.html` (markup + styles) and `app.js` |
 
-- **Render** hosts the whole app (pages + API) from `render.yaml` at the repo root: render.com -> New -> Blueprint ->
-  this repo; paste the Neon pooled connection string when asked for `DATABASE_URL`.
-  Free tier sleeps after 15 minutes idle (first visit ~1 minute).
-- Workflow: work on your own branch (e.g. `pms/harish`), open a pull request into `feature/pms`; merging it redeploys staging.
-- The hosted site shows a STAGING badge.
+Staging: push to the personal repo's `main` (Render runs `node server.js`, Vercel mirrors `public/`).
