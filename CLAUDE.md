@@ -218,7 +218,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   directors, admins; not in View as): action item `remind|<emp>|<month>` to every Not Filled person in scope (leave /
   notice skipped), once per 12 h per sender (in memory), resolved by self-submit (Harish 2026-11-18). In View as the admin
   sees the person's list but never marks it read. No email yet (no sender; Google Calendar already emails invites).
-- Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits.
+- Reschedule count = distinct new dates (`rescheduleCount` in `logic.js`), not the number of edits. Scheduling's
+  Rescheduled column shows it as "1 time" / "2 times" (was "Moved 1×"; Harish 2026-11-23), dates on hover.
 - PMS report format (management's "PMS Reports Format" sheet, 2026-11-13) = the Review status report's "Full details"
   switch (`/api/report?detail=1`, `fullTable()` in `app.js`) and its CSV export (same columns, sheet order: `PMS_COLUMNS` in
   `server.js`), built by `pmsDetail()` in `logic.js`. No AI: the Operational/Process/People remark columns join each
