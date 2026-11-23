@@ -3154,7 +3154,7 @@ pages.reporting = async (v, arg) => {
   const own = r => r ? `${badge(r.status)}${r.rating != null ? ` <b title="Monthly rating">${pc(r.rating)}</b>` : ''}` : '<span class="small">No form this month</span>';
   const forms = r => `<span class="acts"><a class="btn sm" href="#/empforms/${r.id}" title="Every month's review">${ico('chart')}Monthly report</a></span>`;
   // square icon button for the table rows: Monthly report = every month (this month's form opens from the name)
-  const monthBtn = r => `<a class="sqbtn mo" href="#/empforms/${r.id}" title="Monthly report: ${esc(r.name)}, every month" aria-label="Monthly report for ${esc(r.name)}">${ico('chart')}</a>`;
+  const monthBtn = r => `<a class="btn sm" href="#/empforms/${r.id}" title="Monthly report: ${esc(r.name)}, every month" aria-label="Monthly report for ${esc(r.name)}">${ico('chart')}Open</a>`;
   const team = r => r.direct ? `<a class="btn sm" href="#/reporting/${r.id}" title="Open the people who report to ${esc(r.name)}">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
   // the name opens this month's form, like My team; the count button opens the people under them (Harish, 2026-11-17: no View report column)
   const nameCell = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div><a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} review form">${esc(r.name)}</a><div class="small">${esc(r.team)}</div></div></div>`;
