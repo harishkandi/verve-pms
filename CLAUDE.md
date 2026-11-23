@@ -237,7 +237,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   rating (`importedFilled` in `logic.js`, Harish 2026-11-21); real gaps (SOP links, weights, rating gaps) are still flagged. People in the sheet not in PMS were added as inactive
   (`src: 'history'`, kept by list imports); 6 spelling fixes in `ALIAS`. Never touches a form that has KRAs; the current
   month is skipped. Applied to LOCAL data 2026-11-20 (backup `private/state.before-history-2026-11-20.json`); staging
-  not yet.
+  2026-11-23 (same 411 forms / 343 submitted / 4 added inactive; backup `private/staging-backup-2026-11-23.json`; Render
+  redeployed right after with an empty commit). Three manager ratings above 100 in the sheet were kept as they are.
   Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
