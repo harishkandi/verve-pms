@@ -262,7 +262,14 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   employee's; Harish asked 2026-11-27, nothing to import). Spelling fix "Trinath Kethavath"
   -> staging's "Trinadh" (`find` falls back to the written name). November rows (6 people, no ratings) are left to PMS.
   Checked cell by cell against both files (9082 answer cells, 2634 KRA rows: no differences). Applied to LOCAL data
-  2026-11-27 (backup `private/state.before-history-qa-2026-11-27.json`).
+  2026-11-27 (backup `private/state.before-history-qa-2026-11-27.json`) and staging (backup `private/staging-backup-2026-11-27.json`).
+  Third round, same evening (Harish): export `PMSData_01042026-01112026-27112026` with separate "Self Remark" and
+  "Manager Remark" columns (now `history-2026.csv`; the earlier one kept as `history-2026.export-2026-11-20.csv`; the
+  script reads `Self Remark` or the old `Remark`, and treats a form as untouched when it equals EITHER earlier export,
+  `EARLIER`). 1265 manager remarks April-October (15 more are November), 327 forms updated, 1 October form added
+  (Sayam Doshi's October now complete). November (94 rows, 14 people, partly self-rated) still left to PMS. Checked cell
+  by cell (18501 KRA cells incl. both remarks: no differences). Local backup `private/state.before-mgr-remarks-2026-11-27.json`,
+  staging backup `private/staging-backup-2026-11-27-remarks.json`.
   Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
