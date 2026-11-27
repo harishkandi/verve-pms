@@ -1,7 +1,7 @@
 # Verve PMS (Performance Management System)
 
 Monthly KRA reviews, review meetings and reports for Verve Advisory. Plain Node (20+), no framework, one
-dependency (`pg`). The full notes for developers are in [`../CLAUDE.md`](../CLAUDE.md).
+dependency (`pg`). The full notes for developers are in [`CLAUDE.md`](CLAUDE.md).
 
     cd pms
     npm install

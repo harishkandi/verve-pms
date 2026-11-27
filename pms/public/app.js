@@ -7,6 +7,37 @@ const dotJoin = (...parts) => parts.filter(x => x != null && x !== '').map(esc).
 const S = { user: null, me: null, month: null, page: null };
 const ROLE_LABEL = { admin: 'Admin', director: 'Director', manager: 'Manager', teamlead: 'Team lead', employee: 'Employee' };
 
+// ---------- inside the Verve HRMS portal (portal repo: docs/EMBEDDED_APPS.md) ----------
+// The portal serves PMS from a sub-path of its own address (/pms-app/ forwarded here), so every address PMS builds
+// starts with BASE ('' when PMS runs on its own address). In the portal's frame (EMBED) the portal already shows the
+// logo, the theme switch and who is signed in, so those are hidden (html.embedded in index.html); the portal's theme
+// is used, and the page in use is mirrored in the portal's address bar, so refresh, Back and links keep working.
+const BASE = location.pathname.replace(/\/[^/]*$/, '');
+const EMBED = (() => { try { return window.parent !== window && window.parent.location.origin === location.origin; } catch { return false; } })();
+const toPortal = msg => { if (EMBED) window.parent.postMessage(msg, location.origin); };
+if (EMBED) {
+  document.documentElement.classList.add('embedded');
+  addEventListener('hashchange', () => toPortal({ type: 'verve:route', hash: location.hash }));
+  addEventListener('message', e => {
+    if (e.origin !== location.origin || e.source !== window.parent || !e.data) return;
+    if (e.data.type === 'verve:theme') setDark(!!e.data.dark);
+    // the portal is signed in as a local test user, who has no PMS sign-in: PMS shows its own sign-in page here
+    if (e.data.type === 'verve:sign-in-here' && !S.me && S.auth) loginPage(S.auth, '');
+  });
+}
+// PMS opened on the portal's address but outside its frame (back from Google sign-in or Calendar, or a link in an
+// email): show that page inside the portal instead (/pms-app/#/yearly -> /pms/yearly). A Google sign-in started on
+// the portal stored the portal page to return to as verve.authReturn.
+function leaveToPortal() {
+  if (EMBED || window.top !== window || !BASE.endsWith('-app')) return false;
+  let back = null; try { back = localStorage.getItem('verve.authReturn'); localStorage.removeItem('verve.authReturn'); } catch {}
+  const page = location.hash.replace(/^#\/?/, '');
+  const to = new URL(back && back.startsWith('/') && !back.startsWith('//') ? back : BASE.slice(0, -'-app'.length) + (page ? '/' + page : ''), location.origin);
+  new URLSearchParams(location.search).forEach((v, k) => to.searchParams.set(k, v));
+  location.replace(to.pathname + to.search + to.hash);
+  return true;
+}
+
 // the session lives in an HttpOnly cookie set by the server; the browser sends it with every call
 // While a call runs: the button that started it shows a spinner, and after 250 ms the top bar says "Loading…"
 // (after 4 s: the server is waking up). Brief: a spinning Loader icon, never a skeleton.
@@ -28,7 +59,7 @@ async function apiCall(path, opts) {
   for (;;) {
     let retry = false;
     try {
-      res = await fetch('/api' + path, {
+      res = await fetch(BASE + '/api' + path, {
         method: opts.method || 'GET', credentials: 'same-origin',
         // tells the server who this tab was opened for, so a sign-in in another tab cannot act through this one
         headers: { 'Content-Type': 'application/json', ...(S.me && { 'X-PMS-User': `${S.me.id}:${S.me.real.id}` }) },
@@ -301,11 +332,14 @@ const isDark = () => document.documentElement.classList.contains('dark');
 const themeBtn = (kind = 'icon') => { const dark = isDark(), t = dark ? 'Switch to light mode' : 'Switch to dark mode';
   return kind === 'side' ? `<button class="sbtn" id="themeBtn" data-k="side" title="${t}">${ico(dark ? 'sun' : 'moon')}<span>${dark ? 'Light' : 'Dark'}</span></button>`
     : `<button class="ibtn" id="themeBtn" data-k="icon" title="${t}" aria-label="${t}">${ico(dark ? 'sun' : 'moon')}</button>`; };
+function setDark(dark) {
+  document.documentElement.classList.toggle('dark', dark);
+  document.querySelectorAll('#themeBtn').forEach(b => { b.outerHTML = themeBtn(b.dataset.k); });
+}
 function toggleTheme() {
   const dark = !isDark();
-  document.documentElement.classList.toggle('dark', dark);
+  setDark(dark);
   try { localStorage.setItem('pms.theme', dark ? 'dark' : 'light'); localStorage.removeItem('pmsTheme'); } catch {}
-  document.querySelectorAll('#themeBtn').forEach(b => { b.outerHTML = themeBtn(b.dataset.k); });
 }
 document.addEventListener('click', e => { if (e.target.closest('#themeBtn')) toggleTheme(); });
 
@@ -314,11 +348,14 @@ const roleBadge = r => `<span class="badge ${r === 'admin' ? 'b-amber' : r === '
 const userBtn = u => `<button class="user" data-u="${u.id}"><span class="avatar">${initials(u.name)}</span><span class="nm"><b>${esc(u.name)}</b><small>${esc(u.designation)}</small></span>${roleBadge(u.role)}</button>`;
 let REDIRECT = null; // what the last Google redirect reported, shown once after boot
 async function boot() {
+  if (leaveToPortal()) return;
   REDIRECT ??= takeRedirectParams();
   let st;
   try { st = await api('/auth/status'); } catch (e) { $('#root').innerHTML = `<div class="login">${errBox(e)}</div>`; return; }
   S.auth = st;
   if (st.signedIn) { try { return await start(); } catch {} }
+  // in the portal, signing in is the portal's job (one sign-in for every app): it shows its own sign-in page
+  if (EMBED) { toPortal({ type: 'verve:signed-out' }); $('#root').innerHTML = `<div class="boot">${spinner('Signed out…')}</div>`; return; }
   const err = REDIRECT.error ? authMsg(REDIRECT.error, REDIRECT.email, st.domain) : ''; REDIRECT = {};
   loginPage(st, err);
 }
@@ -431,7 +468,12 @@ function loginPage(st, err) {
       err$.innerHTML = alert(`${test}Done. If ${email.value.trim()} is a PMS account, the PMS admin has been told and will give you a temporary password in person or on chat. With Sign in with Google you use your Google password, which IT manages.`, 'info');
     } catch (er) { err$.innerHTML = alert(er.message); }
   };
-  $('#gsign').onclick = () => { if (st.google) location.href = `/api/auth/google/start?origin=${encodeURIComponent(location.origin)}`; };
+  // Google refuses to load in a frame: in the portal the whole window goes to Google and comes back to this portal page
+  $('#gsign').onclick = () => {
+    if (!st.google) return;
+    if (EMBED) try { localStorage.setItem('verve.authReturn', window.top.location.pathname); } catch {}
+    (EMBED ? window.top : window).location.href = `${BASE}/api/auth/google/start?origin=${encodeURIComponent(location.origin + BASE)}`;
+  };
   // a test account fills in its email and password and signs straight in
   document.querySelectorAll('.adm-row').forEach(b => b.onclick = () => {
     email.value = b.dataset.em; fieldErr(email, '#lemailh', ''); fieldErr(pass, '#lpassh', '');
@@ -2573,7 +2615,8 @@ pages.report = async v => {
 // ---------- scheduling ----------
 // "11:00" -> "11:00 am"
 const fmtT = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
-const calStart = () => { location.href = `/api/auth/google/start?calendar=1&origin=${encodeURIComponent(location.origin)}`; };
+// Google refuses to load in a frame: in the portal the whole window goes to Google, then back (leaveToPortal)
+const calStart = () => { (EMBED ? window.top : window).location.href = `${BASE}/api/auth/google/start?calendar=1&origin=${encodeURIComponent(location.origin + BASE)}`; };
 // dates a review was moved to, without repeats: first date, then each new date once
 // a booked review (option A of the designs, Harish 2026-11-17): date and time in one light-blue chip, the pencil inside reschedules
 const slotCell = r => {
@@ -2665,7 +2708,7 @@ pages.scheduling = async v => {
     const ok = m.querySelector('#ok');
     ok.onclick = async () => {
       const send = m.querySelector('#si') ? m.querySelector('#si').checked : false;
-      const body = { empId: r.empId, month: S.month, date: m.querySelector('#sd').value, time: m.querySelector('#st').value, duration: +m.querySelector('#sl').value, invite: send, origin: location.origin };
+      const body = { empId: r.empId, month: S.month, date: m.querySelector('#sd').value, time: m.querySelector('#st').value, duration: +m.querySelector('#sl').value, invite: send, origin: location.origin + BASE };
       ok.disabled = true; ok.textContent = send || inv ? 'Talking to Google…' : 'Saving…';
       try {
         const res = await api('/scheduling/' + (mode === 'invite' ? 'invite' : mode), { method: 'POST', body });

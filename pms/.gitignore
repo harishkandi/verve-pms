@@ -1,0 +1,7 @@
+# real company data (employee list) and local saved state: never commit
+private/
+*.log
+# Google OAuth credential downloads
+client_secret*.json
+# reference documents kept next to the app, never served or committed (public/ is the web root)
+public/*.docx
