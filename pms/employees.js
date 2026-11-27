@@ -56,8 +56,9 @@ function plan(rows) {
     while (m && byName.has(m)) { if (seen.includes(m)) { problems.push(`Reporting loop: ${seen.concat(m).join(' -> ')}.`); break; } seen.push(m); m = mgrOf(byName.get(m)); }
   }
   rows.filter(r => !r.manager).forEach(r => notes.push(`"${r.name}" has no reporting manager: top-level person (not reviewed).`));
-  // the Director column is only a cross-check: the app works the director out from the reporting chain
-  const topOf = r => { let m = r.manager, n = 0; while (m && byName.has(key(m)) && n++ < 50) m = byName.get(key(m)).manager; return m; };
+  // the Director column is only a cross-check: the app works the director out from the reporting chain (it ends at
+  // the person with no manager, also when that director has a row on the list)
+  const topOf = r => { let m = r.manager, n = 0; while (m && byName.has(key(m)) && byName.get(key(m)).manager && n++ < 50) m = byName.get(key(m)).manager; return m; };
   rows.filter(r => r.director && r.manager && key(topOf(r)) !== key(r.director))
     .forEach(r => notes.push(`WARNING "${r.name}": Director column says "${r.director}" but the reporting chain leads to "${topOf(r)}".`));
   const emails = all.map(r => r.email).filter(Boolean);

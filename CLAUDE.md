@@ -256,7 +256,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   added later by the history import got their sheet code locally. People with no sheet code show "Code not set yet" on
   Employees › Active (like the reports / Profile), never the V### placeholder; that page no longer shows "No work
   email" (banner and row text, Harish). A plain `node server.js` has no saved data, so it shows V### and no emails:
-  run `npm run local`. Full details headings are centred, compact, at most
+  run `npm run local`. Since 2026-11-27 the shared list (`pms/employee-list`) carries Employee Code and Work Email
+  columns and the 4 directors as rows (no manager, team "Directors"), so a teammate's fresh local copy gets real codes
+  and emails too (it showed "Code not set yet" for everyone before). Full details headings are centred, compact, at most
   two lines; every dropdown arrow uses `--vr-caret` (navy, yellow in dark mode).
   Departments (Harish 2026-11-19, "use department names properly"): the REAL department (Finance & Accounts, HR & Admin,
   Sales Team, Cloud Data, Social Media) from the Department column of "Task_List_HRMS_Tool - Employee_List" is its own
