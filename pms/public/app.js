@@ -2931,7 +2931,7 @@ pages.employees = async (v, arg, grp) => {
     if (p) passwordDialog(p, () => pages.employees(v)); else toast('That person is not active any more.', 'err');
   }
   const rows = all.filter(e => (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q) || (e.email || '').includes(q)) && (!fl || e.team === fl) && passF(e));
-  const dom = '@' + S.me.domain, noEmail = d.active.filter(e => !e.email).length, ed = tab === 'active';
+  const dom = '@' + S.me.domain, ed = tab === 'active';
   // department chips with counts: people in this tab (and role tile), per team; a chip filters the table
   const inScope = all.filter(passF);
   // top-level directors carry "Directors" as their team, but it is not a team: no chip for it (they are under All teams)
@@ -2978,9 +2978,8 @@ pages.employees = async (v, arg, grp) => {
   <div class="row">${searchBox('eq', 'Search by name, code or email', S.eq, 270)}${cfPill('emp')}<span class="sp"></span><button type="button" class="btn" id="empx" title="Download this list as it is filtered (CSV for Excel)">${ico('download')}Export CSV</button><a class="btn" href="#/reporting" title="See who reports to whom: directors, then their managers, then their employees">${ico('sitemap')}Reporting flow</a></div>
   ${md.diffs.length ? `<div class="alert-w" id="mdbanner"><b>${md.diffs.length} ${md.diffs.length === 1 ? 'difference' : 'differences'} between PMS and the master employee list.</b> Update the list so both match, or change PMS to follow it. <button class="btn sm" data-a="mdsync">Check the list now</button><details><summary>Show</summary><table class="mdt"><tr><th>Person</th><th>What</th><th>PMS</th><th>Master list</th></tr>${md.diffs.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.label)}</td><td>${esc(x.pms)}</td><td>${esc(x.master)}</td></tr>`).join('')}</table></details></div>` : ''}
   ${teamChips}
-  ${tab === 'active' && noEmail ? `<div class="info">${noEmail} active ${noEmail === 1 ? 'person has' : 'people have'} no work email yet. People sign in with their ${esc(dom)} Google account, and calendar invites go to that address, so add it with Edit.</div>` : ''}
   <div class="tablewrap"><table><tr><th>Employee</th><th>Role</th><th>Team</th><th>Designation</th><th>Reporting manager</th>${tab === 'active' ? '' : '<th>Inactive from</th>'}<th>Active</th><th>Actions</th></tr>
-  ${rows.map(e => `<tr><td><a href="${tab === 'active' ? `#/form/${e.id}/${S.month}` : `#/empforms/${e.id}`}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a>${e.workStatus ? ` <span class="badge b-amber" title="Since ${esc(monthLabel(e.workStatus.from))}">${esc((WORK_STATUS.find(w => w[0] === e.workStatus.type) || [])[1] || '')}</span>` : ''}<div class="small" style="max-width:220px;overflow-wrap:anywhere">${esc(e.code)} · ${e.email ? esc(e.email) : 'No work email'}</div></td>
+  ${rows.map(e => `<tr><td><a href="${tab === 'active' ? `#/form/${e.id}/${S.month}` : `#/empforms/${e.id}`}" style="color:var(--navy);font-weight:600;white-space:nowrap">${esc(e.name)}</a>${e.workStatus ? ` <span class="badge b-amber" title="Since ${esc(monthLabel(e.workStatus.from))}">${esc((WORK_STATUS.find(w => w[0] === e.workStatus.type) || [])[1] || '')}</span>` : ''}<div class="small" style="max-width:220px;overflow-wrap:anywhere">${e.codeSet === false ? 'Code not set yet' : esc(e.code)}${e.email ? ' · ' + esc(e.email) : ''}</div></td>
   <td title="${e.role === 'director' ? 'Top level, not reviewed' : e.role === 'employee' ? 'Is reviewed by their reporting manager' : 'Has people reporting to them: reviews their team'}">${roleBadge(e.role)}</td>
   <td>${e.team === 'Directors' ? '<span class="small" title="Top-level director, not in a team">–</span>' : cell(e, 'team', opts(byLabel(d.teams), e.team, tl), tl(e.team))}</td>
   <td>${cell(e, 'designation', opts(d.designations, e.designation) + '<option value="__new">Other…</option>', e.designation)}</td>

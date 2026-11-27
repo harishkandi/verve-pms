@@ -252,7 +252,11 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
   `private/state.before-codes-2026-11-19.json`) and to STAGING the same evening (already had them; backup
-  `private/staging-backup-2026-11-19.json`). Full details headings are centred, compact, at most
+  `private/staging-backup-2026-11-19.json`). Re-checked 2026-11-27 on every page: all 72 sheet codes match; one inactive person
+  added later by the history import got their sheet code locally. People with no sheet code show "Code not set yet" on
+  Employees › Active (like the reports / Profile), never the V### placeholder; that page no longer shows "No work
+  email" (banner and row text, Harish). A plain `node server.js` has no saved data, so it shows V### and no emails:
+  run `npm run local`. Full details headings are centred, compact, at most
   two lines; every dropdown arrow uses `--vr-caret` (navy, yellow in dark mode).
   Departments (Harish 2026-11-19, "use department names properly"): the REAL department (Finance & Accounts, HR & Admin,
   Sales Team, Cloud Data, Social Media) from the Department column of "Task_List_HRMS_Tool - Employee_List" is its own
