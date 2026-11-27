@@ -190,7 +190,8 @@ function validate(f) {
   }
 
   // questionnaire
-  // old-portal forms (f.imported): the export had no question answers, so blank answers there are not flagged
+  // old-portal forms (f.imported): without answers in the export nothing is flagged; with answers (2026-11-27 export) blank
+  // and short answers and missing ratings are real gaps, but the export has no parameter remarks, so Q_REMARK is not asked
   const qs = f.imported && !Object.keys(f.qa || {}).length ? [] : activeQuestions(f.month, f);
   let qComplete = true;
   const short = [];
@@ -203,7 +204,7 @@ function validate(f) {
     } else {
       const s = a && a.self, m = a && a.mgr;
       if (!has(s) || !has(m)) { qComplete = false; add('flag', 'Questionnaire', 'Q_INCOMPLETE', `${q.text}: self and manager ratings are both needed.`, 'Questionnaire rating missing'); }
-      else if (+s !== +m && blank(a.remark)) add('block', 'Questionnaire', 'Q_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${q.text})`, `Questionnaire manager remark missing (${q.text})`);
+      else if (+s !== +m && blank(a.remark) && !f.imported) add('block', 'Questionnaire', 'Q_REMARK', `Manager remarks are required because there is a difference between the employee's self-rating and the manager's rating. (${q.text})`, `Questionnaire manager remark missing (${q.text})`);
     }
   }
   if (nj) {

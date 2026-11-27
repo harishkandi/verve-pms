@@ -248,6 +248,19 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   month is skipped. Applied to LOCAL data 2026-11-20 (backup `private/state.before-history-2026-11-20.json`); staging
   2026-11-23 (same 411 forms / 343 submitted / 4 added inactive; backup `private/staging-backup-2026-11-23.json`; Render
   redeployed right after with an empty commit). Three manager ratings above 100 in the sheet were kept as they are.
+  Second round (Harish 2026-11-27, two CSVs from Downloads): a newer KRA export (`PMSData_01042026-01112026-20112026`,
+  now `history-2026.csv`; the first one kept as `history-2026.first-import-2026-11-20.csv`) and the QUESTION ANSWERS
+  (`questionAnswerData_...`, kept as `private/history-qa-2026.csv`): 5 text answers + 7 parameter ratings self / mgr
+  (0-5), matched to the questions BY NAME (the export has Health before Grooming), "NULL" = not answered, rows with
+  nothing in them left out. An imported form's KRAs are replaced by the newer export only while they still equal the
+  first export (compared without key order: jsonb reorders keys), so nothing changed in PMS is overwritten; 12 forms
+  updated (5 October reviews now complete), 3 October forms added; answers sit on the imported form (or a new imported
+  form without KRAs) with `f.imported.qa = true` and `qSnapshot`. Imported forms with answers ARE checked for blank /
+  short answers and missing ratings (real gaps), but never for `Q_REMARK` (the export has no parameter remarks); the
+  form hides the "write more" and "remark required" hints on locked or imported forms. Spelling fix "Trinath Kethavath"
+  -> staging's "Trinadh" (`find` falls back to the written name). November rows (6 people, no ratings) are left to PMS.
+  Checked cell by cell against both files (9082 answer cells, 2634 KRA rows: no differences). Applied to LOCAL data
+  2026-11-27 (backup `private/state.before-history-qa-2026-11-27.json`).
   Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
