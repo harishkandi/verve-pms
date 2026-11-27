@@ -254,8 +254,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `private/state.before-codes-2026-11-19.json`) and to STAGING the same evening (already had them; backup
   `private/staging-backup-2026-11-19.json`). Re-checked 2026-11-27 on every page: all 72 sheet codes match; one inactive person
   added later by the history import got their sheet code locally. People with no sheet code show "Code not set yet" on
-  Employees › Active (like the reports / Profile), never the V### placeholder; that page no longer shows "No work
-  email" (banner and row text, Harish). A plain `node server.js` has no saved data, so it shows V### and no emails:
+  Employees › Active (like the reports / Profile), never the V### placeholder; under each name that page shows ONLY the code (no work
+  email, no "No work email" banner; Harish 2026-11-27). A plain `node server.js` has no saved data, so it shows V### and no emails:
   run `npm run local`. Since 2026-11-27 the shared list (`pms/employee-list`) carries Employee Code and Work Email
   columns and the 4 directors as rows (no manager, team "Directors"), so a teammate's fresh local copy gets real codes
   and emails too (it showed "Code not set yet" for everyone before). Full details headings are centred, compact, at most
