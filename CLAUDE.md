@@ -326,7 +326,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   is charts only. Layout = "C2 command centre" (Harish picked it 2026-11-19 from three rounds of mock-ups, private
   artifact claude.ai/artifact/S7ZGYd2y1BTUxJaAwRu2kp): `.anx` with `--vr-anx-*` tokens: LIGHT by default (white cards on
   the page, like the rest of PMS), the dark command-centre panel only in the app's dark mode (`.dark` tokens; Harish
-  2026-11-19: "light look, dark only when I switch globally"). 12 cards: Average rating (notched gauge, 75 mark), Strong performers (month bars), Parameter rating (notch bar /5),
+  2026-11-19: "light look, dark only when I switch globally"). 12 cards: Average rating (notched gauge, 75 mark), Strong performers (month bars),
   Who is moving (dot per person up / steady / down), Review cycle funnel for this month (layered bands, %
   pills; due → meeting booked → filled → ratings in → submitted; Remind button = `remindAll()`), KRA scores (rings),
   Reviews held on time (on time / late / missed per finished month, from `dueInfo`), Rating bands (tick donut),
@@ -334,7 +334,18 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   (`.antab`, short names, navy = selected; Harish 2026-11-19: hidden in the Filter nobody finds it; he also rejected a
   radar and one card per parameter). The pick is kept in `CF.anPar.xpar`, hidden from the panel (`PF.hide.anPar`); pie of the
   manager's 1-2 / 3 / 4 / 5 ratings, full marks yellow, average in the middle. Team race (squares), Review meetings
-  calendar (this month, held up to `config.today`, booked after), Needs attention. History cards (Harish 2026-11-20, on the old portal's
+  calendar (this month, held up to `config.today`, booked after), Needs attention. Card order (Harish 2026-11-23,
+  card-by-card review): top block `.anx-top` = Review meetings calendar on the left, a compact Review cycle funnel on the
+  right with Average rating, Strong performers and Who is moving under it (`.anx-3`); the separate Parameter rating card
+  was removed (empty on the old-portal data and a repeat of the Parameters pie card). Every row below fills the 12
+  columns (order = the `anx-grid` line at the end of `anDraw`). Average rating also shows the
+  lowest / highest team under the gauge and has Reporting manager in its Filter. Review meetings (same day) = a
+  summary that leads into Scheduling, not a second scheduling calendar: booked / to book / windows closed on top, each
+  person's review window shaded (`cycle.win` from `/api/analytics`), a count badge per day (navy held, yellow booked),
+  days run to the last window day and stretch to the card height; closed windows with reviews not booked = an
+  orange warning symbol after "N windows closed", the teams on hover (no warning lines: Harish wanted it smaller); a day
+  or the Scheduling button opens Scheduling › Calendar (`data-ansched`). The three cards under the funnel are compact
+  (`.anx-3` rules: smaller padding / numbers / charts, icon-only Filter pill). History cards (Harish 2026-11-20, on the old portal's
   April-October data): Rating trend (overall + KRA lines per month, review count bars), Self vs manager (gap per month,
   people 15+ above / 10+ below), People (tabs Top / Needs support / Most improved / Dropped most, `AF.rank`), Ratings by
   reviewer (`scores[m].by` = `f.reviewedBy` at the time; manager rating given vs the average of all reviewers, self
@@ -357,8 +368,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   tooltip; NOT radar, scatter, sunburst, background patterns / grid, choropleth map. Entrance plays only on cards whose
   HTML changed (`AN_LAST` vs `out` in `anDraw` adds `.anin`; CSS keyframes `an-*`, off under reduced motion; `num()` +
   `anCount()` count numbers up). Bars spring up (`.grow`), funnel steps curve into each other and wipe in (`.wipe` /
-  `.fin`), pie and band donut sweep in clockwise (`sweepMask`), rings sweep (`.ringa`, pathLength 100), Parameter rating
-  is a sparkline (`.sp-l`, crosshair on hover), heatmap days pop in as a diagonal wave. Hover sync: marks and legend rows
+  `.fin`), pie and band donut sweep in clockwise (`sweepMask`), rings sweep (`.ringa`, pathLength 100),
+  Rating trend lines draw in (`.sp-l`, crosshair on hover), calendar days pop in as a diagonal wave. Hover sync: marks and legend rows
   sharing `data-hk` light up together, the rest of the card dims (`.hot`, `[data-hot]`); month labels turn into a pill
   (`xlab`); pie slices pop out (`.pslice`); ring centre shows the hovered KRA (`.an-ctr`, `data-cv` / `data-cl`).
   Tooltip = Bklit card (`tipH(title, [[colourVar, label, value]], footer)`). The "Sample data" switch (made-up ratings) was REMOVED

@@ -1117,8 +1117,8 @@ const CF_CARDS = { // one Filter for the whole dashboard (Harish 2026-11-21): th
   sched: { title: 'Team members', keys: ['steam', 'sslot', 'sinv', 'sst'], local: true },
   audit: { title: 'Audit log', keys: ['aper', 'awho', 'aact'], local: true },
   // Performance Analytics (Harish 2026-11-19: a filter on every card); all filter in the browser on one /api/analytics answer
-  anAvg: { title: 'Average rating', keys: ['xper', 'xteam', 'xdesig'], local: true }, anStrong: { title: 'Strong performers', keys: ['xper', 'xteam', 'xdesig'], local: true },
-  anParam: { title: 'Parameter rating', keys: ['xper', 'xteam', 'xdesig'], local: true }, anMove: { title: 'Who is moving', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  anAvg: { title: 'Average rating', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anStrong: { title: 'Strong performers', keys: ['xper', 'xteam', 'xdesig'], local: true },
+  anMove: { title: 'Who is moving', keys: ['xper', 'xteam', 'xdesig'], local: true },
   anFunnel: { title: 'Review cycle', keys: ['xteam', 'xdesig', 'xmgr'], local: true }, anKra: { title: 'KRA scores', keys: ['xper', 'xteam', 'xdesig'], local: true },
   anTime: { title: 'Reviews held on time', keys: ['xper', 'xteam', 'xmgr'], local: true }, anBands: { title: 'Rating bands', keys: ['xper', 'xteam', 'xdesig'], local: true },
   anRace: { title: 'Team race', keys: ['xper', 'xdesig'], local: true },
@@ -2026,7 +2026,7 @@ const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
 // finished month. Real submitted reviews only (the Sample data switch was removed 2026-11-23, Harish: real data is in).
 const AF = (() => { try { const x = { fy: 0, ...JSON.parse(localStorage.getItem('pms.analytics') || '{}') }; delete x.sample; return x; } catch { return { fy: 0 }; } })();
 const afSave = () => { try { localStorage.setItem('pms.analytics', JSON.stringify(AF)); } catch {} };
-const AN_CARDS = ['anAvg', 'anStrong', 'anParam', 'anMove', 'anTrend', 'anGap', 'anFunnel', 'anKra', 'anTime', 'anBands', 'anPar', 'anRace', 'anMeet', 'anAlert', 'anPeople', 'anRev'];
+const AN_CARDS = ['anAvg', 'anStrong', 'anMove', 'anTrend', 'anGap', 'anFunnel', 'anKra', 'anTime', 'anBands', 'anPar', 'anRace', 'anMeet', 'anAlert', 'anPeople', 'anRev'];
 const AN_KRAS = [['operational', 'Operational', '--vr-anx-k1'], ['process', 'Process', '--vr-anx-k2'], ['people', 'People', '--vr-anx-k3']];
 let AN = null; // the last /api/analytics answer; the cards redraw from it when a card filter changes
 let AN_LAST = {}; // card -> its last HTML: only a card that changed plays its entrance again (a filter on one card leaves the rest still)
@@ -2045,6 +2045,7 @@ pages.analytics = async v => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
     if (e.target.closest('[data-anremind]')) return remindAll();
+    if (e.target.closest('[data-ansched]')) { S.schView = 'cal'; try { localStorage.setItem('pms.schView', 'cal'); } catch {} location.hash = '#/scheduling'; return; } // meetings calendar -> Scheduling › Calendar
     const rk = e.target.closest('[data-anrank]'); if (rk) { AF.rank = rk.dataset.anrank; afSave(); anDraw(v); const b = v.querySelector(`[data-anrank="${rk.dataset.anrank}"]`); if (b) b.focus(); return; }
     const pt = e.target.closest('[data-anpar]'); if (pt) { CF.anPar.xpar = pt.dataset.anpar; cfSave(); anDraw(v); const b = v.querySelector(`[data-anpar="${pt.dataset.anpar}"]`); if (b) b.focus(); }
   };
@@ -2136,7 +2137,11 @@ function anDraw(v) {
     for (let k = 0; k < N; k++) { const on = (k + .5) / N <= v0 / 100; s += `<path ${on ? 'class="gn"' : ''} d="${arcP(cx, cy, 70, 92, a(k / N) + .012, a((k + 1) / N) - .012)}" style="--i:${k};fill:var(${on ? '--vr-anx-yellow' : '--vr-anx-line'})" ${on ? 'filter="url(#anglow)"' : ''}/>`; }
     const [mx, my] = pt(cx, cy, 64, a(.75)), [nx, ny] = pt(cx, cy, 98, a(.75));
     s += `<line x1="${mx}" y1="${my}" x2="${nx}" y2="${ny}" style="stroke:var(--vr-anx-ink2)" stroke-width="1.5"/><text class="ax-tk" x="${nx + 3}" y="${ny - 3}">75</text><text class="ax-lb" x="${cx}" y="${cy - 10}" text-anchor="middle" style="font-size:30px;font-weight:800">${num(+f1(v0), 1, 'tspan')}<tspan style="font-size:15px;fill:var(--vr-anx-muted)">%</tspan></text><text class="ax-lb2" x="${cx}" y="${cy + 8}" text-anchor="middle">${all.length} submitted review${all.length === 1 ? '' : 's'}</text>`;
-    return card(c, 'c3', 'Average rating', `${span(ms)} ${ms.length > 1 ? chip(last - first) : ''}`, `<svg viewBox="0 0 220 116" role="img" aria-label="Average rating ${f1(v0)}%" tabindex="0" ${tp(`<b>Average rating, ${span(ms)}</b><br>${f1(v0)}% · goal 75%${ms.length > 1 ? `<br>${mon(ms[0])} ${f1(first)}% → ${mon(ms[ms.length - 1])} ${f1(last)}%` : ''}`)}>${s}</svg>`); })();
+    // lowest and highest team under the number (Harish 2026-11-23: the average hardly moves, the spread is between teams)
+    const tm = {}; ps.forEach(p => ms.forEach(m => { const x = p.scores[m]; if (x && x.total != null) (tm[p.team] = tm[p.team] || []).push(x.total); }));
+    const tr = Object.entries(tm).map(([t, a]) => ({ t, v: mean(a) })).sort((x, y) => x.v - y.v), lo = tr[0], hi = tr[tr.length - 1];
+    const spread = tr.length > 1 ? `<span class="ancap"><span style="white-space:nowrap">Lowest <b class="anink">${esc(tl(lo.t))}</b> ${f1(lo.v)}%</span> · <span style="white-space:nowrap">Highest <b class="anink">${esc(tl(hi.t))}</b> ${f1(hi.v)}%</span></span>` : '';
+    return card(c, 'c3', 'Average rating', `${span(ms)} ${ms.length > 1 ? chip(last - first) : ''}`, `<svg viewBox="0 0 220 116" role="img" aria-label="Average rating ${f1(v0)}%" tabindex="0" ${tp(`<b>Average rating, ${span(ms)}</b><br>${f1(v0)}% · goal 75%${ms.length > 1 ? `<br>${mon(ms[0])} ${f1(first)}% → ${mon(ms[ms.length - 1])} ${f1(last)}%` : ''}${tr.length > 1 ? `<br>${tr.length} teams: ${esc(tl(lo.t))} ${f1(lo.v)}% to ${esc(tl(hi.t))} ${f1(hi.v)}%` : ''}`)}>${s}</svg>${spread}`); })();
   // 2. Strong performers (75%+) per month: bar sparkline, the latest month lit
   const k2 = (() => { const c = 'anStrong', ps = pool(c), ms = per(c), n = ms.map(m => ps.filter(p => p.scores[m] && p.scores[m].total >= 75).length);
     if (!ms.some(m => sc(ps, m, 'total').length)) return card(c, 'c3', 'Strong performers (75%+)', span(ms), none(noScores));
@@ -2145,18 +2150,6 @@ function anDraw(v) {
     return card(c, 'c3', 'Strong performers (75%+)', span(ms), `<div class="anbig">${num(n[n.length - 1])} ${ms.length > 1 ? chip(n[n.length - 1] - n[0], '') : ''}<small>of ${ps.filter(p => p.scores[ms[ms.length - 1]]).length} rated in ${mon(ms[ms.length - 1])}</small></div>
       <svg viewBox="0 0 ${w} ${h + 16}" role="img" aria-label="Strong performers per month">${n.map((x, i) => { const bh = Math.max(3, x / mx * h), lit = i === n.length - 1 ? '--vr-anx-yellow' : '--vr-anx-series', rated = ps.filter(p => p.scores[ms[i]]).length;
         return `<g data-hk="${ms[i]}" tabindex="0" ${tp(tipH(mlab(ms[i]), [[lit, 'Rated 75%+', x], ['--vr-anx-muted', 'Rated', rated]]))}><rect x="${i * bw}" y="0" width="${bw}" height="${h}" fill="transparent"/><rect class="grow" x="${i * bw + 4}" y="${h - bh}" width="${Math.max(4, bw - 8)}" height="${bh}" rx="${Math.min(6, Math.max(2, (bw - 8) / 2))}" style="--i:${i};fill:var(${lit})"/>${xlab(i * bw + bw / 2, h + 14, mon(ms[i]))}</g>`; }).join('')}</svg>`); })();
-  // 3. Parameter rating (manager, out of 5): notch bar
-  const k3 = (() => { const c = 'anParam', ps = pool(c), ms = per(c), pv = m => ps.map(p => p.scores[m]).filter(Boolean).flatMap(s => Object.values(s.params || {})), all = ms.flatMap(pv), v0 = mean(all);
-    if (v0 == null) return card(c, 'c3', "Parameter rating", span(ms), noPar(ps, ms));
-    // Bklit sparkline (Harish 2026-11-20): the month-by-month average as a thin line that draws itself in, the latest month
-    // as a yellow dot; hover a month for a crosshair, its dot and the numbers
-    const pts = ms.map(m => { const a = pv(m); return { m, v: mean(a), n: a.length }; }).filter(p => p.v != null), first = pts[0].v, last = pts[pts.length - 1].v;
-    const W = 220, H = 58, lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v)), pad = Math.max((hi - lo) * .3, .15), cw = pts.length > 1 ? (W - 8) / (pts.length - 1) : W;
-    const X = i => pts.length > 1 ? 4 + i * cw : W / 2, Y = x => 6 + (1 - (x - lo + pad) / (hi - lo + 2 * pad)) * (H - 12), P = pts.map((p, i) => [X(i), Y(p.v)]), [ex, ey] = P[P.length - 1];
-    return card(c, 'c3', 'Parameter rating', `Manager's rating · ${span(ms)}`, `<div class="anbig">${num(+v0.toFixed(1), 1)}<small>/5</small> ${pts.length > 1 ? chip(last - first, '') : ''}</div>
-      <svg viewBox="0 0 ${W} ${H}" class="anspark" role="img" aria-label="Parameter rating by month, ${v0.toFixed(1)} out of 5">${pts.length > 1 ? `<path class="sp-l" d="${smooth(P)}" pathLength="100"/>` : ''}<circle class="sp-end" cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="3.5"/>
-      ${pts.map((p, i) => `<g data-hk="${p.m}" tabindex="0" ${tp(tipH(mlab(p.m), [['--vr-anx-series', 'Average', p.v.toFixed(2) + ' / 5'], ['--vr-anx-muted', 'Ratings', p.n]]))}><rect x="${(X(i) - cw / 2).toFixed(1)}" y="0" width="${cw.toFixed(1)}" height="${H}" fill="transparent"/><line class="sp-x" x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="0" y2="${H}"/><circle class="sp-x sp-d" cx="${X(i).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.5"/></g>`).join('')}</svg>
-      <span class="ancap">${d.params.map(q => esc(q.label)).slice(0, 3).join(', ')}${d.params.length > 3 ? '…' : ''}</span>`); })();
   // 4. Who is moving: one square per person, up / steady / down (first to last rated month in the period)
   const k4 = (() => { const c = 'anMove', ps = now(c), ms = per(c), mv = ps.map(p => { const r = ms.filter(m => p.scores[m]); return r.length < 2 ? null : { p, d: p.scores[r[r.length - 1]].total - p.scores[r[0]].total }; }).filter(Boolean);
     if (!mv.length) return card(c, 'c3', 'Who is moving', span(ms), none('Needs two rated months per person in the period.'));
@@ -2173,11 +2166,11 @@ function anDraw(v) {
     if (!due) return card(c, 'c8', `Review cycle · ${esc(d.currentLabel)}`, 'From due to submitted', '<p class="anx-none">No reviews this month for these filters.</p>');
     // Bklit funnel (Harish 2026-11-20): each step curves smoothly down to the next one, with two halo layers around it;
     // the steps wipe in from the left one after another, then their numbers and % pills fade in; hover lights one step
-    const W = 680, H = 280, G = 3, sw = (W - G * (st.length - 1)) / st.length, cy = 146, hh = x => 5 + Math.pow(x / due, 1.6) * 52;
+    const W = 680, H = 190, G = 3, sw = (W - G * (st.length - 1)) / st.length, cy = 100, hh = x => 4 + Math.pow(x / due, 1.6) * 36; // compact (Harish 2026-11-23: three cards fit under it)
     const f = st.map(([l, x], i) => { const x0 = i * (sw + G), x1 = x0 + sw, a = hh(x), b = i < st.length - 1 ? hh(st[i + 1][1]) : a, c1 = x0 + sw * .45, c2 = x0 + sw * .8;
       const band = (k, op) => { const ea = (a + k * (6 + a * .22)).toFixed(1), eb = (b + k * (6 + b * .22)).toFixed(1);
         return `<path d="M${x0},${cy - ea} C${c1},${cy - ea} ${c2},${cy - eb} ${x1},${cy - eb} L${x1},${+cy + +eb} C${c2},${+cy + +eb} ${c1},${+cy + +ea} ${x0},${+cy + +ea} Z" style="fill:var(--vr-anx-series)" opacity="${op}"/>`; };
-      return `<g data-hk="s${i}" tabindex="0" style="--i:${i}" ${tp(tipH(l, [['--vr-anx-series', 'People', `${x} of ${due}`], ['--vr-anx-muted', 'Share', pct(x, due) + '%']], i ? `${pct(x, st[i - 1][1])}% of "${st[i - 1][0]}"` : ''))}><g class="wipe">${band(2, .16)}${band(1, .34)}${band(0, 1)}</g><g class="fin"><rect x="${x0 + sw / 2 - 28}" y="${cy - 13}" width="56" height="26" rx="13" class="ax-pill"/><text x="${x0 + sw / 2}" y="${cy + 5}" text-anchor="middle" class="ax-pillt">${pct(x, due)}%</text><text class="ax-lb" x="${x0 + sw / 2}" y="26" text-anchor="middle" style="font-size:18px;font-weight:800">${num(x, 0, 'tspan')}</text><text class="ax-lb2" x="${x0 + sw / 2}" y="${H - 10}" text-anchor="middle" style="font-size:13px">${l}</text></g></g>`; }).join('');
+      return `<g data-hk="s${i}" tabindex="0" style="--i:${i}" ${tp(tipH(l, [['--vr-anx-series', 'People', `${x} of ${due}`], ['--vr-anx-muted', 'Share', pct(x, due) + '%']], i ? `${pct(x, st[i - 1][1])}% of "${st[i - 1][0]}"` : ''))}><g class="wipe">${band(2, .16)}${band(1, .34)}${band(0, 1)}</g><g class="fin"><rect x="${x0 + sw / 2 - 28}" y="${cy - 13}" width="56" height="26" rx="13" class="ax-pill"/><text x="${x0 + sw / 2}" y="${cy + 5}" text-anchor="middle" class="ax-pillt">${pct(x, due)}%</text><text class="ax-lb" x="${x0 + sw / 2}" y="22" text-anchor="middle" style="font-size:18px;font-weight:800">${num(x, 0, 'tspan')}</text><text class="ax-lb2" x="${x0 + sw / 2}" y="${H - 4}" text-anchor="middle" style="font-size:13px">${l}</text></g></g>`; }).join('');
     const drop = st.slice(1).map(([l, x], i) => ({ l, n: st[i][1] - x })).sort((a, b) => b.n - a.n)[0];
     return card(c, 'c8', `Review cycle · ${esc(d.currentLabel)}`, `From due to submitted${drop && drop.n ? ` · biggest drop: ${drop.n} before "${drop.l}"` : ''}`, `<svg viewBox="0 0 ${W} ${H}" class="anfun" role="img" aria-label="Review cycle funnel">${f}</svg>`, btn); })();
   // 6. KRA scores: one ring per KRA (out of 100), rows with the change
@@ -2237,16 +2230,30 @@ function anDraw(v) {
     if (!ts.length) return card(c, 'c4', 'Team race', span(ms), none(noScores));
     return card(c, 'c4', 'Team race', `One square = 3 points above 50% · ${span(ms)}`, `<div class="ansq">${ts.map((x, i) => { const n = Math.max(0, Math.round((x.av - 50) / 3));
       return `<div class="ansqr" tabindex="0" ${tp(`<b>${esc(tl(x.t))}</b><br>${f1(x.av)}% · ${x.n} people`)}><span class="anrk ${i ? '' : 'g'}">${i + 1}</span><b>${esc(tl(x.t))}</b><span class="ansqs">${Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? (i ? 'on' : 'y') : ''}" style="--i:${k + i * 2}"></i>`).join('')}</span><em>${num(+f1(x.av), 1)}</em></div>`; }).join('')}</div>`); })();
-  // 11. Review meetings this month: calendar heatmap (held up to today, booked after)
-  const meet = (() => { const c = 'anMeet', ps = pool(c).filter(p => p.cycle && p.cycle.meeting && p.cycle.meeting.slice(0, 7) === d.current), [yy, mm] = d.current.split('-').map(Number);
-    const days = new Date(yy, mm, 0).getDate(), lead = (new Date(yy, mm - 1, 1).getDay() + 6) % 7, cnt = {}; ps.forEach(p => { const k = +p.cycle.meeting.slice(8, 10); cnt[k] = (cnt[k] || 0) + 1; });
-    const lvl = n => !n ? 0 : Math.min(6, n + 1), today = d.today && d.today.slice(0, 7) === d.current ? +d.today.slice(8, 10) : 0;
-    let g = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span class="wd">${x}</span>`).join('') + '<span></span>'.repeat(lead);
-    // Bklit heatmap entrance (Harish 2026-11-20): the days fade and scale in as a diagonal wave from the top left;
-    // tooltip = the date, the weekday, then the count
-    const wdName = k => new Date(yy, mm - 1, k).toLocaleDateString('en-IN', { weekday: 'long' });
-    for (let k = 1; k <= days; k++) { const n = cnt[k] || 0, fut = today && k > today, pos = lead + k - 1; g += `<span class="dd ${fut ? (n ? 'f h' + lvl(n) : 'f') : 'h' + lvl(n)} ${k === today ? 't' : ''}" style="--i:${pos % 7 + Math.floor(pos / 7)}" tabindex="0" ${tp(`<b class="tt">${k} ${esc(d.currentLabel)}</b><span class="ts">${wdName(k)}${k === today ? ' · today' : ''}</span><span class="tf">${n} review meeting${n === 1 ? '' : 's'} ${fut ? 'booked' : 'held'}</span>`)}>${k}</span>`; }
-    return card(c, 'c4', `Review meetings · ${esc(d.currentLabel)}`, `${ps.length} booked · darker = more meetings · outlined = today`, `<div class="ancal">${g}</div><div class="anscale"><span>Less</span>${[0, 1, 2, 3, 4, 5, 6].map(i => `<i class="h${i}"></i>`).join('')}<span>More</span></div>`); })();
+  // 11. Review meetings this month (Harish 2026-11-23: a simple summary that leads into Scheduling, which has the full
+  // calendar with names): booked / to book / windows closed with reviews not booked on top, the review windows shaded,
+  // a count on each meeting day (navy = held, yellow = booked), days run to the last window day (windows reach into the
+  // next month); a day or the Scheduling button opens Scheduling › Calendar; closed windows = a warning symbol, teams on hover
+  const meet = (() => { const c = 'anMeet', ps = now(c).filter(p => p.cycle), bk = ps.filter(p => p.cycle.meeting), td = d.today || '';
+    const iso = x => x.toISOString().slice(0, 10), day = s => new Date(s + 'T00:00:00Z'), [yy, mm] = d.current.split('-').map(Number);
+    const by = {}; bk.forEach(p => (by[p.cycle.meeting] ||= []).push(p));
+    // windows: one per team + dates (a manager's own window can differ from the team's)
+    const wins = {}; ps.forEach(p => { const w = p.cycle.win; if (!w) return; const k = `${p.team}|${w.start}|${w.end}`; (wins[k] ||= { team: p.team, ...w, ps: [] }).ps.push(p); });
+    const wl = Object.values(wins), closed = wl.filter(w => w.end < td && w.ps.some(p => !p.cycle.meeting)).sort((a, b) => a.end.localeCompare(b.end));
+    const first = `${d.current}-01`, last = [iso(new Date(Date.UTC(yy, mm, 0))), ...wl.map(w => w.end), ...bk.map(p => p.cycle.meeting)].sort().pop();
+    const lead = (day(first).getUTCDay() + 6) % 7, dm = s => +s.slice(8, 10), short = s => day(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    let g = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span class="wd">${x}</span>`).join('') + '<span></span>'.repeat(lead), pos = lead;
+    for (const x = day(first); iso(x) <= last; x.setUTCDate(x.getUTCDate() + 1), pos++) {
+      const k = iso(x), list = by[k] || [], n = list.length, held = k <= td, inW = wl.filter(w => k >= w.start && k <= w.end), other = k.slice(0, 7) !== d.current;
+      const names = list.slice(0, 6).map(p => ['--vr-anx-series', esc(p.name), esc(tl(p.team))]);
+      const tip = tipH(`${short(k)}${k === td ? ' · today' : ''}`, names, `${n ? `${n} review meeting${n === 1 ? '' : 's'} ${held ? 'held' : 'booked'}${n > 6 ? ` (${n - 6} more)` : ''}` : 'No review meeting'}${inW.length ? `<br>Review window: ${inW.length > 3 ? `${inW.length} teams` : inW.map(w => esc(tl(w.team))).join(', ')}` : ''}<br>Click to open Scheduling`);
+      g += `<button type="button" class="dd ${inW.length ? 'w' : ''} ${k === td ? 't' : ''}" data-ansched style="--i:${pos % 7 + Math.floor(pos / 7)}" ${tp(tip)}>${other && dm(k) === 1 ? short(k) : dm(k)}${n ? `<b class="ct ${held ? 'h' : 'b'}">${n}</b>` : ''}</button>`;
+    }
+    const st = (v, l, cls = '') => `<span class="anms ${cls}"><b>${num(v)}</b>${l}</span>`, nb = ps.length - bk.length;
+    const top = `<div class="anmst">${st(bk.length, 'booked')}${st(nb, 'to book', nb ? 'w' : '')}${closed.length ? `<span class="anms x" tabindex="0" ${tp(tipH('Review windows closed', closed.map(w => ['--vr-anx-warn', esc(tl(w.team)), `${short(w.end)} · ${w.ps.filter(p => p.cycle.meeting).length} of ${w.ps.length} booked`]), 'Not booked yet: book them in Scheduling'))}><b>${num(closed.length)}</b>window${closed.length === 1 ? '' : 's'} closed${ico('alert')}</span>` : ''}</div>`;
+    const foot = `<div class="anmf"><span class="ankeys"><i class="kw"></i>Window <i class="kh"></i>Held <i class="kb"></i>Booked</span><button type="button" class="btn sm" data-ansched title="Open Scheduling › Calendar">${ico('calendar')}Scheduling</button></div>`;
+    if (!ps.length) return card(c, 'c4', 'Review meetings', esc(d.currentLabel), '<p class="anx-none">Nobody to review this month.</p>');
+    return card(c, 'c4', 'Review meetings', esc(d.currentLabel), `${top}<div class="ancal">${g}</div>${foot}`); })();
   // 12. Needs attention: picked from the numbers above, each with a way in
   const alert = (() => { const c = 'anAlert', ps = now(c), ms = upto.slice(-3), cur = ps.filter(p => p.cycle), nf = cur.filter(p => !p.cycle.filled).length;
     const gap = ps.map(p => ({ p, g: mean(ms.map(m => p.scores[m]).filter(s => s && s.self != null && s.mgr != null).map(s => s.self - s.mgr)) })).filter(x => x.g != null && x.g >= 15);
@@ -2340,7 +2347,7 @@ function anDraw(v) {
   const fySel = d.fys.length > 1 ? `<select id="afy" aria-label="Financial year">${d.fys.map(y => `<option value="${y}" ${y === d.fy ? 'selected' : ''}>FY ${y}-${y + 1}</option>`).join('')}</select>` : '';
   v.innerHTML = head('Performance Analytics', `${esc(d.scope)} · ${esc(d.fyLabel)} · submitted reviews only`) + `
   <div class="row anbar">${fySel}${cfPill('anAll')}${cfSum('anAll')}</div>
-  <div class="anx"><div class="anx-grid">${k1}${k2}${k3}${k4}${trend}${gapc}${funnel}${kra}${time}${bands}${pcard}${race}${meet}${alert}${peopleC}${revC}</div></div>
+  <div class="anx"><div class="anx-grid"><div class="anx-top">${meet}<div class="anx-tr">${funnel}<div class="anx-3">${k1}${k2}${k4}</div></div></div>${trend}${gapc}${kra}${time}${bands}${pcard}${race}${alert}${peopleC}${revC}</div></div>
   `;
   // entrance (Bklit-style motion, CSS under .anin): only for cards whose content changed since the last draw
   const prev = AN_LAST; AN_LAST = out;

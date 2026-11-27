@@ -1382,6 +1382,13 @@ select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-
 .anx-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
 .anc{display:flex;flex-direction:column;min-width:0;padding:16px 18px;border:1px solid var(--vr-anx-line);border-radius:16px;background:var(--vr-anx-card);box-shadow:var(--vr-anx-card-shadow)}
 .anc.c3{grid-column:span 3}.anc.c4{grid-column:span 4}.anc.c5{grid-column:span 5}.anc.c6{grid-column:span 6}.anc.c8{grid-column:span 8}
+/* top of Performance Analytics (Harish 2026-11-23): meetings calendar on the left, Review cycle on the right with three small cards under it */
+.anx-top{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:14px}.anx-tr{display:flex;flex-direction:column;gap:14px;min-width:0}
+.anx-3{flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.anx-grid .anx-top .anc{grid-column:auto}
+/* the three cards under the funnel are compact (Harish 2026-11-23): less padding, smaller numbers and charts, icon-only Filter pill (its name stays on hover) */
+.anx-3 .anc{padding:12px 14px}.anx-3 .anc h3{font-size:13px;line-height:18px}.anx-3 .anc header p{font-size:11px;line-height:14px}
+.anx-3 .anbig{font-size:22px;gap:6px}.anx-3 .anbig small{font-size:11.5px}.anx-3 .ancap{font-size:11px}.anx-3 .anc-b svg{display:block;max-height:92px;margin:0 auto}
+.anx-3 .cfpill{font-size:0;gap:0;padding-left:8px;padding-right:8px}.anx-3 .ankeys{gap:4px 8px}
 .anink{color:var(--vr-anx-ink)}
 .anc>header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px}
 .anc h3{margin:0;font-size:14px;line-height:20px;font-weight:700;color:var(--vr-anx-ink)}
@@ -1428,16 +1435,18 @@ select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-
 .ansqs i.on{background:var(--vr-anx-series)}.ansqs i.y{background:var(--vr-anx-yellow);box-shadow:0 0 6px var(--vr-anx-lit-glow)}
 .anrk{display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--vr-anx-line2);color:var(--vr-anx-ink2);font-size:12px;font-weight:800}
 .anrk.g{background:var(--vr-anx-yellow);color:var(--vr-anx-yink)}
-.ancal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.ancal{flex:1;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:auto;grid-auto-rows:minmax(26px,1fr);gap:4px}
 .ancal .wd{font-size:11px;text-align:center;color:var(--vr-anx-muted)}
-.ancal .dd{display:grid;place-items:center;aspect-ratio:1;border-radius:8px;font-size:11px;font-weight:600;color:var(--vr-anx-ink2);background:var(--vr-anx-line2)}
-.ancal .dd.f{border:1px dashed var(--vr-anx-line);background:none;color:var(--vr-anx-ink2)}
+.ancal .dd{position:relative;display:grid;place-items:center;padding:0;border:0;border-radius:8px;font:600 11px var(--font);color:var(--vr-anx-muted);background:none;cursor:pointer}
+.ancal .dd:hover{background:var(--vr-anx-line2)}
+.ancal .dd.w{background:var(--vr-anx-s1);color:var(--vr-anx-ink)}.ancal .dd.w:hover{background:var(--vr-anx-s2)}
 .ancal .dd.t{box-shadow:0 0 0 2px var(--vr-anx-yellow)}
-.anx .h0{background:var(--vr-anx-s0);color:var(--vr-anx-si0)}.anx .h1{background:var(--vr-anx-s1);color:var(--vr-anx-si1)}.anx .h2{background:var(--vr-anx-s2);color:var(--vr-anx-si2)}.anx .h3{background:var(--vr-anx-s3);color:var(--vr-anx-si3)}
-.anx .h4{background:var(--vr-anx-s4);color:var(--vr-anx-si4)}.anx .h5{background:var(--vr-anx-s5);color:var(--vr-anx-si5)}.anx .h6{background:var(--vr-anx-s6);color:var(--vr-anx-si6)}
-.ancal .dd.f.h1,.ancal .dd.f.h2,.ancal .dd.f.h3,.ancal .dd.f.h4,.ancal .dd.f.h5,.ancal .dd.f.h6{border-style:dashed;border-color:var(--vr-anx-series)}
-.anscale{display:flex;align-items:center;gap:3px;margin-top:8px;font-size:11.5px;color:var(--vr-anx-muted)}
-.anscale i{width:24px;height:8px;border-radius:3px}.anscale span{margin:0 6px}
+.ancal .ct{position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;font-size:10px;line-height:16px;font-weight:800}
+.ancal .ct.h{background:var(--vr-anx-series);color:var(--vr-anx-card)}.ancal .ct.b{background:var(--vr-anx-yellow);color:var(--vr-anx-yink)}
+.anmst{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 10px}
+.anms{display:flex;align-items:baseline;gap:4px;font-size:12px;color:var(--vr-anx-muted)}.anms b{font-size:20px;font-weight:800;color:var(--vr-anx-ink)}.anms.x b,.anms.x svg{color:var(--vr-anx-warn)}.anms.x{cursor:help}.anms svg{width:14px;height:14px;align-self:center}
+.anmf{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding-top:4px}.anmf .ankeys{font-size:11px;gap:4px 8px}
+.ankeys i.kw{background:var(--vr-anx-s1)}.ankeys i.kh{background:var(--vr-anx-series)}.ankeys i.kb{background:var(--vr-anx-yellow)}
 .analerts{display:grid;gap:10px}
 .anal{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--vr-anx-line);border-radius:12px;background:var(--vr-anx-line2)}
 .anal .ic{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-weight:800}
@@ -1477,7 +1486,6 @@ select:focus{border-color:var(--vr-pms-y-hover);background-color:var(--vr-pms-y-
 .sp-end{fill:var(--vr-anx-yellow);stroke:var(--vr-anx-card);stroke-width:1.5}
 .sp-x{opacity:0;transition:opacity .12s}.hot>.sp-x{opacity:1}
 line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
-.sp-d{fill:var(--vr-anx-series);stroke:var(--vr-anx-card);stroke-width:2}
 /* Bklit UI entrance, only on a card that just came in or changed (.anin, set by anDraw); none when less motion is asked */
 @media (prefers-reduced-motion:no-preference){
   .anin .grow{transform-box:fill-box;transform-origin:50% 100%;animation:an-grow .75s cubic-bezier(.34,1.56,.64,1) backwards;animation-delay:calc(var(--i,0) * 70ms)}
@@ -1531,7 +1539,8 @@ line.sp-x{stroke:var(--vr-anx-muted);stroke-width:1;stroke-dasharray:3 3}
 .anrv-r .g.w{font-weight:700;color:var(--vr-anx-warn)}
 @media (max-width:640px){.anpr{grid-template-columns:22px minmax(0,1fr) 42px 64px}.anpr svg{display:none}.anrv-h,.anrv-r{grid-template-columns:minmax(0,1fr) 48px minmax(0,1fr) 48px}}
 @media (max-width:1100px){.anc.c3,.anc.c6{grid-column:span 6}.anc.c4,.anc.c5,.anc.c8{grid-column:span 12}}
-@media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}}
+@media (max-width:1100px){.anx-top{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){.dark .anx{padding:12px}.anc.c3{grid-column:span 12}.anx-3{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.anx [data-hk],.pslice,.anleg>div,.sp-x{transition:none}#antip{animation:none}}
 
 /* UI Components page (#/components, not in the menu; brief section 10): light and dark frames side by side */

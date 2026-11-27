@@ -1519,7 +1519,8 @@ route('GET', '/api/analytics', ({ user, q }) => {
         by: rm ? rm.name : rb.manager || '', byId: rm ? rm.id : null, old: !!f.imported };
     }
     const f = e.active ? L.peek(e.id, config.currentMonth) : null;
-    const cycle = f ? { scheduled: !!f.scheduledDate, meeting: f.scheduledDate || null, filled: L.formStatus(f) === 'Filled', rated: L.reviewStatus(f) === 'Review Completed', submitted: !!f.submitted } : null;
+    const w = f ? D.windowOf(e, config.currentMonth) : null; // this month's review window (the meetings calendar shades it)
+    const cycle = f ? { scheduled: !!f.scheduledDate, meeting: f.scheduledDate || null, filled: L.formStatus(f) === 'Filled', rated: L.reviewStatus(f) === 'Review Completed', submitted: !!f.submitted, win: w && w.start ? { start: w.start, end: w.end } : null } : null;
     return { id: e.id, name: e.name, ...who(e), left: !e.active, scores, timing, cycle };
   });
   return { ...base, tracked, people: rows };
