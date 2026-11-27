@@ -1528,7 +1528,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:56px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col>${ed ? '<col style="width:52px">' : ''}</colgroup><tr><th>S.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th>${ed ? '<th class="opf-act">Action</th>' : ''}</tr>
     ${rows.map((r, i) => {
       // every rated sub-KRA needs a manager remark; after a Submit attempt, unrated ones are marked too
-      const needRemark = r.mgr != null && r.self != null && +r.mgr !== +r.self && !(r.mgrRemark || '').trim();
+      const needRemark = r.mgr != null && r.self != null && +r.mgr !== +r.self && !(r.mgrRemark || '').trim() && !f.imported; // the old portal's export had no manager remarks (MGR_REMARK is not asked there either)
       // the manager starts only after the employee's self rating and self remark are in
       const selfDone = r.self != null && !!(r.selfRemark || '').trim(), mOK = p.editManager && selfDone; 
       const needSelf = attempted && (r.self == null || !(r.selfRemark || '').trim());

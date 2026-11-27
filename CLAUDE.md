@@ -257,7 +257,9 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   updated (5 October reviews now complete), 3 October forms added; answers sit on the imported form (or a new imported
   form without KRAs) with `f.imported.qa = true` and `qSnapshot`. Imported forms with answers ARE checked for blank /
   short answers and missing ratings (real gaps), but never for `Q_REMARK` (the export has no parameter remarks); the
-  form hides the "write more" and "remark required" hints on locked or imported forms. Spelling fix "Trinath Kethavath"
+  form hides the "write more" and "remark required" hints on locked or imported forms, and the KRA table's "Manager
+  remark is required" on imported forms (neither export has MANAGER remarks: the KRA file's one Remark column is the
+  employee's; Harish asked 2026-11-27, nothing to import). Spelling fix "Trinath Kethavath"
   -> staging's "Trinadh" (`find` falls back to the written name). November rows (6 people, no ratings) are left to PMS.
   Checked cell by cell against both files (9082 answer cells, 2634 KRA rows: no differences). Applied to LOCAL data
   2026-11-27 (backup `private/state.before-history-qa-2026-11-27.json`).
