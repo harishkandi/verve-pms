@@ -1862,6 +1862,10 @@ function staticFile(file) {
     // the one inline script (theme before first paint) is allowed by its hash, so no other inline script can run
     const inline = [...raw.toString('utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${sha(m[1], 'base64')}'`);
     pageCsp = cspFor(inline);
+    // the Vercel mirror sends its CSP from vercel.json, where this hash is written out by hand: warn when it is stale
+    if (!process.env.RENDER) for (const vj of [path.join(__dirname, 'vercel.json'), path.join(PUBLIC, 'vercel.json')]) {
+      try { const t = fs.readFileSync(vj, 'utf8'), miss = inline.filter(h => !t.includes(h.slice(1, -1))); if (miss.length) console.warn(`${path.relative(__dirname, vj)}: its Content-Security-Policy lacks ${miss.join(' ')} (the inline script in index.html changed); update it or the theme script is blocked on Vercel`); } catch { /* no such file */ }
+    }
   }
   const hash = sha(raw).slice(0, 12);
   const entry = { mtime: st.mtimeMs, size: st.size, type, hash, etag: `"${hash}"`, raw, ...compressed(raw, type) };

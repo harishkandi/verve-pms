@@ -312,7 +312,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   - Security headers on every answer: CSP (scripts only from the site + the hash of the ONE inline theme script in
     `<head>`, computed by the server; so NO inline `on*=` handlers and no new inline scripts), nosniff, DENY framing,
     HSTS over https, `X-Robots-Tag: noindex`. The Vercel mirror sends the same from `vercel.json` / `public/vercel.json`,
-    where the theme-script hash is written out: change that script = update both files.
+    where the theme-script hash is written out: change that script = update both files (a local start warns when
+    they are stale; they were, 2026-11-27, after the embedded-mode change: Vercel blocked the theme script and framing).
   - "SEO" for an internal tool = stay out of search engines (`robots.txt` Disallow, meta robots noindex) + description,
     theme-color and link-preview tags; `head()` in `app.js` names the browser tab after the page.
   - The app's date follows the real date in India (`syncClock()` in `server.js`, each request + boot; `PMS_TODAY`
