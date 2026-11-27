@@ -17,9 +17,8 @@
 <meta property="og:title" content="Verve PMS · Performance Management System">
 <meta property="og:description" content="Sign in with your Verve Advisory account to open your monthly review.">
 <link rel="icon" type="image/svg+xml" href="brand/verve-pms-mark.svg">
-<link rel="preload" as="image" href="verve-advisory-logo.png">
 <!-- theme before first paint: stored choice, else the system setting (class-driven dark mode) -->
-<script>try{var t=localStorage.getItem('pms.theme')||localStorage.getItem('pmsTheme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
+<script>try{var h=document.documentElement,p=null;try{if(parent!==window&&parent.location.origin===location.origin)p=parent.document.documentElement}catch(e){}if(p){h.classList.add('embedded');if(p.classList.contains('dark'))h.classList.add('dark')}else{var l=document.createElement('link');l.rel='preload';l.as='image';l.href='verve-advisory-logo.png';document.head.appendChild(l);var t=localStorage.getItem('pms.theme')||localStorage.getItem('pmsTheme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))h.classList.add('dark')}}catch(e){}</script>
 <style>
 /* =====================================================================
    Verve design tokens (VerviRecruit UI brief, section 2). Never use raw hex in components.
@@ -1634,6 +1633,17 @@ input::placeholder,textarea::placeholder{color:var(--vr-n-500)}
   #main{padding:12px}
   .tb-notes{position:fixed;top:84px;left:8px;right:8px;width:auto;max-width:none}
 }
+
+/* Inside the Verve HRMS portal (html.embedded, set before first paint): the portal already shows the Verve logo, the
+   theme switch and who is signed in, so PMS shows its own menu and tools only, under a slimmer top bar. */
+html.embedded .topbar{height:64px}
+html.embedded .wordmark{height:0;padding:0;overflow:hidden}
+html.embedded .side-tog{top:14px}
+html.embedded .wordmark+.eyebrow{margin-top:24px}
+html.embedded #app.mini .wordmark{height:60px}
+html.embedded #app.mini .side-tog{top:14px}
+html.embedded #app.mini .wordmark+.eyebrow{margin-top:0}
+html.embedded #themeBtn,html.embedded .tb-who,html.embedded .tb-div,html.embedded .auth-brand{display:none}
 </style>
 </head>
 <body>

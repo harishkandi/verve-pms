@@ -1869,15 +1869,16 @@ function staticFile(file) {
   return entry;
 }
 const INDEX = path.join(PUBLIC, 'index.html');
-// Content-Security-Policy: scripts only from this site, no plugins, no framing, calls only to this site
+// Content-Security-Policy: scripts only from this site, no plugins, calls only to this site, framing only by this same
+// address (the Verve HRMS portal shows PMS in a frame from its own address, /pms-app/ forwarded here)
 const cspFor = inline => [`default-src 'self'`, `script-src 'self' ${inline.join(' ')}`, `style-src 'self' 'unsafe-inline'`,
   `img-src 'self' data: blob:`, `font-src 'self' data:`, `connect-src 'self'`, `object-src 'none'`, `base-uri 'self'`,
-  `form-action 'self'`, `frame-ancestors 'none'`].join('; ');
+  `form-action 'self'`, `frame-ancestors 'self'`].join('; ');
 let pageCsp = cspFor([]);
 // sent with every answer (pages and API); HSTS only over HTTPS
 function securityHeaders(req, csp) {
   return {
-    'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+    'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN',
     'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cross-Origin-Opener-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
     // an internal tool: keep every page out of search engines
@@ -1885,7 +1886,7 @@ function securityHeaders(req, csp) {
     ...(A.isSecure(req) && { 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains' }),
   };
 }
-const API_CSP = `default-src 'none'; frame-ancestors 'none'`;
+const API_CSP = `default-src 'none'; frame-ancestors 'self'`;
 // brotli / gzip a JSON answer when the browser accepts it and it is worth it (big reports are 100 KB+)
 function encodeFor(req, buf) {
   const ae = req.headers['accept-encoding'] || '';
