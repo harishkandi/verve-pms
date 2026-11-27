@@ -1620,7 +1620,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     ${ratingBox(f)}
     <div class="opf-sec ${folded.has('qa') ? 'shut' : ''}" id="sec-questionnaire"><h3>Question-Answers</h3>${foldBtn('qa', 'Question-Answers')}</div>
     ${folded.has('qa') ? '' : `<div class="tablewrap"><table class="opf-t"><colgroup><col style="width:96px"><col style="width:27%"><col></colgroup><tr><th>S.No</th><th>Question Title</th><th>Question Answer</th></tr>${text.map((q, i) => `<tr><td>${i + 1}</td><td>${esc(q.text)}</td><td>${editingQ.has(q.id) ? `<textarea data-qt="${q.id}" rows="3" placeholder="Type your answer: it is saved automatically">${esc(f.qa[q.id] || '')}</textarea><div class="small opf-qsv" data-qsv="${q.id}" aria-live="polite">${qSavedAt[q.id] ? 'Saved automatically' : ''}</div>`
-      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${(p.editSelf || p.editManager) && !f.locked ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id]) && !f.locked ? `<div class="flag">A single word is not enough. Please write a short answer in a few words.</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
+      : `<span style="white-space:pre-wrap">${f.qa[q.id] ? esc(f.qa[q.id]) : '<span class="muted">Not added</span>'}</span> ${(p.editSelf || p.editManager) && !f.locked ? pen(q.id, 'Edit answer') : ''}`}${shortAns(f.qa[q.id], q.id) && !f.locked ? `<div class="flag">A single word is not enough. Please write a short answer in a few words.</div>` : ''}</td></tr>`).join('')}${rate.map((q, i) => {
       const a = f.qa[q.id] || {}, diff = a.self != null && a.mgr != null && +a.self !== +a.mgr, need = diff && !(a.remark || '').trim() && !f.locked && !f.imported; // nobody can add a remark to a locked or old-portal form
       // the Self Rating / Manager Rating / Remark heading only above the first rated question
       return `<tr><td>${text.length + i + 1}</td><td>${esc(q.text.replace(/\s*\(rate out of 5\)/i, ''))}</td><td><table class="opf-qr"><colgroup><col style="width:25%"><col style="width:25%"><col></colgroup>${i ? '' : '<tr><th>Self Rating</th><th>Manager Rating</th><th>Remark</th></tr>'}<tr>
@@ -1639,7 +1639,8 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
 const HAS_LINK = /(https?:\/\/|www\.)\S+/i;
 const words = s => (String(s || '').replace(/(https?:\/\/|www\.)\S+/gi, ' ').match(/[\p{L}\p{N}]+/gu) || []).length;
 // any length is fine; a single word ("Yes", "No", "Done") gets a warning
-const shortAns = a => { const t = String(a || '').trim(); return !!t && !/^(n\/a|not added)$/i.test(t) && words(t) < 2; };
+// q2 (issues faced) and q5 (suggestions) may be one word, e.g. "No" (same as SHORT_OK in logic.js)
+const shortAns = (a, qid) => { const t = String(a || '').trim(); return !['q2', 'q5'].includes(qid) && !!t && !/^(n\/a|not added)$/i.test(t) && words(t) < 2; };
 // the monthly rating worked out KRA by KRA from the form as it is on screen (same sums as the server: 30% self + 70% manager,
 // weighted by sub-KRA, then by KRA weight)
 function formSummary(f) {

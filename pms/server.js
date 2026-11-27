@@ -37,8 +37,9 @@ function teamLabel(t) {
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
 // managers, and the employee themself, may copy last month's KRAs (copying does not need approval)
-// (until they send the form to their manager: then their part is read-only)
-const canCopyKras = (viewer, f) => canEditKras(viewer, f) || (!f.locked && !f.selfSubmitted && viewer.id === f.empId);
+// (until they send the form to their manager: then their part is read-only). Never on a submitted review: copying clears
+// every rating and remark, and a managers' edit of a submitted review must not wipe it (found in the 2026-11-27 check)
+const canCopyKras = (viewer, f) => !f.locked && (canEditKras(viewer, f) || (!f.selfSubmitted && viewer.id === f.empId));
 function formPayload(viewer, f) {
   const e = L.emp(f.empId);
   const month = f.month;
