@@ -1602,7 +1602,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
   // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
   v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span><span class="opf-st">${badge(FP.status)}</span> ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
-    ${f.imported ? `<div class="info">Brought over from the ${esc(f.imported.from)}${f.imported.manager ? `, reviewed by ${esc(f.imported.manager)}` : ''}. ${f.submitted ? 'The review was completed there.' : 'The review was not finished there.'} ${Object.keys(f.qa || {}).length ? 'The question answers and parameter ratings come from there too (it kept no parameter remarks).' : 'No question answers were kept there for this month.'}</div>`
+    ${f.imported ? '' // old-portal forms: no note (Harish 2026-11-27)
       : f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The employee can no longer change it.'}</div>`
       : f.selfSubmitted ? `<div class="info">${e.id === S.me.id ? 'You sent' : `${esc(e.name)} sent`} this form to the manager${f.selfSubmittedAt ? ` on ${fmtD(f.selfSubmittedAt.slice(0, 10))}` : ''}. ${p.canSubmit ? 'Add your rating and a remark for every sub-KRA, then Submit review. Use Send back to employee if they need to change something.' : 'Your part is now read-only. Your manager adds their ratings and submits the review; they can send it back to you if something needs changing.'}</div>` : ''}
     <div class="opf-bar">${fyPick(S.month)}<button type="button" class="opf-y" id="toqa">View Question-Answer</button></div>
@@ -2150,8 +2150,8 @@ function anDraw(v) {
   const chip = (x, unit = ' pts', inv = false) => { if (x == null || isNaN(x) || Math.abs(x) < .05) return ''; const up = x > .05, dn = x < -.05, good = inv ? dn : up; return `<span class="anchip ${up || dn ? (good ? 'up' : 'dn') : 'nt'}">${up ? '▲' : dn ? '▼' : '•'} ${Number.isInteger(x) ? Math.abs(x) : f1(Math.abs(x))}${unit}</span>`; };
   const none = t => `<p class="anx-none">${t}</p>`;
   const noScores = 'No submitted reviews in this period yet.';
-  // the old portal's reviews (April-October 2026) carry no parameter ratings and no review dates
-  const noPar = (ps, ms) => ms.some(m => sc(ps, m, 'total').length) ? '<p class="anx-none">No parameter ratings in this period. Reviews from the old portal have none; they start with reviews submitted in PMS.</p>' : none(noScores);
+  // a period with reviews but no parameter ratings (old-portal reviews have them since the 2026-11-27 import)
+  const noPar = (ps, ms) => ms.some(m => sc(ps, m, 'total').length) ? '<p class="anx-none">No parameter ratings in this period.</p>' : none(noScores);
   const now = c => pool(c).filter(p => !p.left); // people here now (the cards about people today leave out those who left)
   const out = {}; // card -> HTML, compared with the last draw so only changed cards animate in
   const card = (c, cls, title, sub, body, extra = '') => (out[c] = `<section class="anc ${cls}" data-c="${c}"><header><div><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</div><div class="anc-t">${extra}${cfPill(c)}</div></header><div class="anc-b">${body}</div></section>`);

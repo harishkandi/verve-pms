@@ -238,8 +238,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   `pms/private/history-2026.csv`), written by `node private/import-history.js [--apply]` (git-ignored, same local /
   staging switches as the codes script): one form per person-month, KRA weight = sum of its sub-KRA weights, the
   sheet's Remark = self remark; every KRA with both ratings = submitted + locked, `reviewedBy` = the sheet's manager (old
-  reviewers not in PMS keep only the name), else unfinished; `f.imported` = {from, on, manager} shows a note on the
-  form; `qSnapshot` = that month's questions (shown "Not added"; the export has no answers; an empty list hid the
+  reviewers not in PMS keep only the name), else unfinished; `f.imported` = {from, on, manager} (NO note on the form
+  since 2026-11-27, Harish: "remove these type of messages"); `qSnapshot` = that month's questions (an empty list hid the
   whole Question-Answers section, repaired by the script). For imported forms `logic.js` does not flag the missing review
   date, question answers or manager remarks (not in the export), and `dueInfo` says "Not recorded" (Analytics skips
   them in Reviews held on time); an imported form counts as "Filled" when it has KRAs and every sub-KRA has a self
