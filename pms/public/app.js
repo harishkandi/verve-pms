@@ -1567,7 +1567,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
     const top = !rows.length && FP.newJoiner ? '<div class="info">New joiner: no KRAs set yet. Only the questionnaire is checked.</div>' : '';
     const w = `<div class="opf-w"><b>Weightage Of KRA:</b>${wEdit ? `<input type="number" data-kw="${k}" value="${kr.weight}" aria-label="${label} KRA weightage">` : `<span>${kr.weight}</span>`}${ed ? `<button type="button" class="ibtn opf-pen" data-kwedit="${k}" title="${wEdit ? 'Done' : 'Edit the weightage'}" aria-label="Edit the ${label} KRA weightage">${ico(wEdit ? 'tick' : 'pencil')}</button>` : ''}${kraErr[k] ? `<div class="opf-werr" role="alert">${esc(kraErr[k])}</div>` : ''}${ed && k === 'people' && kraTotal(f) !== 100 ? `<div class="opf-wwarn" role="alert">${esc(kraTotalMsg(f))}</div>` : ''}</div>`;
     const btns = ed ? `<div class="opf-btns">${kraUnsaved(k) ? '<span class="opf-unsaved">Not saved yet: click save to keep these changes</span>' : ''}<button type="button" class="opf-y sq" data-add="${k}" title="Add a sub-KRA" aria-label="Add a ${label} sub-KRA">+</button><button type="button" class="opf-y soft" data-savek="${k}" title="Save the ${label} KRA">save</button></div>` : '';
-    return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:56px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col>${ed ? '<col style="width:52px">' : ''}</colgroup><tr><th>S.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th>${ed ? '<th class="opf-act">Action</th>' : ''}</tr>
+    return head + top + w + `<div class="tablewrap"><table class="opf-t kt"><colgroup><col style="width:56px"><col style="width:15%"><col style="width:10%"><col style="width:112px"><col style="width:108px"><col style="width:116px"><col><col></colgroup><tr><th>S.No</th><th>Key Performance Indicator</th><th>Target</th><th>Weightage</th><th>Self Rating (30%)</th><th>Management Rating (70%)</th><th>Remark</th><th>Manager Remark</th></tr>
     ${rows.map((r, i) => {
       // every rated sub-KRA needs a manager remark; after a Submit attempt, unrated ones are marked too
       const needRemark = r.mgr != null && r.self != null && +r.mgr !== +r.self && !(r.mgrRemark || '').trim() && !f.imported; // the old portal's export had no manager remarks (MGR_REMARK is not asked there either)
@@ -1577,7 +1577,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
       // SOP (Process) and learning (People) sub-KRAs need the document link in the self remark
       const linkKind = !FP.newJoiner && (k === 'process' && /sop/i.test(r.kpi) ? 'SOP' : k === 'people' && /learn/i.test(r.kpi) ? 'learning' : '');
       const needLink = linkKind && (attempted || (r.selfRemark || '').trim()) && !HAS_LINK.test(r.selfRemark || '');
-      // delete sits in its own Action column at the row's end (Harish 2026-11-19: not next to the S.No)
+      // no Action / delete column (Harish 2026-11-27); a sub-KRA whose KPI and Target are cleared is dropped on save
       return `<tr><td class="opf-no">${i + 1}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="kpi">${esc(r.kpi)}</textarea>` : esc(r.kpi)}</td>
       <td>${ed ? `<textarea rows="2" data-k="${k}" data-i="${i}" data-f="target">${esc(r.target)}</textarea>` : esc(r.target)}</td>
@@ -1587,9 +1587,9 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
       <td><textarea class="${(needSelf && !(r.selfRemark || '').trim()) || needLink ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="selfRemark" ${p.editSelf ? '' : 'disabled'} ${linkKind ? `placeholder="What you did, and the ${linkKind} document link"` : ''}>${esc(r.selfRemark)}</textarea>
       ${needLink ? `<div class="flag">Add the ${linkKind} document link (https://…) in this remark.</div>` : ''}</td>
       <td><textarea class="${needRemark ? 'err' : ''}" rows="2" data-k="${k}" data-i="${i}" data-f="mgrRemark" ${p.editManager ? '' : 'disabled'} ${p.editManager && !selfDone ? 'readonly data-locked="k"' : ''}>${esc(r.mgrRemark)}</textarea>
-      ${needRemark ? '<div class="flag">Manager remark is required: the manager rating differs from the self rating.</div>' : ''}</td>${ed ? `<td class="opf-act"><button type="button" class="opf-del" data-del="${k}:${i}" title="Remove this sub-KRA" aria-label="Remove sub-KRA ${i + 1}">${ico('trash')}</button></td>` : ''}</tr>`;
+      ${needRemark ? '<div class="flag">Manager remark is required: the manager rating differs from the self rating.</div>' : ''}</td></tr>`;
     }).join('')}
-    <tr class="sub"><td></td><td></td><td>Totals</td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td>Total Calculation : ${calc}</td><td></td>${ed ? '<td></td>' : ''}</tr></table></div>` + btns;
+    <tr class="sub"><td></td><td></td><td>Totals</td><td>Weightage : ${sum}</td><td>Total SR : ${sr}</td><td>Total MR : ${mr}</td><td>Total Calculation : ${calc}</td><td></td></tr></table></div>` + btns;
   };
   const qs = FP.questions;
   const text = qs.filter(q => q.type === 'text'), rate = qs.filter(q => q.type === 'rating');
@@ -1889,9 +1889,11 @@ function wireForm(v) {
         FP = await post('/kra-request/decide', { approve, reply }); toast(approve ? 'Approved' : 'Rejected'); drawForm(v);
       }
       else if (t.dataset.add) { const k = t.dataset.add; f.kras[k].rows.push({ id: k[0] + Date.now(), kpi: '', target: '', weight: 0, self: null, selfRemark: '', mgr: null, mgrRemark: '' }); draftStore(); drawForm(v); }
-      else if (t.closest('[data-del]')) { const [k, i] = t.closest('[data-del]').dataset.del.split(':'); f.kras[k].rows.splice(+i, 1); draftStore(); drawForm(v); }
       else if (t.dataset.savek) {
         const k = t.dataset.savek;
+        // no delete button: a sub-KRA left with no KPI and no Target (and nothing rated or written yet) is dropped here
+        const blankRow = r => !String(r.kpi || '').trim() && !String(r.target || '').trim() && r.self == null && r.mgr == null && !String(r.selfRemark || '').trim() && !String(r.mgrRemark || '').trim();
+        if (f.kras[k].rows.some(blankRow)) { f.kras[k].rows = f.kras[k].rows.filter(r => !blankRow(r)); draftStore(); redraw(); }
         // the old portal asks first and confirms after (same words)
         // check first, before asking: the sub-KRA weightages must add up to the KRA weightage
         const kr = f.kras[k], tot = kr.rows.reduce((q, r) => q + (+r.weight || 0), 0);

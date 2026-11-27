@@ -130,8 +130,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   version was rejected), only more compact: `--vr-pms-*` tokens (yellow buttons, grey KRA band, cream section bars, navy
   table heads). Title "Monthly Reporting : <name link>", month / year / View Question-Answer, a card with a navy "KRA · FY | month" band and the employee details
   (review date, Copy KPI / Export KPI), then Operational / Process / People (heading + description, "Weightage of KRA"
-  pill with pencil, fold arrow `folded`, table with Totals row (first column "S.No"; delete a sub-KRA = red trash in its
-  own "Action" column at the row's end, only while KRAs are editable; the form's status badge is large, `.opf-top .badge`;
+  pill with pencil, fold arrow `folded`, table with Totals row (first column "S.No"; NO Action / delete column (Harish 2026-11-27, it was a red trash in its
+  own "Action" column): a sub-KRA with KPI and Target cleared and nothing rated or written is dropped on save; the form's status badge is large, `.opf-top .badge`;
   Harish 2026-11-19), Add sub-KRA / Save; save asks "Are you sure? You want to
   add all these KPI?", then "Added! Your KPI has been added."), the Rating table (`ratingBox`: reviewers/admins see it once
   every rating is in, the employee only after submit), Question-Answers (Self/Manager/Remark heading only above the first
