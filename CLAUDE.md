@@ -341,7 +341,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   (management meeting) Submit review needs all five on every sub-KRA: self rating, self remark, manager rating, manager remark
   (always, not only when ratings differ: `MGR_REMARK`), and the SOP / learning document link in the self remark (`SOP_LINK` /
   `LEARN_LINK` are now `block`); `managerGaps()` lists missing manager ratings. Rows are found by name (/sop/ in Process,
-  /learn/ in People). Questionnaire text answers under `config.qMinWords` (15) words are flagged (`Q_SHORT`), not blocked; a submitted
+  /learn/ in People). Questionnaire text answers of a single word are flagged and block Submit to manager (`shortAnswer`), except q2 (issues) and q5 (suggestions), where "No" is a full answer (`SHORT_OK`, 2026-11-27); Copy KPI is off on a submitted review (`canCopyKras`: it clears every rating); a submitted
   monthly form is locked for good (no reopen, no edit request, admins included). KRA changes by an employee need
   their manager's approval (Vidya, 2026-11-12: `POST /api/kra-request`, `/api/kra-request/decide`; an approval allows
   one KRA save, pending requests show on the manager's dashboard); copying last month's KRAs needs no approval; none
