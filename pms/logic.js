@@ -19,7 +19,7 @@ const textAnswer = a => !blank(a) && !/^(n\/a|not added)$/i.test(String(a).trim(
 // q2 (issues faced) and q5 (suggestions) can be answered briefly, e.g. "No", so they have no minimum
 const SHORT_OK = ['q2', 'q5'];
 // any length is fine, but a single word ("Yes", "No", "Done") is not an answer (Vidya, 2026-11-18; it used to be 15 words)
-const shortAnswer = a => textAnswer(a) && wordCount(a) < 2;
+const shortAnswer = (a, qid) => !SHORT_OK.includes(qid) && textAnswer(a) && wordCount(a) < 2;
 const prevMonth = m => { let [y, mo] = m.split('-').map(Number); mo--; if (!mo) { mo = 12; y--; } return `${y}-${D.pad(mo)}`; };
 
 // ---------- hierarchy ----------

@@ -130,8 +130,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   version was rejected), only more compact: `--vr-pms-*` tokens (yellow buttons, grey KRA band, cream section bars, navy
   table heads). Title "Monthly Reporting : <name link>", month / year / View Question-Answer, a card with a navy "KRA · FY | month" band and the employee details
   (review date, Copy KPI / Export KPI), then Operational / Process / People (heading + description, "Weightage of KRA"
-  pill with pencil, fold arrow `folded`, table with Totals row (first column "S.No"; delete a sub-KRA = red trash in its
-  own "Action" column at the row's end, only while KRAs are editable; the form's status badge is large, `.opf-top .badge`;
+  pill with pencil, fold arrow `folded`, table with Totals row (first column "S.No"; NO Action / delete column (Harish 2026-11-27, it was a red trash in its
+  own "Action" column): a sub-KRA with KPI and Target cleared and nothing rated or written is dropped on save; the form's status badge is large, `.opf-top .badge`;
   Harish 2026-11-19), Add sub-KRA / Save; save asks "Are you sure? You want to
   add all these KPI?", then "Added! Your KPI has been added."), the Rating table (`ratingBox`: reviewers/admins see it once
   every rating is in, the employee only after submit), Question-Answers (Self/Manager/Remark heading only above the first
@@ -262,7 +262,14 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   employee's; Harish asked 2026-11-27, nothing to import). Spelling fix "Trinath Kethavath"
   -> staging's "Trinadh" (`find` falls back to the written name). November rows (6 people, no ratings) are left to PMS.
   Checked cell by cell against both files (9082 answer cells, 2634 KRA rows: no differences). Applied to LOCAL data
-  2026-11-27 (backup `private/state.before-history-qa-2026-11-27.json`).
+  2026-11-27 (backup `private/state.before-history-qa-2026-11-27.json`) and staging (backup `private/staging-backup-2026-11-27.json`).
+  Third round, same evening (Harish): export `PMSData_01042026-01112026-27112026` with separate "Self Remark" and
+  "Manager Remark" columns (now `history-2026.csv`; the earlier one kept as `history-2026.export-2026-11-20.csv`; the
+  script reads `Self Remark` or the old `Remark`, and treats a form as untouched when it equals EITHER earlier export,
+  `EARLIER`). 1265 manager remarks April-October (15 more are November), 327 forms updated, 1 October form added
+  (Sayam Doshi's October now complete). November (94 rows, 14 people, partly self-rated) still left to PMS. Checked cell
+  by cell (18501 KRA cells incl. both remarks: no differences). Local backup `private/state.before-mgr-remarks-2026-11-27.json`,
+  staging backup `private/staging-backup-2026-11-27-remarks.json`.
   Employee codes (2026-11-19) come from "Task_List_HRMS_Tool - Sheet5" (PDF): `pms/private/codes.tsv`, written by
   `node private/apply-codes.js [--apply]` (git-ignored, matches by name; 4 people have no code yet). Checked against the
   PDF in Downloads (82 codes, identical) and applied to the LOCAL data on 2026-11-19 (backup
@@ -305,7 +312,8 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   - Security headers on every answer: CSP (scripts only from the site + the hash of the ONE inline theme script in
     `<head>`, computed by the server; so NO inline `on*=` handlers and no new inline scripts), nosniff, DENY framing,
     HSTS over https, `X-Robots-Tag: noindex`. The Vercel mirror sends the same from `vercel.json` / `public/vercel.json`,
-    where the theme-script hash is written out: change that script = update both files.
+    where the theme-script hash is written out: change that script = update both files (a local start warns when
+    they are stale; they were, 2026-11-27, after the embedded-mode change: Vercel blocked the theme script and framing).
   - "SEO" for an internal tool = stay out of search engines (`robots.txt` Disallow, meta robots noindex) + description,
     theme-color and link-preview tags; `head()` in `app.js` names the browser tab after the page.
   - The app's date follows the real date in India (`syncClock()` in `server.js`, each request + boot; `PMS_TODAY`
@@ -333,7 +341,7 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   (management meeting) Submit review needs all five on every sub-KRA: self rating, self remark, manager rating, manager remark
   (always, not only when ratings differ: `MGR_REMARK`), and the SOP / learning document link in the self remark (`SOP_LINK` /
   `LEARN_LINK` are now `block`); `managerGaps()` lists missing manager ratings. Rows are found by name (/sop/ in Process,
-  /learn/ in People). Questionnaire text answers under `config.qMinWords` (15) words are flagged (`Q_SHORT`), not blocked; a submitted
+  /learn/ in People). Questionnaire text answers of a single word are flagged and block Submit to manager (`shortAnswer`), except q2 (issues) and q5 (suggestions), where "No" is a full answer (`SHORT_OK`, 2026-11-27); Copy KPI is off on a submitted review (`canCopyKras`: it clears every rating); a submitted
   monthly form is locked for good (no reopen, no edit request, admins included). KRA changes by an employee need
   their manager's approval (Vidya, 2026-11-12: `POST /api/kra-request`, `/api/kra-request/decide`; an approval allows
   one KRA save, pending requests show on the manager's dashboard); copying last month's KRAs needs no approval; none

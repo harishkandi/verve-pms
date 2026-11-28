@@ -37,8 +37,9 @@ function teamLabel(t) {
 const view = u => ({ id: u.id, code: u.code, name: u.name, email: u.email || '', designation: u.designation, team: u.team, role: u.role, managerId: u.managerId });
 
 // managers, and the employee themself, may copy last month's KRAs (copying does not need approval)
-// (until they send the form to their manager: then their part is read-only)
-const canCopyKras = (viewer, f) => canEditKras(viewer, f) || (!f.locked && !f.selfSubmitted && viewer.id === f.empId);
+// (until they send the form to their manager: then their part is read-only). Never on a submitted review: copying clears
+// every rating and remark, and a managers' edit of a submitted review must not wipe it (found in the 2026-11-27 check)
+const canCopyKras = (viewer, f) => !f.locked && (canEditKras(viewer, f) || (!f.selfSubmitted && viewer.id === f.empId));
 function formPayload(viewer, f) {
   const e = L.emp(f.empId);
   const month = f.month;
@@ -1863,6 +1864,10 @@ function staticFile(file) {
     // the one inline script (theme before first paint) is allowed by its hash, so no other inline script can run
     const inline = [...raw.toString('utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${sha(m[1], 'base64')}'`);
     pageCsp = cspFor(inline);
+    // the Vercel mirror sends its CSP from vercel.json, where this hash is written out by hand: warn when it is stale
+    if (!process.env.RENDER) for (const vj of [path.join(__dirname, 'vercel.json'), path.join(PUBLIC, 'vercel.json')]) {
+      try { const t = fs.readFileSync(vj, 'utf8'), miss = inline.filter(h => !t.includes(h.slice(1, -1))); if (miss.length) console.warn(`${path.relative(__dirname, vj)}: its Content-Security-Policy lacks ${miss.join(' ')} (the inline script in index.html changed); update it or the theme script is blocked on Vercel`); } catch { /* no such file */ }
+    }
   }
   const hash = sha(raw).slice(0, 12);
   const entry = { mtime: st.mtimeMs, size: st.size, type, hash, etag: `"${hash}"`, raw, ...compressed(raw, type) };
