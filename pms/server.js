@@ -770,7 +770,8 @@ route('GET', '/api/scheduling', ({ user, realUser, q }) => {
   const adminView = realUser.role === 'admin';
   return { windows, canEditWindows: user.role === 'admin', adminView, directOnly, calendar: calendarState(realUser), rows: rows.map(r => {
     const f = L.peek(r.empId, month), e = L.emp(r.empId);
-    return { ...r, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: L.canManage(user, r.empId), managerOnly: false };
+    const mark = r.status === 'Review Completed' ? 'done' : config.today > r.due ? 'over' : r.scheduled ? 'wait' : '';
+    return { ...r, mark, history: f.reschedules, time: f.scheduledTime || null, invite: inviteView(f), zoom: f.zoomLink || null, hasEmail: A.isOrgEmail(e.email), canManage: L.canManage(user, r.empId), managerOnly: false };
   }) };
 });
 
@@ -957,7 +958,7 @@ route('POST', '/api/report/final-status', ({ user, body }) => {
   return { finalStatus: after, auto: !f.finalStatusSet };
 });
 // CSV export = the PMS report format sheet (management's column order), plus the flags at the end
-const PMS_COLUMNS = [['code', 'Employee Code'], ['name', 'Name'], ['doj', 'DOJ'], ['designation', 'Designation'], ['department', 'Department'],
+const PMS_COLUMNS = [['code', 'Employee Code'], ['name', 'Name'], ['designation', 'Designation'], ['department', 'Department'],
   ['manager', 'Reporting Manager'], ['director', 'Director'], ['scheduled', 'Scheduled Date'], ['reschedules', 'No. of times rescheduled'], ['actual', 'Actual Date'],
   ['finalStatus', 'Final Status'], ['opSet', 'Operational KRA properly set'], ['sop', 'SOP'], ['sopKra', 'SOP KRA'], ['sopLink', 'SOP link added'],
   ['learning', 'Learning'], ['learningDone', 'Learning properly done'], ['learningLink', 'Learning document link added'], ['questionnaire', 'Questionnaire properly filled'],

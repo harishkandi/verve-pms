@@ -616,7 +616,7 @@ async function start() {
         <button type="button" role="menuitem" data-um="profile">${ico('idcard')}Profile information</button>
         ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
-    <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div id="view"></div></main></div></div>`;
+    <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div class="bkbar"><button type="button" class="btn sm" id="goback">${ico('left')}Back</button></div><div id="view"></div></main></div></div>`;
   sideSet(sidePref || sideNarrow.matches); palPeople = null; // a new sign-in or View as: search fetches its people again
   $('.side-in').onscroll = navFlyClose;
   $('#root').onclick = e => {
@@ -630,6 +630,7 @@ async function start() {
     if (e.target.closest('#tbsearch')) palOpen();
     if (e.target.closest('#asbtn')) pickViewAs().catch(er => toast(er.message, 'err'));
     if (e.target.closest('#asback')) viewAs(null).catch(er => toast(er.message, 'err'));
+    if (e.target.closest('#goback')) { if (navDepth > 0) history.back(); else location.hash = '#/home'; }
   };
   window.onhashchange = navGuard;
   route();
@@ -645,6 +646,12 @@ function formUnsaved() {
   return [qs.length && `${qs.length} question answer${qs.length === 1 ? '' : 's'} not saved yet (it saves a moment after you stop typing, or when you click outside the box)`, formDirty.size && 'a change that is still saving'].filter(Boolean);
 }
 let navSkip = false;
+// how many PMS pages are behind this one: kept on each history entry, so Back never leaves PMS
+let navDepth = -1;
+function trackDepth() {
+  if (history.state && history.state.pmsDepth != null) navDepth = history.state.pmsDepth;
+  else history.replaceState({ ...history.state, pmsDepth: ++navDepth }, '');
+}
 async function navGuard(e) {
   if (navSkip) { navSkip = false; return; }
   const from = e && e.oldURL ? new URL(e.oldURL).hash : '';
@@ -657,7 +664,8 @@ async function navGuard(e) {
 addEventListener('beforeunload', e => { if (location.hash.startsWith('#/form/') && formUnsaved().length) { e.preventDefault(); e.returnValue = ''; } });
 async function route() {
   const [, page, ...args] = (location.hash || '#/home').split('/');
-  markNav();
+  markNav(); trackDepth();
+  $('.bkbar').hidden = !page || page === 'home';
   const v = $('#view'); if (!v.firstElementChild) v.innerHTML = spinner();
   v.onmousedown = v.onclick = v.oninput = v.onchange = v.onkeydown = null; SC().onscroll = null;
   v.classList.add('routing');
@@ -1145,18 +1153,18 @@ function qualityBody(h, c, p) {
 // progress opens a two-step panel (the card's filters with coloured tiles, then the choices of the one clicked, Verveflow
 // style). Each card filters on its own; the choices are remembered in this browser. A card with no filter on shows the
 // /api/home numbers; a filtered card asks GET /api/home/card. If that fails, the card shows its unfiltered numbers.
-const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [], email: 'any', ews: 'any',
-  rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sinv: 'any', sst: [], aper: 'all', awho: [], aact: [],
+const CF_DEF = { period: 'month', team: [], mgr: [], cmp: 'off', group: 'team', sort: 'az', edesig: [], erole: [], emgr: [],
+  rteam: '', rmgr: '', rst: '', yfy: '', yq: '', yteam: '', yper: '', steam: [], sslot: 'any', sst: [], aper: 'all', awho: [], aact: [],
   xper: 'fy', xteam: [], xdesig: [], xmgr: [], xpar: '' }; // Analytics: the financial year by default (Harish 2026-11-20, the history is in)
 const CF_CARDS = { // one Filter for the whole dashboard (Harish 2026-11-21): the three cards below also follow it (all: no fetch of its own)
   homeAll: { title: 'all cards', pill: 'Filter all cards', keys: ['period', 'team', 'mgr'], all: true },
   status: { title: 'Review status', keys: ['period', 'team', 'mgr'] }, quality: { title: 'Review insights', keys: ['period', 'cmp', 'team', 'mgr'] }, progress: { title: 'Team-wise progress', keys: ['period', 'group', 'sort', 'team'] },
   // the Employees page uses the same Filter pill and panel; it filters its own list in the browser (local: no server call)
-  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr', 'email', 'ews'], local: true },
+  emp: { title: 'Employees', keys: ['edesig', 'erole', 'emgr'], local: true },
   // the same pill on the report pages, Scheduling and the Audit log (Harish 2026-11-18: one filter look everywhere)
   report: { title: 'Review Report', keys: ['rteam', 'rmgr', 'rst'], local: true },
   yearly: { title: 'Team Report', keys: ['yfy', 'yq', 'yteam', 'yper'], local: true },
-  sched: { title: 'Team members', keys: ['steam', 'sslot', 'sinv', 'sst'], local: true },
+  sched: { title: 'Team members', keys: ['steam', 'sslot', 'sst'], local: true },
   audit: { title: 'Audit log', keys: ['aper', 'awho', 'aact'], local: true },
   // Performance Analytics (Harish 2026-11-19: a filter on every card); all filter in the browser on one /api/analytics answer
   anAvg: { title: 'Average rating', keys: ['xper', 'xteam', 'xdesig', 'xmgr'], local: true }, anStrong: { title: 'Strong performers', keys: ['xper', 'xteam', 'xdesig'], local: true },
@@ -1189,8 +1197,6 @@ const CF_F = {
   edesig: { label: 'Designation', icon: 'award', tone: 'p', multi: true, opts: () => empFO.desig },
   erole: { label: 'Role', icon: 'shield', tone: 'a', multi: true, opts: () => empFO.role },
   emgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', multi: true, opts: () => empFO.mgr },
-  email: { label: 'Work email', icon: 'mail', tone: 'n', opts: () => [['any', 'Any'], ['set', 'Has a work email'], ['missing', 'No work email yet']] },
-  ews: { label: 'Work status', icon: 'clock', tone: 'g', opts: () => [['any', 'Any'], ['working', 'Working'], ['leave', 'On leave'], ['notice', 'Serving notice']] },
   rteam: { label: 'Team', icon: 'team', tone: 'p', opts: () => PF.rteam || [] },
   rmgr: { label: 'Reporting manager', icon: 'idcard', tone: 's', opts: () => PF.rmgr || [] },
   rst: { label: 'Status', icon: 'check', tone: 'g', opts: () => PF.rst || [] },
@@ -1200,7 +1206,6 @@ const CF_F = {
   yper: { label: 'Person', icon: 'idcard', tone: 's', opts: () => PF.yper || [] },
   steam: { label: 'Team', icon: 'team', tone: 'p', multi: true, opts: () => PF.steam || [] },
   sslot: { label: 'Review slot', icon: 'calendar', tone: 'n', opts: () => [['any', 'Any'], ['booked', 'Booked'], ['open', 'Not booked yet']] },
-  sinv: { label: 'Calendar invite', icon: 'mail', tone: 'a', opts: () => [['any', 'Any'], ['sent', 'Invite sent'], ['none', 'No invite']] },
   sst: { label: 'Status', icon: 'check', tone: 'g', multi: true, opts: () => PF.sst || [] },
   aper: { label: 'When', icon: 'calendar', tone: 'n', opts: () => [['all', 'Any time'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']] },
   awho: { label: 'Who', icon: 'idcard', tone: 's', multi: true, opts: () => PF.awho || [] },
@@ -1220,6 +1225,8 @@ const CF = (() => {
 const cfSave = () => { try { localStorage.setItem('pms.cardFilters', JSON.stringify(CF)); } catch {} };
 // Analytics cards saved with the old default "Last 6 months" move to the new default, the financial year (once)
 try { if (localStorage.getItem('pms.anPerV') !== '2') { Object.values(CF).forEach(f => { if (f.xper === '6') f.xper = 'fy'; }); localStorage.setItem('pms.anPerV', '2'); cfSave(); } } catch {}
+// the Dashboard has no page-wide Filter button any more: a choice saved earlier must not keep filtering unseen
+CF.homeAll = { period: CF_DEF.period, team: [], mgr: [] };
 const HC = {}; // filtered card answers from the server; none = the card shows the /api/home numbers
 const empPreset = grp => { Object.keys(CF.emp).forEach(k => { CF.emp[k] = Array.isArray(CF_DEF[k]) ? [] : CF_DEF[k]; }); if (grp) CF.emp.edesig = [grp]; cfSave(); };
 let homeRedraw = null; // redraws the dashboard cards from the last /api/home answer and HC
@@ -1227,7 +1234,7 @@ let homeRedraw = null; // redraws the dashboard cards from the last /api/home an
 const cfKeys = c => CF_CARDS[c].keys.filter(k => !(k === 'team' && S.hteam) && !(PF.hide[c] || []).includes(k));
 const cfOn = (c, k) => Array.isArray(CF_DEF[k]) ? CF[c][k].length > 0 : CF[c][k] !== CF_DEF[k];
 const cfCount = c => cfKeys(c).filter(k => cfOn(c, k)).length;
-const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}">${ico('filter')}${CF_CARDS[c].pill || 'Filter'}${n ? ` · ${n}` : ''}</button>`; };
+const cfPill = c => { const n = cfCount(c); return `<button type="button" class="cfpill ${n ? 'on' : ''}" data-cf="${c}" aria-haspopup="dialog" aria-expanded="${!!cfPop && cfPop.card === c}" title="Filter ${CF_CARDS[c].title}" aria-label="Filter ${CF_CARDS[c].title}">${ico('filter')}${n ? `<b>${n}</b>` : ''}</button>`; };
 // a page-wide pill's "what is on" line with a Clear link (Dashboard, Performance Analytics)
 const cfSum = c => cfCount(c) ? `<span class="anfsum">${cfKeys(c).filter(k => cfOn(c, k)).map(k => `${CF_F[k].label}: <b>${esc(cfText(c, k))}</b>`).join(' · ')} · ${clearLink(c)}</span>` : '';
 const cfTag = c => HC[c] && HC[c].tag ? ` <span class="cftag">${esc(HC[c].tag)}</span>` : '';
@@ -1267,7 +1274,7 @@ function cfDraw() {
     el.classList.remove('cfp-wide');
     el.innerHTML = `${n ? `<div class="cfp-h cfp-h0"><button type="button" class="cfp-clr" data-clr>${ico('trash')}Clear all</button></div>` : ''}
       <div class="cfp-l">${cfKeys(c).map(f => `<button type="button" class="cfp-r" data-f="${f}"><i class="cfp-ic t-${CF_F[f].tone}">${ico(CF_F[f].icon)}</i><span><b>${CF_F[f].label}</b><small>${esc(cfText(c, f))}</small></span>${cfOn(c, f) ? '<i class="cfp-dot" title="On"></i>' : ''}${ico('right')}</button>`).join('')}</div>
-      ${S.hteam && CF_CARDS[c].keys.includes('team') ? `<p class="cfp-note">Team: ${esc(tl(S.hteam))}, picked in the team tabs above.</p>` : ''}`;
+      ${S.hteam && CF_CARDS[c].keys.includes('team') ? `<p class="cfp-note">Team: ${esc(tl(S.hteam))}, picked in the team list above.</p>` : ''}`;
   } else {
     const F = CF_F[k], v = CF[c][k], on = x => F.multi ? v.includes(x) : v === x;
     const need = (k === 'team' || k === 'mgr') && !cfOptions, all = need ? [] : F.opts(c), list = all.filter(o => !q || o[1].toLowerCase().includes(q.toLowerCase()));
@@ -1364,12 +1371,12 @@ pages.home = async (v, opts = {}) => {
     const q = d.quick, teams = d.teams, att = d.attention, SHOW = 8;
     const quick = [
       ['calendar', '', 'Scheduling', '#/scheduling', `${q.datesCollected} of ${q.datesTotal} dates collected`],
-      ['chart', 'y', 'Review Report', '#/report', 'Org and team views'],
+      ['chart', 'y', 'Review Report', '#/report', 'This month\'s reviews'],
       ['chart', 'g', 'Team Report', '#/yearly', 'KRA scores month by month'],
       S.me.role === 'admin' ? ['idcard', 'r', 'Employees', '#/employees', `${q.employees.active} active · ${q.employees.inactive} inactive`] : ['team', 'r', 'My team', '#/team', `${q.teamReviews} review${q.teamReviews === 1 ? '' : 's'} in your scope`],
     ];
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
-    const chips = S.me.role !== 'admin' ? '' : `<div class="chips"><div class="seg" id="seg"><button class="chip ${S.hteam ? '' : 'on'}" data-team="">All teams</button>${teams.map(t => `<button class="chip ${S.hteam === t.team ? 'on' : ''}" data-team="${esc(t.team)}">${teamIco(t.team)}${esc(tl(t.team))}</button>`).join('')}</div></div>`;
+    const chips = S.me.role !== 'admin' ? '' : `<div class="row">${ddSelect('hteam', S.hteam || '', [['', 'All teams'], ...teams.map(t => [t.team, tl(t.team)])], { icon: 'team' })}</div>`;
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}${r.movedFrom ? ` · first sent to ${esc(r.movedFrom)}` : ''}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
     // the three filterable cards follow their own filter (HC) when one is on, else this month's /api/home numbers
     const cards = () => {
@@ -1379,12 +1386,11 @@ pages.home = async (v, opts = {}) => {
       const prog = hp ? hp.groups.map(g => bar(g, hp.group === 'mgr' ? g.label : tl(g.team))) : teams.map(t => bar(t, tl(t.team)));
       const remind = S.month === S.me.currentMonth && c.notFilled && !S.me.viewingAs
         ? `<button type="button" class="btn sm" id="remind" title="Send a reminder under the bell to everyone whose form is not filled yet">${ico('bell')}Remind not filled</button>` : '';
-      return `<div class="row anbar hgf">${cfPill('homeAll')}${cfSum('homeAll')}</div>
-    <div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
+      return `<div class="cfh"><b>Review status</b><small>${esc(hs ? hs.label : d.label)}</small>${remind}${cfPill('status')}</div>
     <div class="stats">${kpi('n', '', 'calendar', 'Scheduled', sc.scheduled, `Across ${nT} team${nT === 1 ? '' : 's'}`)}${kpi('g', 'Filled', 'check', 'Filled', sc.filled, share(sc.filled))}${kpi('r', 'Not Filled', 'alert', 'Not Filled', sc.notFilled, share(sc.notFilled))}${kpi('g', 'Review Completed', 'award', 'Review Completed', sc.reviewCompleted, share(sc.reviewCompleted))}${kpi('b', 'Review Pending', 'hourglass', 'Review Pending', sc.reviewPending, share(sc.reviewPending))}</div>
     <div class="wgrid">
       ${widget('award', 'Review insights' + cfTag('quality'), cfPill('quality') + '<a class="more" href="#/report">Report</a>', qualityBody(hq ? hq.health : d.health, hq ? hq.counts : c, hq && hq.prev))}
-      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Team view</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? `Nothing matches these filters. ${clearLink('progress')}` : 'No teams in your scope.'}</div>`}</div>`)}
+      ${widget('chart', 'Team-wise progress' + cfTag('progress'), cfPill('progress') + '<a class="more" href="#/report">Report</a>', `<div class="mb">${prog.length ? prog.join('') + statusLegend() : `<div class="empty">${hp ? `Nothing matches these filters. ${clearLink('progress')}` : 'No teams in your scope.'}</div>`}</div>`)}
       ${widget('bolt', 'Quick actions', '', `<div class="mb quick">${quick.map(([i, cls, t, h, s]) => `<a class="${cls}" href="${h}">${ico(i)}${t}<span title="${esc(s)}">${esc(s)}</span></a>`).join('')}</div>`)}
     </div>`;
     };
@@ -1465,6 +1471,13 @@ pages.home = async (v, opts = {}) => {
   }
   if (html != null) v.innerHTML = html;
   onMonth(() => pages.home(v));
+  const ht = v.querySelector('#hteam');
+  if (ht) ht.onchange = e => {
+    S.hteam = e.target.value;
+    const d = ht.closest('.dd');
+    d.querySelectorAll('.dd-item').forEach(x => { const on = x.dataset.v === S.hteam; x.classList.toggle('on', on); x.setAttribute('aria-selected', on); if (on) d.querySelector('.dd-val').textContent = x.textContent; });
+    pages.home(v, { partial: true });
+  };
   v.onclick = async e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb); // a card's Filter pill
     if (e.target.closest('#remind')) return remindAll();
@@ -1477,13 +1490,6 @@ pages.home = async (v, opts = {}) => {
     }
     // All stats cards: open Employees with only that designation filter on, so the list matches the card
     const sc = e.target.closest('a[data-role]'); if (sc) { empPreset(sc.dataset.role); S.eq = ''; S.eteam = ''; return; }
-    const b = e.target.closest('[data-team]');
-    if (b) {
-      if (b.classList.contains('on')) return;
-      const chips = [...v.querySelectorAll('.chip')], from = chips.findIndex(x => x.classList.contains('on')), to = chips.indexOf(b);
-      chips.forEach(x => x.classList.toggle('on', x === b));
-      S.hteam = b.dataset.team; return pages.home(v, { partial: true, dir: to > from ? 1 : -1 });
-    }
     const w = e.target.closest('[data-win]');
     if (w) { const t = (lastHome.teams || []).find(x => x.key === w.dataset.win); if (t) windowDialog(t, () => pages.home(v, { partial: true })); return; }
     const s = e.target.closest('[data-st]'); if (s) openReport(s.dataset.st);
@@ -1942,7 +1948,6 @@ pages.team = async (v, arg) => {
   const d = await api(`/myteam?month=${S.month}${id ? '&id=' + id : ''}`), p = d.person, c = d.counts, mon = monShort();
   const crumbs = d.me ? ''
     : ['<a href="#/team">My team</a>', ...d.path.filter(x => x.id !== S.me.id).map(x => `<a href="#/team/${x.id}">${esc(x.name)}</a>`), `<b>${esc(p.name)}</b>`].join(' › ');
-  const up = d.path.filter(x => x.id !== S.me.id), back = up.length ? `#/team/${up[up.length - 1].id}` : '#/team';
   const review = r => `<span class="acts">${r.review ? `<a href="#/form/${r.id}/${S.month}" title="Open the ${mon} form">${badge(r.review.status)}</a>` : '<span class="small">No form yet</span>'}</span>`;
   const count = r => r.direct ? `<a class="btn sm" href="#/team/${r.id}" title="Open ${esc(r.name)}'s team">${ico('eye')}${r.direct}</a>` : '<span class="small">0</span>';
   const who = r => `<div class="orgname"><span class="avatar s">${initials(r.name)}</span><div><a class="nm" href="#/form/${r.id}/${S.month}" title="Open ${esc(r.name)}'s ${mon} form">${esc(r.name)}</a><div class="small">${dotJoin(r.designation, r.team)}</div></div></div>`;
@@ -1950,7 +1955,7 @@ pages.team = async (v, arg) => {
   const table = `<tr><th>S.No</th><th>Name</th><th>Employees</th><th>${mon} review</th><th>Rating</th><th>Reports</th></tr>
       ${rows.map((r, i) => `<tr data-s="${esc(`${r.name} ${r.email} ${r.designation} ${r.team}`.toLowerCase())}"><td>${i + 1}</td><td>${who(r)}</td><td>${count(r)}</td><td>${review(r)}</td><td>${r.review && r.review.rating != null ? `<b class="rt ${rateCls(r.review.rating)}">${pc(r.review.rating)}</b>` : 'N/A'}</td><td>${reportLinks(r)}</td></tr>`).join('')
         || `<tr><td colspan="6" class="small">Nobody reports to ${d.me ? 'you' : esc(p.name)}.</td></tr>`}`;
-  v.innerHTML = head('My team', crumbs) + `<div class="row">${monthSel()}${searchBox('tq', 'Search name, team or email', S.tq)}<span class="sp"></span>${d.me ? '' : `<a class="btn" href="${back}">← Back</a>`}</div>
+  v.innerHTML = head('My team', crumbs) + `<div class="row">${monthSel()}${searchBox('tq', 'Search name, team or email', S.tq)}</div>
   ${d.me ? '' : `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><b class="on">${esc(p.name)}</b><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? esc(p.manager.name) : 'nobody'} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span>${reportLinks(p)}</div>`}
   <div class="small" style="margin:0 0 12px">${mon} reviews of everyone under ${d.me ? 'you' : esc(p.name)} (all levels)</div>
   ${countTiles(c)}
@@ -2052,12 +2057,15 @@ pages.kpi = async (v, id) => {
 // report tables (Summary and Full details): one line per row, a light dash for "nothing yet", colour only where it means something
 const NIL = '<span class="nil">–</span>';
 const rDate = d => d ? fmtD(d) : NIL;
-const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Status</th><th class="nr">Rating</th><th class="rflag">Flags</th></tr>
-  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.due)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${badge(r.form)} ${badge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || `<tr><td colspan="9">${cfCount('report') ? `Nothing matches these filters. ${clearLink('report')}` : `No reviews in your access for ${esc(monthLabel(S.month))}. Pick another month above.`}</td></tr>`}</table></div>`;
-// a review's flags: the first one, all of them behind "+N" (click opens a small pop-up over the table), so one row stays one line tall; numbered 1, 2, 3
+const reportTable = rows => `<div class="tablewrap"><table class="rtab"><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Actual</th><th>Status</th><th class="nr">Rating</th><th class="rflag">Flags</th></tr>
+  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td class="mut">${r.manager ? esc(r.manager) : NIL}</td><td class="mut">${teamTag(r.team)}</td><td>${rDate(r.scheduled)}</td><td>${rDate(r.actual)}${r.actual ? ` <span class="due ${r.dueStatus === 'After due date' ? 'late' : ''}">${r.dueStatus === 'After due date' ? 'late' : 'on time'}</span>` : ''}</td><td>${shortBadge(r.form)} ${shortBadge(r.status)}</td><td class="nr">${r.rating != null ? `<b>${pc(r.rating)}</b>` : NIL}</td>${flagCell(r.flags)}</tr>`).join('') || `<tr><td colspan="8">${cfCount('report') ? `Nothing matches these filters. ${clearLink('report')}` : `No reviews in your access for ${esc(monthLabel(S.month))}. Pick another month above.`}</td></tr>`}</table></div>`;
+// shorter status words for the report table; the full status stays in the tooltip
+const SHORT_STATUS = { 'Not Filled': 'Unfilled', 'Review Completed': 'Reviewed', 'Review Pending': 'Pending' };
+const shortBadge = st => badge(st).replace(`>${esc(st)}</span>`, `>${esc(SHORT_STATUS[st] || st)}</span>`);
+// a review's flags: all of them in the cell, one per line, numbered when there is more than one
 const flagCell = flags => !flags.length ? `<td>${NIL}</td>`
   : flags.length === 1 ? `<td class="rflag">${esc(flags[0])}</td>`
-  : `<td class="rflag"><details class="flags"><summary title="Show all ${flags.length} flags"><span>1. ${esc(flags[0])}</span> <b class="more">+${flags.length - 1}</b></summary><div class="fl-pop">${flags.map((x, i) => `<div>${i + 1}. ${esc(x)}</div>`).join('')}</div></details></td>`;
+  : `<td class="rflag"><ol>${flags.map(x => `<li>${esc(x)}</li>`).join('')}</ol></td>`;
 
 // ---------- Performance Analytics (Fiza 2026-11-19; layout "C2" picked by Harish 2026-11-19) ----------
 // Light cards (the dark "command centre" only in dark mode): four number cards (notched gauge, month bars, sparkline, dot
@@ -2433,7 +2441,7 @@ pages.yearly = async (v, id) => {
   const pick = arr => cols.map(i => arr[i]);
   const block = p => `<div class="yblock"><div class="yb-h"><span class="avatar s">${initials(p.name)}</span><div><b>${esc(p.name)}</b><span>${dotJoin(p.designation, tl(p.team))}${p.manager ? ` · Reporting manager ${esc(p.manager)}` : ''}</span></div>
       ${S.me.role === 'admin' ? `<a class="yb-eye" href="#/kpi/${p.id}" title="Open ${esc(p.name)}'s KPI report (self and manager ratings by month)" aria-label="Open ${esc(p.name)}'s KPI report">${ico('eye')}</a>` : ''}<span class="sp"></span>
-      ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}">${ico('team')}Their team</a>` : ''}</div>
+      ${p.hasTeam && (!root || p.id !== root.id) ? `<a class="btn sm" href="#/yearly/${p.id}" title="Their team" aria-label="Open ${esc(p.name)}'s team">${ico('team')}</a>` : ''}</div>
     <div class="tablewrap"><table class="ytab"><tr><th>KRA name</th>${pick(d.months).map(m => `<th class="nr ${m.open ? '' : 'off'}">${mh(m)}</th>`).join('')}</tr>
     ${[['operational', 'Operational'], ['process', 'Process'], ['people', 'People']].map(([k, l]) => `<tr><td>${l}</td>${pick(p.cells).map(c => `<td class="nr">${c && c[k] != null ? n2(c[k]) : ''}</td>`).join('')}</tr>`).join('')}
     <tr class="ytot"><td>Total</td>${pick(p.cells).map(c => `<td class="nr">${c && c.total != null ? `<b class="rt ${rateCls(c.total)}">${n2(c.total)}</b>${c.reviewedBy ? `<div class="small" title="This month was reviewed by ${esc(c.reviewedBy)}, their reporting manager at the time">by ${esc(c.reviewedBy.split(' ')[0])}</div>` : ''}` : ''}</td>`).join('')}</tr>
@@ -2442,8 +2450,7 @@ pages.yearly = async (v, id) => {
   const root = d.person, mgrView = root && d.teamView;
   v.innerHTML = head(d.me ? (mgrView ? 'Team Report' : 'My Report') : root ? (mgrView ? `Team Report: ${esc(root.name)}` : `Report: ${esc(root.name)}`) : 'Team Report',
       root && mgrView ? `Reporting manager: <b>${esc(root.name)}</b> · ${esc(d.fyLabel)}` : `KRA scores month by month · ${esc(d.fyLabel)}`) +
-    `<div class="row">${cfPill('yearly')}
-    <span class="sp"></span>${list.length ? exportMenu() : ''}${id && !self ? `<a class="btn" href="#/yearly">← Team Report</a>` : ''}</div>
+    `<div class="row"><span class="sp"></span>${cfPill('yearly')}${list.length ? exportMenu() : ''}</div>
     ${mgrView ? `<div class="ymgr">${ico('idcard')}<span>Manager name: <b>${esc(root.name)}</b> · ${d.people.length} ${d.people.length === 1 ? 'person' : 'people'} under them</span></div>` : ''}
     ${list.map(block).join('') || `<div class="empty card">No one to show for this filter. ${clearLink('yearly')}</div>`}
     `;
@@ -2461,7 +2468,7 @@ pages.yearly = async (v, id) => {
 };
 
 // ---------- review status report ----------
-const RF = { view: null, team: '', manager: '', status: '', full: false };
+const RF = { team: '', manager: '', status: '', full: false };
 const REPORT_STATUSES = [['', 'All statuses', '', 'filter'], ['Filled', 'Filled', '--vr-chart-cl', 'check'], ['Not Filled', 'Not Filled', '--vr-chart-rj', 'alert'], ['Review Completed', 'Review Completed', '--vr-chart-cl', 'award'], ['Review Pending', 'Review Pending', '--vr-chart-ip', 'hourglass']];
 // Export button: a small menu with CSV and PDF (the page listens to the hidden select)
 const exportMenu = () => `<div class="dd" data-dd="list"><button type="button" class="dd-btn exp" aria-haspopup="listbox" aria-expanded="false">${ico('download')}<span class="dd-val">Export</span>${CHEV}</button>
@@ -2469,15 +2476,15 @@ const exportMenu = () => `<div class="dd" data-dd="list"><button type="button" c
   <select id="fexp" hidden aria-hidden="true"><option value="" selected></option><option value="csv"></option><option value="pdf"></option></select></div>`;
 // PDF: the report laid out for print in a hidden frame; the browser's print dialog saves it as PDF
 function reportPdf(d, c) {
-  const filt = [RF.view === 'org' ? 'Organisation-wise' : `Team-wise · ${RF.team ? tl(RF.team) : 'All teams'}`, RF.manager && (d.managers.find(m => String(m.id) === String(RF.manager)) || {}).name, RF.status && (REPORT_STATUSES.find(x => x[0] === RF.status) || [])[1]].filter(Boolean).join(' · ');
+  const filt = [RF.team ? tl(RF.team) : 'All teams', RF.manager && (d.managers.find(m => String(m.id) === String(RF.manager)) || {}).name, RF.status && (REPORT_STATUSES.find(x => x[0] === RF.status) || [])[1]].filter(Boolean).join(' · ');
   const st = r => `${r.form} · ${r.status}`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>PMS review status ${esc(monthLabel(S.month))}</title><style>${printCss(12)}
     .k{display:flex;gap:8px;margin:0 0 16px}.k div{flex:1;border-radius:8px;padding:8px 10px;background:${PRINT.tile}}.k small{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${PRINT.muted}}.k b{font-size:18px;font-variant-numeric:tabular-nums}
     th{text-align:left}td{vertical-align:top}</style></head><body>
     <h1>Review Report · ${esc(monthLabel(S.month))}</h1><p>${esc(d.scope)} · ${esc(filt)} · printed ${esc(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</p>
     <div class="k">${[['Scheduled', c.scheduled], ['Filled', c.filled], ['Not Filled', c.notFilled], ['Review Completed', c.reviewCompleted], ['Review Pending', c.reviewPending]].map(([l, n]) => `<div><small>${l}</small><b>${n}</b></div>`).join('')}</div>
-    <table><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Due</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
-    ${d.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.due)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map((x, i) => (r.flags.length > 1 ? `${i + 1}. ` : '') + esc(x)).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="10">No reviews.</td></tr>'}</table>
+    <table><tr><th>Employee</th><th>Manager</th><th>Team</th><th>Scheduled</th><th>Actual</th><th>Rescheduled</th><th>Status</th><th>Rating</th><th>Flags</th></tr>
+    ${d.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.manager)}</td><td>${esc(tl(r.team))}</td><td>${fmtD(r.scheduled)}</td><td>${fmtD(r.actual)}</td><td>${r.reschedules || 0}</td><td>${esc(st(r))}</td><td>${pc(r.rating)}</td><td>${r.flags.map((x, i) => (r.flags.length > 1 ? `${i + 1}. ` : '') + esc(x)).join('<br>') || 'N/A'}</td></tr>`).join('') || '<tr><td colspan="9">No reviews.</td></tr>'}</table>
     <footer>Verve Advisory · Performance Management System</footer></body></html>`;
   printHtml(html);
 }
@@ -2520,7 +2527,7 @@ const longCell = s => { s = String(s || ''); if (!s) return `<td>${NIL}</td>`;
 function fullTable(d) {
   const cols = d.columns || [];
   const cell = (k, x, r) => k === 'name' ? `<td>${nameLink(r.empId, x)}</td>`
-    : ['doj', 'scheduled', 'actual'].includes(k) ? `<td>${rDate(x)}</td>`
+    : ['scheduled', 'actual'].includes(k) ? `<td>${rDate(x)}</td>`
     : k === 'reschedules' ? `<td class="nr">${x || NIL}</td>`
     : k === 'finalStatus' ? (r.canSetStatus && d.finalStatuses ? `<td>${fsSelect(r, d.finalStatuses)}</td>` : `<td><span class="badge ${FS_CLS[x] || 'b-grey'}">${esc(x)}</span></td>`)
     : k === 'percentage' ? `<td class="nr">${x != null ? `<b>${pc(x)}</b>` : NIL}</td>`
@@ -2548,8 +2555,6 @@ pages.report = async v => {
   // a server still running older code answers without the Full details columns: say so instead of failing silently
   const noDetail = RF.full && !(d.columns && d.rules);
   if (noDetail) RF.full = false;
-  const full = ['director', 'admin'].includes(S.me.role);
-  RF.view ||= 'org';
   const c = d.counts;
   // Team, Reporting manager and Status sit behind the Filter pill (same panel as the dashboard cards); RF stays the truth
   PF.rteam = [['', 'All teams'], ...d.teams.map(teamOpt)];
@@ -2557,24 +2562,17 @@ pages.report = async v => {
   PF.rst = REPORT_STATUSES.map(x => [x[0], x[1]]);
   Object.assign(CF.report, { rteam: RF.team || '', rmgr: String(RF.manager || ''), rst: RF.status || '' });
   cfLocalRedraw.report = () => {
-    const f = CF.report; if (f.rteam && f.rteam !== RF.team) RF.view = 'team';
+    const f = CF.report;
     Object.assign(RF, { team: f.rteam, manager: f.rmgr, status: f.rst }); return pages.report(v);
   };
-  v.innerHTML = head('Review Report', 'One report, two views · ' + d.scope) +
+  v.innerHTML = head('Review Report', d.scope) +
     `<div class="row">${monthSel()}
-    <button class="chip vchip ${RF.view === 'org' ? 'on' : ''}" data-view="org">${ico('sitemap')}${full ? 'Organisation-wise' : 'Employee-wise'}</button><button class="chip vchip ${RF.view === 'team' ? 'on' : ''}" data-view="team">${ico('team')}Team-wise</button>
-    ${cfPill('report')}
-    <span class="sp"></span>${searchBox('rsearch', 'Search name, code, manager, team', RF.q, 260)}${exportMenu()}</div>
+    <span class="sp"></span>${searchBox('rsearch', 'Search name, code, manager, team', RF.q, 260)}${cfPill('report')}${exportMenu()}</div>
     ${countTiles(c)}
-    ${RF.view === 'team' ? `<h2>Team-wise</h2><p class="small" style="margin:-4px 0 10px">One row per reporting manager and team. "View people" opens that team's people.</p>
-    <div class="tablewrap"><table class="rtab"><tr><th>Manager</th><th>Team</th><th class="nr">Scheduled</th><th class="nr">Filled</th><th class="nr">Not Filled</th><th class="nr">Review Completed</th><th class="nr">Review Pending</th><th></th></tr>${d.teamCounts.map(t => `<tr><td>${esc(t.manager)}</td><td>${teamTag(t.team)}</td><td class="nr">${t.scheduled}</td><td class="nr">${t.filled}</td><td class="nr">${t.notFilled}</td><td class="nr">${t.reviewCompleted}</td><td class="nr">${t.reviewPending}</td><td class="nr"><button type="button" class="btn sm" data-tpeople="${t.managerId}" data-tteam="${esc(t.team)}">View people</button></td></tr>`).join('') || '<tr><td colspan="8">No reviews in your access for this month.</td></tr>'}</table></div>`
-    // Team-wise shows only the team table (Harish 2026-11-19: the employee list and its Summary / Full details buttons
-    // under it were confusing); the employee list, with its two buttons, is the other view
-    : `<div class="row sechd"><h2>${full ? 'Employee-wise (organisation)' : 'Employee-wise'}</h2><span class="sp"></span>
+    <div class="row sechd"><h2>Employees</h2><span class="sp"></span>
       <div class="vsw" role="group" aria-label="Table columns"><button type="button" class="chip vchip ${RF.full ? '' : 'on'}" data-full="0" aria-pressed="${!RF.full}">Summary</button><button type="button" class="chip vchip ${RF.full ? 'on' : ''}" data-full="1" aria-pressed="${!!RF.full}" title="All columns of the PMS report format: SOP, learning, questionnaire, remarks by KRA, escalations">Full details</button></div></div>
     ${noDetail ? '<div class="alert-w">Full details is not available: the server is running an older version of PMS. Restart it (or wait for the deploy to finish) and try again.</div>' : ''}
     ${RF.full ? fullTable(d) : reportTable(d.rows)}
-    `}
     `;
   // search (Harish 2026-11-19, right of the toolbar): hides the rows of the table on screen that do not match; the
   // counts and Export stay for the whole month
@@ -2587,10 +2585,6 @@ pages.report = async v => {
   v.onclick = async e => {
     const cfb = e.target.closest('[data-cf]'); if (cfb) return cfOpen(cfb);
     const cl = e.target.closest('[data-cfclear]'); if (cl) { e.preventDefault(); return cfClear(cl.dataset.cfclear); }
-    const b = e.target.closest('[data-view]');
-    if (b && RF.view !== b.dataset.view) { RF.view = b.dataset.view; RF.team = ''; RF.manager = ''; pages.report(v); }
-    const tp = e.target.closest('[data-tpeople]');
-    if (tp) { Object.assign(RF, { view: 'org', manager: tp.dataset.tpeople, team: tp.dataset.tteam }); return pages.report(v); }
     const fb = e.target.closest('[data-full]');
     if (fb && !!RF.full !== (fb.dataset.full === '1')) { RF.full = fb.dataset.full === '1'; pages.report(v); }
   };
@@ -2656,34 +2650,23 @@ function calView(rows, windows) {
     <div class="scal-k"><span><i class="s-win"></i>Review window</span><span><i class="s-today"></i>Today</span><span>${booked.length} booked · ${open.length} not booked yet</span></div></div>
     ${open.length ? `<div class="scal-open"><b>Not booked yet (${open.length})</b>${open.map(r => `<span class="scal-o">${esc(r.name)}${r.canManage ? `<button class="btn sm pri" data-sch="${r.empId}">${ico('calendar')}Schedule</button>` : ''}</span>`).join('')}</div>` : ''}`;
 }
+// row colours on Scheduling (the server decides which applies)
+const SCH_MARK = { done: 'Review done', over: 'Overdue: review window has ended', wait: 'Scheduled, review pending' };
 pages.scheduling = async v => {
   if (!S.schView) { try { S.schView = localStorage.getItem('pms.schView'); } catch {} S.schView ||= 'list'; } // List or Calendar, remembered in this browser
   const d = await api('/scheduling?month=' + S.month), cal = d.calendar;
-  // admins can book any review too (2026-11-19): same calendar card as the managers, invites from the admin's own calendar
-  const calCard = !cal.google ? `<div class="info">Calendar invites are off on this server: Google sign-in is not set up yet. Reviews can still be scheduled here.</div>`
-    : cal.connected ? `<div class="calcard on">${ico('calendar')}<div><b>Google Calendar connected</b><span>Invites go out from ${esc(cal.email)}, Google emails the employee, and their manager if someone else schedules.</span></div><span class="sp"></span><button class="btn sm" id="caloff">Disconnect</button></div>`
-    : cal.canConnect ? `<div class="calcard">${ico('calendar')}<div><b>Send review invites to Google Calendar</b><span>Connect your calendar once. Each review you schedule then lands in the employee's calendar.</span></div><span class="sp"></span><button class="btn pri" id="calon">Connect Google Calendar</button></div>`
-    : `<div class="info">To send calendar invites, sign in with your @${esc(S.me.domain)} Google account${S.me.viewingAs ? ' (invites always come from your own calendar, not the person you are viewing as)' : ''}.</div>`;
-  const inviteCell = r => r.invite
-    ? `<div class="invc"><span class="badge b-green" title="Sent by ${esc(r.invite.owner)} to ${esc(r.invite.guests.join(', '))}">${ico('tick')}Invite sent</span><span class="invl">${[r.invite.link && `<a href="${esc(r.invite.link)}" target="_blank" rel="noopener">Open event</a>`, r.canManage && `<a href="#" data-cancel="${r.empId}">Cancel</a>`].filter(Boolean).join('<i>·</i>')}</span></div>`
-    : !r.hasEmail ? `<span class="badge b-grey" title="Add a @${esc(S.me.domain)} email on the Employees page">No work email</span>`
-    : r.scheduled && r.canManage && cal.connected ? `<button class="btn sm" data-inv="${r.empId}">${ico('send')}Send invite</button>`
-    : r.scheduled ? `<span class="badge b-grey" title="${r.canManage && !cal.connected ? 'Connect Google Calendar at the top of this page to send invites' : 'No Google Calendar invite for this review'}">Not sent</span>` : '<span class="small">–</span>';
   // Team members: the same Filter pill as the dashboard (team, booked or not, invite, status), filtered in the browser
   PF.steam = optCount(d.rows, r => r.team, tl); PF.sst = optCount(d.rows, r => r.status);
   cfLocalRedraw.sched = () => pages.scheduling(v);
   const SF = CF.sched, anyOf = (a, x) => !a.length || a.includes(String(x));
   const rows = d.rows.filter(r => anyOf(SF.steam, r.team) && (SF.sslot === 'any' || (SF.sslot === 'booked') === !!r.scheduled)
-    && (SF.sinv === 'any' || (SF.sinv === 'sent') === !!r.invite) && anyOf(SF.sst, r.status));
-  v.innerHTML = head('Review scheduling', d.adminView && !S.me.viewingAs ? 'Review windows, and a date and time for any review (for example when a manager is away). Rescheduling moves the calendar invite too.' : 'Pick a date and time for each review. Rescheduling moves the calendar invite too.') + `<div class="row">${monthSel()}</div>
-  ${calCard}
-  <h2>Review windows</h2><div class="tablewrap"><table><tr><th>Team</th><th>Window</th><th>Dates collected on</th><th>Scheduled</th>${d.canEditWindows ? '<th class="tact">Action</th>' : ''}</tr>${d.windows.map(w => `<tr><td>${esc(w.label)}</td><td>${fmtD(w.start)} to ${fmtD(w.end)}</td><td>${fmtD(w.collectedOn)}</td><td><span class="badge ${w.collected === w.total ? 'b-green' : 'b-amber'}">${w.collected} of ${w.total}</span></td>${d.canEditWindows ? `<td class="tact"><button class="btn sm" data-win="${esc(w.key)}" title="Change the ${esc(w.label)} review window">${ico('pencil')}Edit</button></td>` : ''}</tr>`).join('')}</table></div>
-  <div class="row sechd"><h2>Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Calendar invite</th><th>Rescheduled</th><th>Actual date (from form)</th><th>Status</th></tr>
-  ${rows.map(r => `<tr><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
+    && anyOf(SF.sst, r.status));
+  v.innerHTML = head('Review scheduling', d.adminView && !S.me.viewingAs ? 'A date and time for any review (for example when a manager is away).' : 'Pick a date and time for each review.') + `<div class="row">${monthSel()}</div>
+  <div class="row sechd"><h2>Team members</h2><span class="sp"></span>${d.rows.length ? `<span class="vsw" role="group" aria-label="Show as"><button type="button" class="chip vchip ${S.schView === 'cal' ? '' : 'on'}" data-sv="list" aria-pressed="${S.schView !== 'cal'}">${ico('list')}List</button><button type="button" class="chip vchip ${S.schView === 'cal' ? 'on' : ''}" data-sv="cal" aria-pressed="${S.schView === 'cal'}">${ico('calendar')}Calendar</button></span>${cfPill('sched')}` : ''}</div>${S.schView === 'cal' && d.rows.length ? calView(rows, d.windows) : `<div class="tablewrap"><table><tr><th>Employee</th><th>Team</th><th>Review slot</th><th>Rescheduled</th><th>Actual date (from form)</th></tr>
+  ${rows.map(r => `<tr class="${r.mark ? 'sr-' + r.mark : ''}" title="${SCH_MARK[r.mark] || ''}"><td>${nameLink(r.empId, r.name)}</td><td>${teamTag(r.team)}</td>
   <td>${r.scheduled ? slotCell(r) : r.canManage || r.managerOnly ? `<div class="slotc"><span><small>Not booked yet</small></span><button class="btn sm pri" data-sch="${r.empId}"${r.canManage ? '' : ` disabled title="${esc(S.me.name)} schedules this review from their own sign-in"`}>${ico('calendar')}Schedule</button></div>` : '<span class="small">Not scheduled</span>'}</td>
-  <td>${inviteCell(r)}</td>
   <td>${r.reschedules ? `<span class="badge b-amber" style="cursor:help" title="${esc(reschedDates(r).map(fmtD).join(' → '))} (counted once per new date)">${r.reschedules} ${r.reschedules === 1 ? 'time' : 'times'}</span>` : '<span class="small">–</span>'}</td>
-  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td><td>${badge(r.status)}</td></tr>`).join('') || `<tr><td colspan="7">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="7">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>`}
+  <td>${r.actual ? `${fmtD(r.actual)} ${badge(r.dueStatus)}` : '<span class="small">Not held yet</span>'}</td></tr>`).join('') || `<tr><td colspan="5">${d.directOnly ? 'Nobody reports to you directly, so there are no reviews for you to schedule this month.' : 'No reviews in your access for this month.'}</td></tr>`}${rows.length || !d.rows.length ? '' : `<tr><td colspan="5">Nothing matches these filters. ${clearLink('sched')}</td></tr>`}</table></div>${rows.length ? `<div class="sr-key">${Object.entries(SCH_MARK).map(([k, l]) => `<span><i class="sr-${k}"></i>${l}</span>`).join('')}</div>` : ''}`}
   `;
   onMonth(() => pages.scheduling(v));
   const row = id => d.rows.find(r => String(r.empId) === String(id));
@@ -2722,18 +2705,8 @@ pages.scheduling = async v => {
     try {
       if (t.dataset.cfclear) { e.preventDefault(); cfClear(t.dataset.cfclear); }
       else if (t.dataset.sv) { S.schView = t.dataset.sv; try { localStorage.setItem('pms.schView', S.schView); } catch {} pages.scheduling(v); }
-      else if (t.dataset.win) windowDialog(d.windows.find(w => w.key === t.dataset.win), () => pages.scheduling(v));
-      else if (t.id === 'calon') calStart();
-      else if (t.id === 'caloff') { if (await confirmBox('Disconnect Google Calendar?', 'Invites already sent stay in calendars, but you cannot move or cancel them from PMS until you connect again.', { ok: 'Disconnect', danger: true })) { await api('/calendar/disconnect', { method: 'POST' }); toast('Google Calendar disconnected'); pages.scheduling(v); } }
       else if (t.dataset.sch) slotDialog(row(t.dataset.sch), 'schedule');
       else if (t.dataset.resch) slotDialog(row(t.dataset.resch), 'reschedule');
-      else if (t.dataset.inv) slotDialog(row(t.dataset.inv), 'invite');
-      else if (t.dataset.cancel) {
-        e.preventDefault();
-        const r = row(t.dataset.cancel);
-        if (!await confirmBox(`Cancel the invite for ${r.name}?`, 'Google tells the guests it is cancelled. The scheduled date stays in PMS.', { ok: 'Cancel invite', danger: true })) return;
-        await api('/scheduling/cancel-invite', { method: 'POST', body: { empId: r.empId, month: S.month } }); toast('Invite cancelled'); pages.scheduling(v);
-      }
     } catch (er) { toast(er.message, 'err'); }
   };
 };
@@ -2959,9 +2932,8 @@ pages.employees = async (v, arg, grp) => {
   const tab = S.etab || 'active', q = (S.eq || '').toLowerCase(), fl = S.eteam || '';
   // the Filter pill (same panel as the dashboard cards): designation, role, reporting manager, work email, work status
   const all = tab === 'active' ? d.active : d.inactive, F = CF.emp, any = (a, x) => !a.length || a.includes(x);
-  const grpOf = e => e.desigGroup || 'Other', wsOf = e => e.workStatus ? e.workStatus.type : 'working';
-  const passF = e => any(F.edesig, grpOf(e)) && any(F.erole, e.role) && any(F.emgr, String(e.managerId ?? ''))
-    && (F.email === 'any' || (F.email === 'set') === !!e.email) && (F.ews === 'any' || wsOf(e) === F.ews);
+  const grpOf = e => e.desigGroup || 'Other';
+  const passF = e => any(F.edesig, grpOf(e)) && any(F.erole, e.role) && any(F.emgr, String(e.managerId ?? ''));
   const count = (key, label) => { const n = {}; all.forEach(e => { const k = key(e); n[k] = (n[k] || 0) + 1; }); return Object.keys(n).map(k => [k, label(k), n[k]]); };
   empFO = {
     desig: count(grpOf, x => x).sort((a, b) => GROUPS.indexOf(a[0]) - GROUPS.indexOf(b[0])),
@@ -3213,7 +3185,7 @@ pages.reporting = async (v, arg) => {
   const title = p ? `Reporting to ${esc(p.name)} (${d.rows.length})` : `Directors (${d.rows.length})`;
   const scope = p ? `${mon} reviews of everyone under ${esc(p.name)} (all levels)` : `${mon} reviews across the organisation`;
   v.innerHTML = head('Reporting flow', crumbs) + `
-  <div class="row">${monthSel()}${searchBox('orgq', 'Search name, team or email', S.orgq)}<span class="sp"></span>${p ? `<a class="btn" href="${up}">← Back</a>` : ''}<a class="btn" href="#/employees">Edit people on Employees</a></div>
+  <div class="row">${monthSel()}${searchBox('orgq', 'Search name, team or email', S.orgq)}<span class="sp"></span><a class="btn" href="#/employees">Edit people on Employees</a></div>
   ${p ? `<div class="card orghead"><span class="avatar">${initials(p.name)}</span><div><a class="on" href="#/form/${p.id}/${S.month}" title="Open ${esc(p.name)}'s ${mon} review form">${esc(p.name)}</a><div class="small">${dotJoin(p.designation, tl(p.team))}${p.email ? ' · ' + esc(p.email) : ''}</div><div class="small">Reports to ${p.manager ? pname(p.manager) : 'nobody (top level)'}${p.director && (!p.manager || p.director.id !== p.manager.id) ? ` · Director ${pname(p.director)}` : ''} · ${p.direct} direct report${p.direct === 1 ? '' : 's'}</div></div><span class="sp"></span><div class="row" style="margin:0">${own(p.review)}${forms(p)}</div><div class="row" style="margin:0;flex-basis:100%;justify-content:flex-end">${reportLinks(p)}</div></div>` : ''}
   <h2>${title}</h2>
   <div class="tablewrap"><table class="orgt"><tr>${COLS.map(([h, , c]) => `<th class="${c || ''}">${h}</th>`).join('')}</tr>

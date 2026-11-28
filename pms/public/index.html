@@ -502,16 +502,10 @@ select.fssel{background-image:var(--vr-caret);background-repeat:no-repeat;backgr
 .rtab .mut{color:var(--vr-n-500)}
 .rtab .nil{color:var(--vr-n-400)}
 .rtab .due{margin-left:6px;font-size:11px;color:var(--vr-n-500)}.rtab .due.late{color:var(--vr-warn-800);font-weight:600}
-/* Flags takes only the room the other columns leave (no sideways scroll on a normal screen); "+N" always stays visible */
-.rtab .rflag{width:100%;min-width:110px;max-width:0}
-.rtab td.rflag{overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--vr-n-600)}
-.rtab td.rflag .flags summary{display:flex;align-items:center}
-.rtab td.rflag .flags summary span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.rtab td.rflag .flags summary b,.rtab td.rflag .flags[open] summary .more{display:inline;flex:none}
-.rtab td.rflag .flags summary b{background:var(--vr-n-100);color:var(--vr-n-700)}
-.rtab td.rflag .flags summary:hover b,.rtab td.rflag .flags[open] summary b{background:var(--vr-n-200)}
-/* the open list floats over the table (td is not positioned, so its overflow does not clip it) */
-.rtab td.rflag .fl-pop{position:absolute;z-index:20;width:300px;margin:6px 0 0 -190px;padding:8px 12px;border:1px solid var(--vr-n-200);border-radius:8px;background:var(--vr-card);box-shadow:var(--vr-shadow-lg);white-space:normal;line-height:18px;color:var(--vr-n-800)}
+/* Flags takes the room the other columns leave; every flag is listed, one per line, and long ones wrap */
+.rtab .rflag{width:100%;min-width:240px}
+.rtab td.rflag{white-space:normal;font-size:12px;line-height:18px;color:var(--vr-n-600)}
+.rtab td.rflag ol{margin:0;padding-left:18px;list-style:decimal}
 .rtab td.yn{color:var(--vr-n-700)}.rtab td.yn.no{color:var(--vr-danger-600);font-weight:600}
 .rtab td.resc{min-width:200px;white-space:normal;font-size:12px;line-height:16px;color:var(--vr-warn-800)}
 .rtab td:has(.rmk){white-space:normal}
@@ -1644,6 +1638,17 @@ html.embedded #app.mini .wordmark{height:60px}
 html.embedded #app.mini .side-tog{top:14px}
 html.embedded #app.mini .wordmark+.eyebrow{margin-top:0}
 html.embedded #themeBtn,html.embedded .tb-who,html.embedded .tb-div,html.embedded .auth-brand{display:none}
+/* the one Back button: top left of every page */
+.bkbar{margin:0 0 12px}.bkbar[hidden]{display:none}
+/* Filter pill: icon only (plus the number of filters on) */
+.cfpill b{font-weight:700}
+/* Scheduling rows: green = done, red = overdue, yellow = scheduled and still pending */
+tr.sr-done td{background:rgba(34,168,83,.18)!important}tr.sr-over td{background:rgba(224,62,45,.18)!important}tr.sr-wait td{background:rgba(250,196,0,.24)!important}
+.sr-key{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 0;font-size:12px;color:var(--vr-n-700)}.sr-key span{display:inline-flex;align-items:center;gap:6px}
+.sr-key i{width:12px;height:12px;border-radius:3px;border:1px solid var(--vr-n-200)}.sr-key .sr-done{background:rgba(34,168,83,.35)}.sr-key .sr-over{background:rgba(224,62,45,.35)}.sr-key .sr-wait{background:rgba(250,196,0,.45)}
+/* Review Report tables: the column headings stay in view; the table scrolls inside the screen */
+.tablewrap:has(>table.rtab){max-height:calc(100vh - 130px);overflow:auto}
+.tablewrap table.rtab th{position:sticky;top:0;z-index:2}.tablewrap table.rtab th.stk{z-index:3}
 </style>
 </head>
 <body>
