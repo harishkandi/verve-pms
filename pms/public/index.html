@@ -1633,14 +1633,37 @@ html.embedded #app.mini .wordmark{height:60px}
 html.embedded #app.mini .side-tog{top:14px}
 html.embedded #app.mini .wordmark+.eyebrow{margin-top:0}
 html.embedded #themeBtn,html.embedded .tb-who,html.embedded .tb-div,html.embedded .auth-brand{display:none}
-/* the one Back button: top left of every page */
+/* ---------- Back button, icon filter pills, Scheduling row marks (Vidya 2026-11-28, styled to the app's look) ---------- */
+/* the one Back button: a round button at the start of the page's title row (navigation = blue, not a yellow action);
+   the crumb line stays under the title. .phd-x = a control at the right end of the title row (Dashboard: team picker) */
+.phd{display:flex;align-items:flex-start;gap:14px}
+.phd-t{flex:1;min-width:0}
+.phd-x{align-self:center;flex:none}.phd-x .dd-menu{left:auto;right:0}
+.pback{display:inline-grid;place-items:center;flex:none;width:32px;height:32px;margin-top:-1px;padding:0;border:1px solid var(--vr-n-200);border-radius:9999px;background:var(--vr-card);color:var(--vr-brand-text);box-shadow:var(--shadow-sm);cursor:pointer;transition:background-color .15s,border-color .15s}
+.pback svg{width:18px;height:18px}
+.pback:hover{border-color:var(--vr-pms-blue);background:var(--vr-pms-blue-50)}
+.pback:focus-visible{outline:2px solid var(--vr-accent-navy);outline-offset:2px}
+.opf-top .pback{margin:0 2px 0 0}
 .bkbar{margin:0 0 12px}.bkbar[hidden]{display:none}
-/* Filter pill: icon only (plus the number of filters on) */
-.cfpill b{font-weight:700}
-/* Scheduling rows: green = done, red = overdue, yellow = scheduled and still pending */
-tr.sr-done td{background:rgba(34,168,83,.18)!important}tr.sr-over td{background:rgba(224,62,45,.18)!important}tr.sr-wait td{background:rgba(250,196,0,.24)!important}
-.sr-key{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 0;font-size:12px;color:var(--vr-n-700)}.sr-key span{display:inline-flex;align-items:center;gap:6px}
-.sr-key i{width:12px;height:12px;border-radius:3px;border:1px solid var(--vr-n-200)}.sr-key .sr-done{background:rgba(34,168,83,.35)}.sr-key .sr-over{background:rgba(224,62,45,.35)}.sr-key .sr-wait{background:rgba(250,196,0,.45)}
+/* Filter pill = icon only: a round button (card headers 24px, toolbars as tall as their buttons), the number of filters on
+   in a small navy bubble */
+.cfpill{justify-content:center;min-width:28px;height:24px;padding:0 7px}
+.row>.cfpill{min-width:36px;height:36px;padding:0 9px}
+.cfpill b{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:9999px;background:var(--vr-navy-800);color:#fff;font-size:10px;line-height:16px;font-weight:700}
+/* Scheduling rows: a colour strip at the start of the row (rows stay white, like every portal table): green = review
+   done, red = window ended without a review, yellow = scheduled, review pending; the key under the table */
+tr.sr-done>td:first-child{box-shadow:inset 4px 0 0 var(--vr-green-600)}
+tr.sr-over>td:first-child{box-shadow:inset 4px 0 0 var(--vr-danger-600)}
+tr.sr-wait>td:first-child{box-shadow:inset 4px 0 0 var(--vr-pms-y)}
+.sr-key{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;font-size:12px;line-height:16px;color:var(--vr-n-700)}
+.sr-key span{display:inline-flex;align-items:center;gap:6px}
+.sr-key i{width:4px;height:14px;border-radius:2px}
+.sr-key .sr-done{background:var(--vr-green-600)}.sr-key .sr-over{background:var(--vr-danger-600)}.sr-key .sr-wait{background:var(--vr-pms-y)}
+/* Review Report (Summary): every flag listed, so a row can be tall: cells start at the top, so the name lines up with
+   the first flag */
+table.rtab:not(.pmsfull) td{vertical-align:top}
+.rtab .rflag{min-width:200px}
+.rtab td.rflag ol{padding-left:16px}.rtab td.rflag li+li{margin-top:2px}
 /* Review Report tables: the column headings stay in view; the table scrolls inside the screen */
 .tablewrap:has(>table.rtab){max-height:calc(100vh - 130px);overflow:auto}
 .tablewrap table.rtab th{position:sticky;top:0;z-index:2}.tablewrap table.rtab th.stk{z-index:3}

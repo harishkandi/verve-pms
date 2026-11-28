@@ -616,7 +616,7 @@ async function start() {
         <button type="button" role="menuitem" data-um="profile">${ico('idcard')}Profile information</button>
         ${S.me.password && S.me.password.has && !S.me.viewingAs ? `<button type="button" role="menuitem" data-um="pw">${ico('key')}Change password</button>` : ''}<hr>
         <button type="button" role="menuitem" data-um="out" class="out">${ico('logout')}Sign out</button></div></span></header>
-    <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div class="bkbar"><button type="button" class="btn sm" id="goback">${ico('left')}Back</button></div><div id="view"></div></main></div></div>`;
+    <main id="main">${S.me.viewingAs ? `<div class="asbar">${ico('eye')}<span>You are viewing PMS as <b>${esc(S.me.name)}</b> (${ROLE_LABEL[S.me.role]}). What you change is saved for real.</span><span class="sp"></span><button class="btn sm" id="asback">Back to ${esc(S.me.real.name.split(' ')[0])}</button></div>` : ''}<div class="bkbar" hidden><button type="button" class="pback" title="Back" aria-label="Back">${ico('left')}</button></div><div id="view"></div></main></div></div>`;
   sideSet(sidePref || sideNarrow.matches); palPeople = null; // a new sign-in or View as: search fetches its people again
   $('.side-in').onscroll = navFlyClose;
   $('#root').onclick = e => {
@@ -630,7 +630,7 @@ async function start() {
     if (e.target.closest('#tbsearch')) palOpen();
     if (e.target.closest('#asbtn')) pickViewAs().catch(er => toast(er.message, 'err'));
     if (e.target.closest('#asback')) viewAs(null).catch(er => toast(er.message, 'err'));
-    if (e.target.closest('#goback')) { if (navDepth > 0) history.back(); else location.hash = '#/home'; }
+    if (e.target.closest('.pback')) { if (navDepth > 0) history.back(); else location.hash = '#/home'; }
   };
   window.onhashchange = navGuard;
   route();
@@ -665,22 +665,25 @@ addEventListener('beforeunload', e => { if (location.hash.startsWith('#/form/') 
 async function route() {
   const [, page, ...args] = (location.hash || '#/home').split('/');
   markNav(); trackDepth();
-  $('.bkbar').hidden = !page || page === 'home';
+  $('.bkbar').hidden = true; // shown below only for a page whose title row has no Back button of its own
   const v = $('#view'); if (!v.firstElementChild) v.innerHTML = spinner();
   v.onmousedown = v.onclick = v.oninput = v.onchange = v.onkeydown = null; SC().onscroll = null;
   v.classList.add('routing');
   try { await (pages[page] || pages.home)(v, ...args); } catch (e) { v.innerHTML = head('Something went wrong', 'The page could not be loaded.') + errBox(e); }
   v.classList.remove('routing'); SC().scrollTop = 0;
+  $('.bkbar').hidden = !page || page === 'home' || !!v.querySelector('.pback');
 }
 // page heading; also names the browser tab after the page ("Review Report · Verve PMS"), for tabs, history and bookmarks
-const head = (t, c) => {
+const head = (t, c, side) => {
   // (a month picker in the heading counts only with its chosen value, not its list of months)
   const doc = new DOMParser().parseFromString(String(t), 'text/html').body;
   doc.querySelectorAll('[role=listbox],[role=menu],select,ul,ol,[hidden],svg').forEach(x => x.remove());
   const name = doc.textContent.replace(/\s+/g, ' ').trim();
   document.title = name ? `${name} · Verve PMS` : 'Verve PMS';
-  return `<div class="phd"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>`;
+  // the one Back button sits in the title row (not on the Dashboard); `side` = a control at the right end of the title row
+  return `<div class="phd">${backBtn()}<div class="phd-t"><h1>${t}</h1>${c ? `<div class="crumb">${c}</div>` : ''}</div>${side ? `<div class="phd-x">${side}</div>` : ''}</div>`;
 };
+const backBtn = () => { const p = (location.hash || '#/home').split('/')[1]; return !p || p === 'home' ? '' : `<button type="button" class="pback" title="Back" aria-label="Back">${ico('left')}</button>`; };
 // ---------- search (Ctrl+K) ----------
 // One box for pages (the side menu's links) and people in your access (the review status report's rows: managers see
 // their people, admins and directors everyone reviewed). Enter opens the page, or the person's form for this month;
@@ -1376,7 +1379,7 @@ pages.home = async (v, opts = {}) => {
       S.me.role === 'admin' ? ['idcard', 'r', 'Employees', '#/employees', `${q.employees.active} active · ${q.employees.inactive} inactive`] : ['team', 'r', 'My team', '#/team', `${q.teamReviews} review${q.teamReviews === 1 ? '' : 's'} in your scope`],
     ];
     const kpi = (cls, st, icon, label, n, sub) => `<div class="stat ${cls}" data-st="${st}" role="button" tabindex="0" title="Open the status report"><small>${label}</small><b>${n}</b><span>${sub}</span><i class="wm">${ico(icon)}</i></div>`;
-    const chips = S.me.role !== 'admin' ? '' : `<div class="row">${ddSelect('hteam', S.hteam || '', [['', 'All teams'], ...teams.map(t => [t.team, tl(t.team)])], { icon: 'team' })}</div>`;
+    const chips = S.me.role !== 'admin' ? '' : ddSelect('hteam', S.hteam || '', [['', 'All teams'], ...teams.map(t => [t.team, tl(t.team)])], { icon: 'team' }); // right end of the title row
     const kreq = d.kraRequests && d.kraRequests.length ? `<div class="kreq"><div class="kh">${ico('alert')}<b>KRA change requests</b><span class="cnt">${d.kraRequests.length}</span><small>Waiting for your approval</small></div>${d.kraRequests.map(r => `<div class="kr"><span class="avatar">${initials(r.name)}</span><div class="who"><b>${esc(r.name)}</b><small>${esc(r.designation)} · ${esc(r.team || '')} · ${esc(r.label)}${r.movedFrom ? ` · first sent to ${esc(r.movedFrom)}` : ''}</small></div><span class="sp"></span><a class="btn sm" href="#/form/${r.empId}/${r.month}">View KRAs</a><button class="btn sm" data-kdash="0" data-emp="${r.empId}" data-mon="${r.month}">Reject</button><button class="btn pri sm" data-kdash="1" data-emp="${r.empId}" data-mon="${r.month}">Give access</button></div>`).join('')}</div>` : '';
     // the three filterable cards follow their own filter (HC) when one is on, else this month's /api/home numbers
     const cards = () => {
@@ -1405,7 +1408,7 @@ pages.home = async (v, opts = {}) => {
       $('#hReq').innerHTML = kreq;
       $('#hBody').innerHTML = body;
     } else {
-      v.innerHTML = `<div id="hShell">${head(`${monthSel('msel', { heading: true })} reviews`)}<div id="hReq">${kreq}</div>${d.orgStats ? allStats(d.orgStats) : ''}<div id="hChips">${chips}</div><div id="hBody">${body}</div></div>`;
+      v.innerHTML = `<div id="hShell">${head(`${monthSel('msel', { heading: true })} reviews`, '', chips)}<div id="hReq">${kreq}</div>${d.orgStats ? allStats(d.orgStats) : ''}<div id="hBody">${body}</div></div>`;
     }
   } else {
     // employee: navy bar (what to do now, time left, the four review steps), what is left (grouped), recent ratings
@@ -1606,7 +1609,7 @@ function drawForm(v, errors = submitErrs.length ? submitErrs : undefined) {
   const pen = (id, label) => `<button type="button" class="ibtn opf-pen" data-qedit="${id}" title="${label}" aria-label="${label}">${ico('pencil')}</button>`;
   // order of the old portal (managers' review, 2026-11-16): title, month / year / View Question-Answer, the KRA card with the
   // employee details, the three KRAs, the monthly result, the Question-Answers, Back To Top and Save Final Reporting
-  v.innerHTML = `<div class="opf"><div class="opf-top"><h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span><span class="opf-st">${badge(FP.status)}</span> ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
+  v.innerHTML = `<div class="opf"><div class="opf-top">${backBtn()}<h1>Monthly Reporting :</h1><a href="${back}">${esc(e.name)}</a><span class="sp"></span><span class="opf-st">${badge(FP.status)}</span> ${f.locked ? '<span class="badge b-grey">Locked</span>' : f.selfSubmitted ? '<span class="badge b-blue">Sent to manager</span>' : ''}</div>
     ${kraBanner(p)}
     ${f.imported ? '' // old-portal forms: no note (Harish 2026-11-27)
       : f.locked ? `<div class="info">${p.editKras ? 'This review is completed and submitted. As a manager you can still change it.' : 'This review is completed and submitted. The employee can no longer change it.'}</div>`

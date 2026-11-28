@@ -175,6 +175,14 @@ The other module branches in the org repo (`feature/attendance`, `feature/reimbu
   asks first (`navGuard` / `formUnsaved`, also `beforeunload`). Every CSV goes through `csvSave` / `fileSave` (Export
   CSV on Employees and Team report too). Scheduling has a List / Calendar switch (`calView`, `pms.schView`). Its Team members cells (Harish 2026-11-23) use the app's own pieces: date + time as text with a yellow Schedule / Reschedule button at the right of every row (`.slotc`), Invite sent / Not sent / No work email / Moved N× = `.badge` (never class `ok` / `warn` on a chip: those are the big message boxes). Same pass on other pages: a toolbar's Filter pill is as tall as its buttons (`.row>.cfpill`; card pills stay small), Reporting flow's Monthly report = yellow `btn sm` "Open" (the purple `.sqbtn` is gone). Team
   report had a rating trend per person (small line + change vs the month before); Harish removed it 2026-11-20.
+- Vidya's clean-up (548c633, 2026-11-28), restyled to the app's look the same day (Harish: "properly designed comparing
+  with existing UI"; block "Back button, icon filter pills, Scheduling row marks" at the end of the styles): ONE Back
+  button = a round white button at the start of every page's title row (`backBtn()` inside `head()` and the monthly
+  form's `.opf-top`; navigation stays blue, not a yellow action; `.bkbar` is only a fallback for a page without either,
+  never on the Dashboard). `head(title, crumb, side)`: `side` sits at the right end of the title row (Dashboard: the
+  admin's team dropdown `#hteam`, replacing the team tabs). Filter pills are icon only, round, the count in a small navy
+  bubble. Scheduling rows stay white with a 4px strip on the first cell (green done / red overdue / yellow scheduled,
+  `mark` from `/api/scheduling`) and a key under the table. Review Report Summary lists every flag, cells top-aligned.
 - People are added only through the employee list import (the sheet is the master): the Employees page's "Add new
   member" button and `POST /api/employees` were removed on 2026-11-13 (Harish). Admins still edit and move people.
 - Reporting changes (2026-11-12) all go through `planMove` / `applyMove` in `server.js` (Employees table + Edit,
